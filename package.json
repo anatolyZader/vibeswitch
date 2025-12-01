@@ -1,0 +1,86 @@
+{
+  "name": "vibeswitch",
+  "displayName": "VibeSwitch - AI Agent Mode Switcher",
+  "description": "Switch between VIBE (autonomous) and DEV (collaborative) modes for Cursor AI agent",
+  "version": "1.0.0",
+  "publisher": "your-publisher-name",
+  "icon": "images/icon.png",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "cursor",
+    "ai",
+    "agent",
+    "mode",
+    "vibe",
+    "dev"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "vibeswitch.switchMode",
+        "title": "Switch AI Agent Mode",
+        "category": "VibeSwitch"
+      },
+      {
+        "command": "vibeswitch.toVibe",
+        "title": "Switch to VIBE Mode (Autonomous)",
+        "category": "VibeSwitch"
+      },
+      {
+        "command": "vibeswitch.toDev",
+        "title": "Switch to DEV Mode (Collaborative)",
+        "category": "VibeSwitch"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "vibeswitch.switchMode",
+        "key": "ctrl+shift+m",
+        "mac": "cmd+shift+m"
+      }
+    ],
+    "configuration": {
+      "title": "VibeSwitch",
+      "properties": {
+        "vibeswitch.showInStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show mode indicator in status bar"
+        },
+        "vibeswitch.rulesPath": {
+          "type": "string",
+          "default": "",
+          "description": "Custom path to .cursorrules files (leave empty for workspace root)"
+        },
+        "vibeswitch.autoReload": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically reload window after switching modes"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "@vscode/vsce": "^2.19.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/vibeswitch"
+  },
+  "license": "MIT"
+}
+
+

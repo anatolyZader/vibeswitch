@@ -1,0 +1,33 @@
+<svg width="128" height="128" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="64" cy="64" r="60" fill="#4A90E2" stroke="#2E5C8A" stroke-width="3"/>
+  
+  <!-- Gear shift pattern (like car transmission) -->
+  <!-- Base -->
+  <rect x="54" y="70" width="20" height="35" rx="3" fill="#FFFFFF"/>
+  
+  <!-- Shift knob -->
+  <circle cx="64" cy="62" r="15" fill="#FFFFFF"/>
+  <circle cx="64" cy="62" r="12" fill="#4A90E2"/>
+  
+  <!-- Gear positions indicator -->
+  <!-- Top position (VIBE - fast) -->
+  <circle cx="64" cy="30" r="4" fill="#FFD700" stroke="#FFA500" stroke-width="2"/>
+  <text x="75" y="34" font-family="Arial, sans-serif" font-size="12" fill="#FFFFFF" font-weight="bold">V</text>
+  
+  <!-- Bottom position (DEV - careful) -->
+  <circle cx="64" cy="110" r="4" fill="#90EE90" stroke="#32CD32" stroke-width="2"/>
+  <text x="75" y="114" font-family="Arial, sans-serif" font-size="12" fill="#FFFFFF" font-weight="bold">D</text>
+  
+  <!-- Center line showing switch path -->
+  <line x1="64" y1="35" x2="64" y2="105" stroke="#FFFFFF" stroke-width="2" stroke-dasharray="3,3" opacity="0.5"/>
+  
+  <!-- Lightning bolt for VIBE (top) -->
+  <path d="M 50 25 L 55 32 L 52 32 L 57 40 L 50 33 L 53 33 Z" fill="#FFD700" stroke="#FFA500" stroke-width="1"/>
+  
+  <!-- Book for DEV (bottom) -->
+  <rect x="48" y="105" width="8" height="10" fill="#90EE90" stroke="#32CD32" stroke-width="1"/>
+  <line x1="52" y1="105" x2="52" y2="115" stroke="#32CD32" stroke-width="1"/>
+</svg>
+
+
