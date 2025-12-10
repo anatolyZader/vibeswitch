@@ -1,10 +1,10 @@
 {
   "name": "vibeswitch",
-  "displayName": "VibeSwitch - AI Agent Mode Switcher",
-  "description": "Switch between VIBE (autonomous) and DEV (collaborative) modes for Cursor AI agent",
+  "displayName": "VibeSwitch - Stay Aware, Stay in Control: Steer Your AI Speed",
+  "description": "Stop working on autopilot with AI. Live awareness monitoring helps you stay conscious and intentional.",
   "version": "1.0.0",
   "publisher": "your-publisher-name",
-  "icon": "images/icon.png",
+  "icon": "logo-steering-stick.png",
   "engines": {
     "vscode": "^1.80.0"
   },
@@ -14,10 +14,14 @@
   "keywords": [
     "cursor",
     "ai",
+    "awareness",
+    "collaboration",
+    "productivity",
     "agent",
-    "mode",
+    "monitoring",
     "vibe",
-    "dev"
+    "dev",
+    "feedback"
   ],
   "activationEvents": [
     "onStartupFinished"
@@ -27,17 +31,32 @@
     "commands": [
       {
         "command": "vibeswitch.switchMode",
-        "title": "Switch AI Agent Mode",
+        "title": "Switch AI Collaboration Mode",
         "category": "VibeSwitch"
       },
       {
         "command": "vibeswitch.toVibe",
-        "title": "Switch to VIBE Mode (Autonomous)",
+        "title": "Switch to VIBE Mode (Fast & Autonomous)",
         "category": "VibeSwitch"
       },
       {
         "command": "vibeswitch.toDev",
-        "title": "Switch to DEV Mode (Collaborative)",
+        "title": "Switch to DEV Mode (Slow & Aware)",
+        "category": "VibeSwitch"
+      },
+      {
+        "command": "vibeswitch.showStats",
+        "title": "Show Awareness Report",
+        "category": "VibeSwitch"
+      },
+      {
+        "command": "vibeswitch.resetStats",
+        "title": "Reset Statistics (Clear All Data)",
+        "category": "VibeSwitch"
+      },
+      {
+        "command": "vibeswitch.exportStats",
+        "title": "Export Statistics to JSON",
         "category": "VibeSwitch"
       }
     ],
@@ -54,7 +73,7 @@
         "vibeswitch.showInStatusBar": {
           "type": "boolean",
           "default": true,
-          "description": "Show mode indicator in status bar"
+          "description": "Show mode indicator and awareness meter in status bar"
         },
         "vibeswitch.rulesPath": {
           "type": "string",
@@ -64,13 +83,25 @@
         "vibeswitch.autoReload": {
           "type": "boolean",
           "default": false,
-          "description": "Automatically reload window after switching modes"
+          "description": "[DEPRECATED] Not used - mode switches are instant via .cursorrules"
+        },
+        "vibeswitch.skipCursorSettings": {
+          "type": "boolean",
+          "default": false,
+          "description": "[DEPRECATED] Not used - extension only modifies .cursorrules, not settings"
+        },
+        "vibeswitch.enableTelemetry": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable real-time awareness monitoring and long-term statistics (100% local, never sent anywhere)"
         }
       }
     }
   },
   "scripts": {
-    "package": "vsce package"
+    "test": "node ./test/suite/index.js",
+    "package": "vsce package",
+    "lint": "echo 'No linter configured yet'"
   },
   "devDependencies": {
     "@types/vscode": "^1.80.0",

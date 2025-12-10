@@ -1,0 +1,8 @@
+{
+  "cursor.chat.defaultMode": "agent",
+  "cursor.agent.requireApproval": false,
+  "cursor.agent.autoApplyEdits": true,
+  "cursor.ai.autoApply": true,
+  "files.autoSave": "afterDelay",
+  "files.autoSaveDelay": 1000
+}

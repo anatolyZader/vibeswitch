@@ -1,138 +1,394 @@
-# Installing VibeSwitch Extension
+# Installation Guide
 
-## Method 1: Install from VSIX (Local Installation)
+<p align="center">
+  <img src="logo-steering-stick.png" alt="VibeSwitch Logo" width="250">
+</p>
 
-### Step 1: Package the Extension
+**Get VibeSwitch running in 5 minutes.**
+
+---
+
+## 📋 Prerequisites
+
+Before installing, make sure you have:
+
+- ✅ **Cursor IDE** installed (https://cursor.sh)
+- ✅ **VS Code 1.80.0+** (Cursor is built on VS Code)
+- ✅ **A workspace folder** open in Cursor
+
+---
+
+## 📦 Installation Methods
+
+### Method 1: Install from VSIX (Recommended)
+
+1. **Download the Extension**
+   - Get `vibeswitch-1.0.0.vsix` from your source
+
+2. **Open Extensions Panel**
+   - Press `Ctrl+Shift+X` (Windows/Linux)
+   - Or `Cmd+Shift+X` (Mac)
+   - Or click the Extensions icon in the sidebar
+
+3. **Install from VSIX**
+   - Click the `⋯` (three dots) at the top of the Extensions panel
+   - Select **"Install from VSIX..."**
+   - Navigate to `vibeswitch-1.0.0.vsix`
+   - Click **"Install"**
+
+4. **Restart Cursor**
+   - Press `Ctrl+Shift+P` (or `Cmd+Shift+P`)
+   - Type: **"Developer: Reload Window"**
+   - Press Enter
+
+5. **Verify Installation**
+   - Look at the bottom-right status bar
+   - You should see: `⚙️ Mode?`
+   - Click it to set your first mode!
+
+---
+
+### Method 2: Install via Command Line
+
+If you prefer the terminal:
 
 ```bash
-cd vibeswitch-extension
+# Navigate to the directory containing the VSIX
+cd /path/to/vibeswitch
 
-# Install vsce if you don't have it
-npm install -g @vscode/vsce
-
-# Package the extension
-vsce package
-```
-
-This creates a `.vsix` file (e.g., `vibeswitch-1.0.0.vsix`)
-
-### Step 2: Install in Cursor/VSCode
-
-**Option A: Via Command Palette**
-1. Open Cursor/VSCode
-2. Press `Cmd+Shift+P` (Mac) or `Ctrl+Shift+P` (Windows/Linux)
-3. Type "Extensions: Install from VSIX"
-4. Select the `vibeswitch-1.0.0.vsix` file
-5. Reload the window when prompted
-
-**Option B: Via Command Line**
-```bash
+# Install with code CLI (if available)
 code --install-extension vibeswitch-1.0.0.vsix
+
+# Or use Cursor's CLI
+cursor --install-extension vibeswitch-1.0.0.vsix
 ```
 
-**Option C: Drag and Drop**
-1. Open Cursor/VSCode
-2. Open Extensions panel (`Cmd+Shift+X` or `Ctrl+Shift+X`)
-3. Drag the `.vsix` file into the Extensions panel
-
-### Step 3: Verify Installation
-
-1. Look at the bottom-right status bar
-2. You should see the VibeSwitch indicator: `⚙️ Mode?` or `📚 DEV` or `⚡ VIBE`
-3. Click it to test the mode switcher
+Then restart Cursor.
 
 ---
 
-## Method 2: Development Mode (For Testing)
+## 🎬 First Launch
 
-### Step 1: Open Extension in VSCode
+### 1. Open a Workspace Folder
+
+VibeSwitch requires a workspace folder to store mode files:
+
+- `File` → `Open Folder...`
+- Or `Ctrl+K Ctrl+O`
+
+**Why?** The extension creates `.cursorrules` files in your project root.
+
+### 2. Check Status Bar
+
+Look at the bottom-right corner:
+
+```
+⚙️ Mode?
+```
+
+This means no mode is set yet.
+
+### 3. Click to Choose Mode
+
+Click `⚙️ Mode?` and select:
+- **⚡ VIBE Mode** → Autonomous flow
+- **📚 DEV Mode** → Collaborative control
+
+### 4. Accept Default Files
+
+First time only, you'll see:
+
+```
+Missing .cursorrules.dev
+Would you like to create default mode files?
+```
+
+Click **"Yes"**. The extension will create:
+- `.cursorrules.vibe`
+- `.cursorrules.dev`
+- `.cursorrules` (active mode)
+
+**These files control Cursor AI behavior.**
+
+---
+
+## ✅ Verify It's Working
+
+### Check 1: Status Bar Shows Mode
+
+After choosing a mode:
+- **VIBE**: `⚡ VIBE`
+- **DEV**: `📚 DEV  🟢 ▱▱▱▱▱▱▱`
+
+### Check 2: Mode Files Exist
+
+Open your workspace folder and confirm:
+```
+your-project/
+├── .cursorrules       ← Active mode
+├── .cursorrules.vibe  ← VIBE template
+└── .cursorrules.dev   ← DEV template
+```
+
+### Check 3: Commands Are Available
+
+Press `Ctrl+Shift+P` and type "VibeSwitch":
+
+```
+VibeSwitch: Switch AI Collaboration Mode
+VibeSwitch: Switch to VIBE Mode
+VibeSwitch: Switch to DEV Mode
+VibeSwitch: Show Collaboration Statistics
+```
+
+If you see these commands, installation succeeded! ✅
+
+---
+
+## 🎮 Basic Usage
+
+### Switch Modes (3 Ways)
+
+**1. Click Status Bar** (Fastest)
+```
+Click: 📚 DEV  🟢 ▱▱▱▱▱▱▱
+```
+
+**2. Keyboard Shortcut**
+```
+Ctrl+Shift+M  (Windows/Linux)
+Cmd+Shift+M   (Mac)
+```
+
+**3. Command Palette**
+```
+Ctrl+Shift+P → "VibeSwitch: Switch AI Collaboration Mode"
+```
+
+### Test the Awareness Meter (DEV Mode)
+
+1. **Switch to DEV mode**
+2. **Create a test file**: `test.js`
+3. **Type a comment**: `// function to add two numbers`
+4. **Accept AI suggestion** (Tab key)
+5. **Watch the meter update** in 10 seconds
+
+If the meter turns orange/red, it's working! 🎉
+
+---
+
+## ⚙️ Configuration
+
+After installation, customize your settings:
+
+1. **Open Settings**
+   - `Ctrl+,` (or `Cmd+,`)
+   - Search: "VibeSwitch"
+
+2. **Available Options**
+
+```json
+{
+  // Show mode indicator and awareness meter
+  "vibeswitch.showInStatusBar": true,
+  
+  // Enable awareness monitoring and statistics
+  "vibeswitch.enableTelemetry": true,
+  
+  // Custom path for .cursorrules files (advanced)
+  "vibeswitch.rulesPath": ""
+}
+```
+
+---
+
+## 🔧 Troubleshooting
+
+### Issue: "No workspace folder open"
+
+**Problem:** Extension requires a workspace folder.
+
+**Solution:**
+```
+File → Open Folder → Select any project folder
+```
+
+---
+
+### Issue: Status bar doesn't show mode
+
+**Problem:** Extension not activated or statusBar setting disabled.
+
+**Solutions:**
+1. Check setting: `vibeswitch.showInStatusBar` = `true`
+2. Reload window: `Ctrl+Shift+P` → "Developer: Reload Window"
+3. Check extension is enabled: `Ctrl+Shift+X` → Search "VibeSwitch"
+
+---
+
+### Issue: ".cursorrules files not created"
+
+**Problem:** Permission issues or workspace not writable.
+
+**Solution:**
+1. Check folder permissions
+2. Manually create files:
 
 ```bash
-cd vibeswitch-extension
-code .
+cd your-project
+touch .cursorrules.vibe
+touch .cursorrules.dev
 ```
 
-### Step 2: Run Extension
-
-1. Press `F5` or click "Run > Start Debugging"
-2. A new "Extension Development Host" window opens
-3. Open your project folder in that window
-4. Test the extension
-
-### Step 3: Make Changes
-
-- Edit `extension.js` for logic changes
-- Edit `package.json` for configuration
-- Press `Cmd+R` (Mac) or `Ctrl+R` (Windows/Linux) in the Extension Development Host to reload
+3. Copy templates from:
+   - [.cursorrules.vibe template](.cursorrules.vibe)
+   - [.cursorrules.dev template](.cursorrules.dev)
 
 ---
 
-## Method 3: Publish to Marketplace (Future)
+### Issue: "Extension host did not start in 10 seconds"
 
-### Prerequisites
+**Problem:** VS Code extension host startup timeout (common in development).
 
-1. Create a [Visual Studio Marketplace](https://marketplace.visualstudio.com/) account
-2. Get a Personal Access Token from [Azure DevOps](https://dev.azure.com/)
+**Solution:**
+1. Close Cursor completely
+2. Reopen your workspace
+3. Wait 30 seconds for extension to activate
+4. Check status bar
 
-### Publishing Steps
+---
+
+### Issue: Awareness meter not updating
+
+**Problem:** Event listeners not working or telemetry disabled.
+
+**Solutions:**
+1. Verify setting: `vibeswitch.enableTelemetry` = `true`
+2. Switch to DEV mode (meter only works in DEV)
+3. Open console for debug logs:
+   - `Ctrl+Shift+I` → Console tab
+   - Look for: `AwarenessMonitor: Starting...`
+
+---
+
+### Issue: Mode switch doesn't change AI behavior
+
+**Problem:** Cursor not reading `.cursorrules` or file conflicts.
+
+**Solutions:**
+1. Check `.cursorrules` exists and has content
+2. Compare with `.cursorrules.vibe` / `.cursorrules.dev`
+3. Manually reload Cursor window:
+   - `Ctrl+Shift+P` → "Developer: Reload Window"
+
+---
+
+## 🗑️ Uninstallation
+
+### To Remove VibeSwitch
+
+1. **Open Extensions**
+   - `Ctrl+Shift+X`
+
+2. **Find VibeSwitch**
+   - Search: "VibeSwitch"
+
+3. **Uninstall**
+   - Click `⚙️` → "Uninstall"
+
+4. **Reload Window**
+   - `Ctrl+Shift+P` → "Developer: Reload Window"
+
+### Clean Up Mode Files (Optional)
+
+If you want to remove all VibeSwitch files from your workspace:
 
 ```bash
-cd vibeswitch-extension
-
-# Login (one-time)
-vsce login your-publisher-name
-
-# Publish
-vsce publish
+cd your-project
+rm .cursorrules
+rm .cursorrules.vibe
+rm .cursorrules.dev
+rm .vibeswitch-telemetry.json  # Statistics file
 ```
 
-Then install from the marketplace like any other extension.
+**Note:** This will reset Cursor AI to default behavior.
 
 ---
 
-## Troubleshooting
+## 📁 File Structure
 
-### "Command 'vsce' not found"
-```bash
-npm install -g @vscode/vsce
+After installation, your workspace will have:
+
+```
+your-project/
+│
+├── .cursorrules              # Active mode rules (symlink-like)
+├── .cursorrules.vibe         # VIBE mode template
+├── .cursorrules.dev          # DEV mode template
+│
+├── .vibeswitch-telemetry.json # Statistics (local only)
+│
+└── your-code/
+    └── ...
 ```
 
-### "Extension not showing in status bar"
-1. Check settings: `vibeswitch.showInStatusBar` should be `true`
-2. Reload window: `Cmd/Ctrl+Shift+P` → "Reload Window"
-3. Check you have a workspace folder open
-
-### "Mode files not found"
-1. Click the mode indicator
-2. Extension will prompt to create default files
-3. Or manually create `.cursorrules.vibe` and `.cursorrules.dev`
-
-### Extension not activating
-1. Check the output console: `View > Output` → Select "VibeSwitch"
-2. Check for errors in `Help > Toggle Developer Tools > Console`
+**All files are local. Nothing is sent to any server.**
 
 ---
 
-## Uninstalling
+## 🚀 Next Steps
 
-1. Open Extensions panel (`Cmd+Shift+X` or `Ctrl+Shift+X`)
-2. Find "VibeSwitch"
-3. Click the gear icon → "Uninstall"
+Now that VibeSwitch is installed:
 
-Or via command line:
-```bash
-code --uninstall-extension your-publisher-name.vibeswitch
+1. **[Read the Visual Overview](VISUAL-OVERVIEW.md)** - Understand the UI
+2. **[Test the Awareness Meter](AWARENESS-TESTING.md)** - Structured exercises
+3. **[Check Statistics](TELEMETRY.md)** - Learn about the dashboard
+4. **[Read Settings Comparison](SETTINGS-COMPARISON.md)** - VIBE vs DEV details
+
+---
+
+## 🆘 Still Having Issues?
+
+### Debug Checklist
+
+- [ ] Workspace folder is open?
+- [ ] Extension shows in Extensions panel?
+- [ ] Status bar item visible?
+- [ ] `.cursorrules` files exist in workspace?
+- [ ] Settings configured correctly?
+- [ ] Window reloaded after install?
+
+### Get Console Logs
+
+1. `Ctrl+Shift+I` → Console
+2. Type: `VibeSwitch` (filter logs)
+3. Copy any error messages
+
+### Common Error Messages
+
+```
+"No workspace folder open"
+→ Open a folder: File → Open Folder
+
+"Failed to read .cursorrules"
+→ Check file permissions
+
+"AwarenessMonitor failed to start"
+→ Check telemetry enabled in settings
 ```
 
 ---
 
-## Next Steps
+## ✅ Installation Complete!
 
-Once installed:
-1. Click the status bar mode indicator
-2. Choose between VIBE and DEV modes
-3. Enjoy seamless mode switching!
+If you see this in your status bar, you're ready to go:
 
-See [README.md](README.md) for usage details.
+```
+📚 DEV  🟢 ▱▱▱▱▱▱▱
+```
 
+**Welcome to conscious AI collaboration.** 🧠⚡
 
+---
+
+**Questions? Open an issue on GitHub or check the [README](README.md).**

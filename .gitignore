@@ -1,7 +1,44 @@
-node_modules
+# Node modules
+node_modules/
+
+# Build outputs
+out/
+dist/
+
+# Extension packages
 *.vsix
-.vscode-test/
+
+# Logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Dependency directories
+jspm_packages/
+
+# VS Code directories
+.vscode-test/
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
 .DS_Store
+Thumbs.db
 
+# Environment variables
+.env
+.env.local
 
+# Testing
+coverage/
+.nyc_output/
+
+# Temporary files
+*.tmp
+*.temp

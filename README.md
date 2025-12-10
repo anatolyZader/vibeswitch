@@ -1,130 +1,115 @@
-# VibeSwitch - AI Agent Mode Switcher for Cursor
+# VibeSwitch - AI Collaboration Awareness and Control
 
-Switch between **VIBE Mode** (autonomous AI) and **DEV Mode** (collaborative AI) with a single click!
+<p align="center">
+  <img src="logo-steering-stick.png" alt="VibeSwitch Logo" width="400">
+</p>
 
-![VibeSwitch Demo](images/demo.gif)
-
-## Features
-
-- 🎚️ **Status Bar Integration** - See your current mode at a glance
-- ⚡ **Quick Mode Switching** - Click to switch between modes instantly
-- 🎨 **Visual Indicators** - Different colors and icons for each mode
-- ⌨️ **Keyboard Shortcut** - Press `Cmd+Shift+M` (Mac) or `Ctrl+Shift+M` (Windows/Linux)
-- 🔄 **Auto-Reload** - Optionally reload window after switching (configurable)
-- 📁 **Workspace-Aware** - Detects and manages mode files in your workspace
-
-## Quick Start
-
-1. Install the extension
-2. Look at the bottom-right status bar - you'll see the gear icon `⚙️`
-3. Click on it to choose between:
-   - **⚡ VIBE Mode** - Autonomous AI that works independently
-   - **📚 DEV Mode** - Collaborative AI that explains everything
-
-## Modes Explained
-
-### VIBE Mode (Autonomous)
-- AI makes decisions independently
-- Minimal interruptions and approvals
-- Perfect for building features quickly
-- Auto-apply suggestions enabled
-- Best for: Prototyping, refactoring, time-sensitive work
-
-### DEV Mode (Collaborative)  
-- AI asks for approval before changes
-- Detailed explanations provided
-- Step-by-step collaboration
-- Educational approach
-- Best for: Learning, code review, understanding changes
-
-## Usage
-
-### From Status Bar
-Click the status bar item showing your current mode:
-- `$(dashboard) VIBE` - Currently in VIBE mode
-- `$(book) DEV` - Currently in DEV mode
-- `$(gear) Mode?` - No mode set
-
-### From Command Palette
-Press `Cmd/Ctrl+Shift+P` and type:
-- `VibeSwitch: Switch AI Agent Mode` - Show mode picker
-- `VibeSwitch: Switch to VIBE Mode` - Direct switch to VIBE
-- `VibeSwitch: Switch to DEV Mode` - Direct switch to DEV
-
-### Keyboard Shortcut
-Press `Cmd+Shift+M` (Mac) or `Ctrl+Shift+M` (Windows/Linux) to open the mode picker.
-
-## Configuration
-
-Open Settings (`Cmd/Ctrl+,`) and search for "VibeSwitch":
-
-```json
-{
-  // Show/hide mode indicator in status bar
-  "vibeswitch.showInStatusBar": true,
-  
-  // Automatically reload window after switching modes
-  "vibeswitch.autoReload": false,
-  
-  // Custom path to .cursorrules files (leave empty for workspace root)
-  "vibeswitch.rulesPath": ""
-}
-```
-
-## How It Works
-
-VibeSwitch manages two types of files in your workspace:
-
-1. **`.cursorrules`** - Instructions for the Cursor AI agent
-   - `.cursorrules.vibe` - VIBE mode instructions
-   - `.cursorrules.dev` - DEV mode instructions
-
-2. **`.vscode/settings.json`** - IDE and agent configuration
-   - `.vscode/settings.vibe.json` - VIBE mode settings
-   - `.vscode/settings.dev.json` - DEV mode settings
-
-When you switch modes, the extension copies the appropriate files to the active configuration.
-
-## Requirements
-
-- VSCode 1.80.0 or higher
-- Cursor AI (for AI agent features)
-- Workspace must have mode configuration files (extension can create defaults)
-
-## Extension Settings
-
-This extension contributes the following settings:
-
-* `vibeswitch.showInStatusBar`: Show/hide the mode indicator in the status bar
-* `vibeswitch.autoReload`: Automatically reload the window after switching modes
-* `vibeswitch.rulesPath`: Custom path for .cursorrules files
-
-## Known Issues
-
-- Window reload may be required for some settings to take full effect
-- First-time setup requires creating mode configuration files
-
-## Release Notes
-
-### 1.0.0
-
-Initial release of VibeSwitch:
-- Status bar mode indicator
-- Quick pick mode switcher
-- Command palette integration
-- Keyboard shortcuts
-- Auto-reload option
-
-## Contributing
-
-Found a bug or have a feature request? Please open an issue on [GitHub](https://github.com/yourusername/vibeswitch).
-
-## License
-
-MIT License - See LICENSE file for details
+<p align="center">
+  <strong>Stay Aware, Stay in Control: Steer Your AI Speed</strong>
+</p>
 
 ---
 
-**Enjoy smoother AI collaboration with VibeSwitch!** ⚡📚
+**Master your AI collaboration style with real-time awareness feedback.**
 
+Switch deliberately between autonomous (VIBE) mode or skeptical and collaborative (DEV) mode.
 
+## 🎯 Core Mission
+
+Awareness is everything. When working with AI, it's easy to slip into autopilot—accepting suggestions blindly, losing track of what's happening in your code. VibeSwitch keeps you conscious of your collaboration style by:
+
+---
+
+## Distinguishing Two Fundamental Modes:
+
+---
+
+### 🌊 VIBE Mode  (Full trust, autonomous flow, AI-driven)
+
+✅ AI works independently with minimal interruptions  
+✅ Suggestions auto-applied without approval  
+✅ Fast prototyping and refactoring  
+✅ Perfect for: Building MVPs, exploratory coding, time pressure  
+
+**Philosophy:** Maximum velocity, minimum friction. You review later.
+
+When this mode is active, its name (VIBE) is presented on the bright orange background signalling a developer that they are in VIBE mode and should be cautious.
+
+---
+
+### 🧠 DEV Mode (Skeptical review, collaborative control, human-driven)
+
+**"I'm in the driver's seat."**
+
+In DEV mode, the extension provides continuous feedback through a real-time awareness meter, based on deliberate telemetry mechanisms and backed by the latest research of software developers' interaction with agentic tools.
+
+✅ AI asks permission before every edit  
+✅ Detailed explanations provided  
+✅ Step-by-step collaboration  
+✅ Perfect for: Learning, production code, critical systems  
+
+**Real-Time Awareness Meter:**
+
+A live color-coded meter shows how carefully you're reviewing AI suggestions:
+
+🟢 **Green (0-39%):** Excellent! Careful review, skeptical acceptance  
+🟡 **Yellow (40-59%):** Moderate trust—you're coasting a bit  
+🟠 **Orange (60-79%):** Warning—you're accepting too much blindly  
+🔴 **Red (80-100%):** Danger—blind acceptance (are you really in control?)
+
+The meter updates every 10 seconds and appears in the status bar.
+
+---
+
+## Bonus Feature:
+
+**Statistics Dashboard**
+
+Track your collaboration habits over time with session-based telemetry:
+- Session duration and mode usage
+- Code review patterns  
+- Acceptance vs. rejection ratios
+- Awareness trends across sessions
+
+Access via Command Palette: `VibeSwitch: Show Telemetry Report`
+
+---
+
+## 📊 Status Bar Indicators:
+
+### Mode Indicator (Left Side)
+- **⚡ VIBE** - Currently in autonomous mode
+- **📚 DEV** - Currently in collaborative mode
+- **⚙️ Mode?** - No mode set (first launch)
+
+### Awareness Meter (DEV Mode Only)
+- **🟢 ▱▱▱▱▱▱▱** - Low engagement (0-10%) = Good skepticism
+- **🟡 ▰▰▰▰▱▱▱** - Moderate (50%) = Watch your trust level
+- **🟠 ▰▰▰▰▰▰▱** - High (80%) = You're coasting, wake up!
+- **🔴 ▰▰▰▰▰▰▰** - Maxed (100%) = Blind acceptance detected
+
+The meter helps you stay conscious during DEV mode. If it's turning red, you're not really in DEV mode—you're just pretending while acting like VIBE mode.
+
+---
+
+## 🚀 Getting Started
+
+1. Install VibeSwitch from the Extensions marketplace
+2. Open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`)
+3. Type "VibeSwitch: Switch AI Collaboration Mode"
+4. Choose VIBE or DEV mode based on your current task
+
+**That's it!** The extension works immediately—no reload needed.
+
+---
+
+## 📖 Learn More
+
+- See `TELEMETRY.md` for details on awareness metrics
+- See `VISUAL-OVERVIEW.md` for UI explanations
+- See `INSTALLATION.md` for detailed setup instructions
+
+---
+
+**Publisher:** anatolyZader  
+**License:** MIT
