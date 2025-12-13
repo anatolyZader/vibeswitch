@@ -1,39 +1,40 @@
 /**
- * VibeSwitch Telemetry Module
- * Privacy-first, local-only usage tracking and awareness metrics
+ * VibeSwitch Usage Statistics Module
+ * Privacy-first, local-only historical usage tracking and statistics
  */
 
 const vscode = require('vscode');
 const fs = require('fs');
 const path = require('path');
 
-class TelemetryManager {
+class UsageStatsManager {
     constructor(context) {
         this.context = context;
-        this.telemetryPath = path.join(context.globalStorageUri.fsPath, 'telemetry.json');
+        // Keep 'telemetry.json' filename for backwards compatibility with existing user data
+        this.usageStatsPath = path.join(context.globalStorageUri.fsPath, 'telemetry.json');
         this.currentSession = null;
         this.ensureStorageExists();
-        this.loadTelemetry();
+        this.loadUsageStats();
     }
 
     ensureStorageExists() {
-        const dir = path.dirname(this.telemetryPath);
+        const dir = path.dirname(this.usageStatsPath);
         if (!fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
         }
     }
 
-    loadTelemetry() {
+    loadUsageStats() {
         try {
-            if (fs.existsSync(this.telemetryPath)) {
-                const data = fs.readFileSync(this.telemetryPath, 'utf8');
+            if (fs.existsSync(this.usageStatsPath)) {
+                const data = fs.readFileSync(this.usageStatsPath, 'utf8');
                 this.data = JSON.parse(data);
             } else {
                 this.data = this.getDefaultData();
-                this.saveTelemetry();
+                this.saveUsageStats();
             }
         } catch (error) {
-            console.error('VibeSwitch: Failed to load telemetry:', error);
+            console.error('VibeSwitch: Failed to load usage statistics:', error);
             this.data = this.getDefaultData();
         }
     }
@@ -103,12 +104,12 @@ class TelemetryManager {
         };
     }
 
-    saveTelemetry() {
+    saveUsageStats() {
         try {
             this.data.lastUpdated = new Date().toISOString();
-            fs.writeFileSync(this.telemetryPath, JSON.stringify(this.data, null, 2));
+            fs.writeFileSync(this.usageStatsPath, JSON.stringify(this.data, null, 2));
         } catch (error) {
-            console.error('VibeSwitch: Failed to save telemetry:', error);
+            console.error('VibeSwitch: Failed to save usage statistics:', error);
         }
     }
 
@@ -149,7 +150,7 @@ class TelemetryManager {
         // Start new session
         this.startSession(toMode, timestamp);
 
-        this.saveTelemetry();
+        this.saveUsageStats();
     }
 
     startSession(mode, timestamp) {
@@ -196,7 +197,7 @@ class TelemetryManager {
 
         this.currentSession = null;
         this.updateStats();
-        this.saveTelemetry();
+        this.saveUsageStats();
     }
 
     // Track status bar click (mode check)
@@ -209,7 +210,101 @@ class TelemetryManager {
         if (mode && this.data.awareness[mode]) {
             this.data.awareness[mode].statusBarClicks++;
         }
-        this.saveTelemetry();
+        this.saveUsageStats();
+    }
+
+    // ==================== AI-AWARE TRACKING ====================
+    
+    /**
+     * Track when AI generates a suggestion
+     */
+    trackAISuggestion(event) {
+        const config = vscode.workspace.getConfiguration('vibeswitch');
+        if (!config.get('enableTelemetry', true)) return;
+
+        const mode = this.currentSession?.mode;
+        if (!mode || !this.data.awareness[mode]) return;
+
+        const bucket = this.data.awareness[mode];
+        bucket.aiSuggestions = (bucket.aiSuggestions || 0) + 1;
+        bucket.aiTotalSize = (bucket.aiTotalSize || 0) + event.size;
+
+        this.saveUsageStats();
+    }
+
+    /**
+     * Track outcome of AI suggestion (accepted/rejected/adapted)
+     */
+    trackAISuggestionOutcome(event) {
+        const config = vscode.workspace.getConfiguration('vibeswitch');
+        if (!config.get('enableTelemetry', true)) return;
+
+        const mode = this.currentSession?.mode;
+        if (!mode || !this.data.awareness[mode]) return;
+
+        const bucket = this.data.awareness[mode];
+        bucket.aiAccepted = (bucket.aiAccepted || 0) + (event.status === 'accepted' ? 1 : 0);
+        bucket.aiRejected = (bucket.aiRejected || 0) + (event.status === 'rejected' ? 1 : 0);
+        bucket.aiAdapted = (bucket.aiAdapted || 0) + (event.status === 'adapted' ? 1 : 0);
+        bucket.aiReviewed = (bucket.aiReviewed || 0) + (event.reviewTime > 0 ? 1 : 0);
+        bucket.aiTotalReviewTime = (bucket.aiTotalReviewTime || 0) + event.reviewTime;
+
+        this.saveUsageStats();
+    }
+
+    /**
+     * Track when review debt is cleared
+     */
+    trackAIDebtCleared(event) {
+        const config = vscode.workspace.getConfiguration('vibeswitch');
+        if (!config.get('enableTelemetry', true)) return;
+
+        const mode = this.currentSession?.mode;
+        if (!mode || !this.data.awareness[mode]) return;
+
+        const bucket = this.data.awareness[mode];
+        bucket.aiDebtCleared = (bucket.aiDebtCleared || 0) + 1;
+        bucket.aiDebtTotalReviewTime = (bucket.aiDebtTotalReviewTime || 0) + event.totalReviewTime;
+
+        this.saveUsageStats();
+    }
+
+    /**
+     * Track "Keep All" button clicks (detected via pattern matching)
+     * 
+     * This tracks when multiple AI suggestions are accepted rapidly,
+     * which typically indicates the user clicked Cursor's "Keep All" button.
+     * 
+     * @param {Object} event - Event data
+     * @param {number} event.count - Number of suggestions accepted
+     * @param {number} event.fileCount - Number of files affected
+     * @param {number} event.totalSize - Total size of accepted changes
+     * @param {number} event.timestamp - When the "Keep All" was detected
+     * @param {number} event.window - Detection window in milliseconds
+     */
+    trackKeepAll(event) {
+        const config = vscode.workspace.getConfiguration('vibeswitch');
+        if (!config.get('enableTelemetry', true)) return;
+
+        const mode = this.currentSession?.mode;
+        if (!mode || !this.data.awareness[mode]) return;
+
+        const bucket = this.data.awareness[mode];
+        
+        // Track "Keep All" events
+        bucket.keepAllClicks = (bucket.keepAllClicks || 0) + 1;
+        bucket.keepAllTotalSuggestions = (bucket.keepAllTotalSuggestions || 0) + event.count;
+        bucket.keepAllTotalFiles = (bucket.keepAllTotalFiles || 0) + event.fileCount;
+        bucket.keepAllTotalSize = (bucket.keepAllTotalSize || 0) + event.totalSize;
+        
+        // Track average suggestions per "Keep All"
+        if (bucket.keepAllClicks > 0) {
+            bucket.keepAllAvgSuggestions = Math.round(
+                bucket.keepAllTotalSuggestions / bucket.keepAllClicks
+            );
+        }
+
+        this.saveUsageStats();
     }
 
     // Track file open (awareness indicator)
@@ -228,14 +323,14 @@ class TelemetryManager {
             }
         } else if (fileName.includes('.cursorrules')) {
             this.data.awareness[mode].cursorrulesFileOpens++;
-        } else if (fileName.match(/README|SETTINGS-COMPARISON|TESTING|TELEMETRY/i)) {
+        } else if (fileName.match(/README|SETTINGS-COMPARISON|TESTING|USAGE-STATS/i)) {
             this.data.awareness[mode].documentationViews++;
             // In DEV mode, reading docs shows learning intent
             if (mode === 'dev') {
                 this.data.awareness[mode].questionAsking++;
             }
         }
-        this.saveTelemetry();
+        this.saveUsageStats();
     }
 
     // Track edit (awareness indicator)
@@ -262,7 +357,7 @@ class TelemetryManager {
                 this.data.awareness[mode].autoAcceptance++;
             }
             
-            this.saveTelemetry();
+            this.saveUsageStats();
         }
     }
 
@@ -301,7 +396,7 @@ class TelemetryManager {
 
     // [DEPRECATED] Calculate VIBE mode awareness score (0-100)
     // VIBE mode is about full autonomy - no awareness score needed
-    // This is kept for backwards compatibility with existing telemetry data
+    // This is kept for backwards compatibility with existing usage statistics data
     calculateVibeAwarenessScore() {
         const a = this.data.awareness.vibe;
         const usage = this.data.modeUsage.vibe;
@@ -545,20 +640,26 @@ class TelemetryManager {
         return recommendations;
     }
 
-    // Reset telemetry (privacy feature)
+    // Reset usage statistics (privacy feature)
     reset() {
         this.data = this.getDefaultData();
         this.currentSession = null;
-        this.saveTelemetry();
+        this.saveUsageStats();
     }
 
-    // Export telemetry data (privacy feature)
+    // Export usage statistics data (privacy feature)
     exportData() {
         return JSON.parse(JSON.stringify(this.data));
     }
 }
 
-module.exports = TelemetryManager;
+module.exports = UsageStatsManager;
+
+
+
+
+
+
 
 
 

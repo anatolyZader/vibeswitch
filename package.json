@@ -58,6 +58,21 @@
         "command": "vibeswitch.exportStats",
         "title": "Export Statistics to JSON",
         "category": "VibeSwitch"
+      },
+      {
+        "command": "vibeswitch.showLogs",
+        "title": "Show Extension Logs",
+        "category": "VibeSwitch"
+      },
+      {
+        "command": "vibeswitch.showStatusBar",
+        "title": "Show Status Bar Items",
+        "category": "VibeSwitch"
+      },
+      {
+        "command": "vibeswitch.diagnoseMonitor",
+        "title": "Diagnose Awareness Monitor",
+        "category": "VibeSwitch"
       }
     ],
     "keybindings": [
