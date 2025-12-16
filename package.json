@@ -73,6 +73,21 @@
         "command": "vibeswitch.diagnoseMonitor",
         "title": "Diagnose Awareness Monitor",
         "category": "VibeSwitch"
+      },
+      {
+        "command": "vibeswitch.diagnoseDecorations",
+        "title": "Diagnose File Decorations",
+        "category": "VibeSwitch"
+      },
+      {
+        "command": "vibeswitch.detectTestingFiles",
+        "title": "Detect Testing Files",
+        "category": "VibeSwitch"
+      },
+      {
+        "command": "vibeswitch.showUnreviewedFiles",
+        "title": "Show Unreviewed Files",
+        "category": "VibeSwitch"
       }
     ],
     "keybindings": [
@@ -128,5 +143,3 @@
   },
   "license": "MIT"
 }
-
-

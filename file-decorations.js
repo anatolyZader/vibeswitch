@@ -1,0 +1,232 @@
+/**
+ * File Decorations Provider for VibeSwitch
+ * 
+ * Provides visual indicators in the VS Code Explorer for unreviewed AI changes:
+ * - Review debt files: Red with ⚠ badge
+ * - Pending new files: Blue/purple with ⏳ badge  
+ * - Pending changes: Orange/yellow with ⏳ badge
+ */
+
+const vscode = require('vscode');
+const { getLogger } = require('./logger');
+
+class UnreviewedFileDecorationProvider {
+    constructor(awarenessMonitor, getCurrentMode, logOutput) {
+        this.awarenessMonitor = awarenessMonitor;
+        this.getCurrentMode = getCurrentMode;
+        this.logOutput = logOutput;
+        this._onDidChangeFileDecorations = new vscode.EventEmitter();
+        this.debugCallCount = 0;
+        this.logger = getLogger();
+        
+        // Only log important initialization messages
+        this.log('[FileDecorations] Provider instance created', true);
+    }
+
+    /**
+     * Logs a message using throttled logger
+     */
+    log(message, force = false) {
+        if (this.logger) {
+            this.logger.log(message, force);
+        } else {
+            // Fallback if logger not initialized
+            console.log(message);
+            if (this.logOutput) {
+                this.logOutput.appendLine(message);
+            }
+        }
+    }
+
+    /**
+     * Registers this provider with VS Code
+     */
+    register(context) {
+        this.log('[FileDecorations] Registering file decoration provider...');
+        
+        try {
+            const provider = vscode.window.registerFileDecorationProvider(this);
+            context.subscriptions.push(provider);
+            this.log('[FileDecorations] ✅ File decoration provider registered successfully');
+            return provider;
+        } catch (error) {
+            this.log(`[FileDecorations] ❌ ERROR registering provider: ${error.message}`, true);
+            this.log(`[FileDecorations] Stack: ${error.stack}`, true);
+            return null;
+        }
+    }
+
+    /**
+     * Normalizes a file path for consistent comparison
+     */
+    normalizePath(filePath) {
+        if (!filePath) return '';
+        try {
+            // Resolve to absolute path and normalize separators
+            const normalized = require('path').resolve(filePath).replace(/\\/g, '/').toLowerCase();
+            return normalized;
+        } catch (error) {
+            // Fallback to simple normalization
+            return filePath.replace(/\\/g, '/').toLowerCase();
+        }
+    }
+
+    /**
+     * Provides file decoration for a given URI
+     * Called by VS Code for each file in the Explorer
+     */
+    provideFileDecoration(uri, token) {
+        this.debugCallCount++;
+        const fileName = require('path').basename(uri.fsPath);
+        
+        // Throttle logging to avoid spam (log every 50th call)
+        if (this.debugCallCount % 50 === 0) {
+            this.log(`[FileDecorations] provideFileDecoration called ${this.debugCallCount} times`);
+        }
+
+        try {
+            // Only decorate in DEV mode
+            const currentMode = this.getCurrentMode ? this.getCurrentMode() : null;
+            if (currentMode !== 'dev') {
+                if (this.debugCallCount <= 5) {
+                    this.log(`[FileDecorations] Skipping decoration for ${fileName} (mode=${currentMode}, not dev)`);
+                }
+                return null;
+            }
+
+            if (!this.awarenessMonitor) {
+                if (this.debugCallCount <= 5) {
+                    this.log(`[FileDecorations] No awareness monitor available for ${fileName}`);
+                }
+                return null;
+            }
+
+            // Get current score data
+            const scoreData = this.awarenessMonitor.getScore();
+            if (!scoreData) {
+                if (this.debugCallCount <= 5) {
+                    this.log(`[FileDecorations] No score data available for ${fileName}`);
+                }
+                return null;
+            }
+
+            const filePath = uri.fsPath;
+            const normalizedPath = this.normalizePath(filePath);
+            
+            // Log when checking specific files that might have debt (first 20 calls or when we have debt files)
+            const hasDebtFiles = scoreData.debt && scoreData.debt.files && scoreData.debt.files.length > 0;
+            const shouldLog = this.debugCallCount <= 20 || hasDebtFiles;
+
+            // Check if file is in review debt
+            if (scoreData.debt && scoreData.debt.files) {
+                for (const debtFile of scoreData.debt.files) {
+                    const normalizedDebtPath = this.normalizePath(debtFile.fullPath);
+                    const matches = normalizedPath === normalizedDebtPath;
+                    
+                    // Log matches for debugging (especially for files we're looking for)
+                    if (shouldLog || matches) {
+                        this.log(`[FileDecorations] Checking debt for ${fileName}: "${normalizedPath}" vs "${normalizedDebtPath}" -> ${matches}`);
+                    }
+                    
+                    if (matches) {
+                        this.log(`[FileDecorations] ✅ RETURNING RED DECORATION for ${fileName} (${debtFile.modifications} modifications, ${debtFile.ageMinutes}m ago)`);
+                        return {
+                            badge: '⚠',
+                            tooltip: `Unreviewed AI changes: ${debtFile.modifications} modifications, ${debtFile.ageMinutes}m ago`,
+                            color: new vscode.ThemeColor('errorForeground') // Red
+                        };
+                    }
+                }
+            }
+
+            // Check if file is in pending suggestions
+            if (scoreData.suggestions && scoreData.suggestions.pendingFiles) {
+                for (const pendingFile of scoreData.suggestions.pendingFiles) {
+                    const normalizedPendingPath = this.normalizePath(pendingFile.fullPath);
+                    const matches = normalizedPath === normalizedPendingPath;
+                    
+                    // Log matches for debugging
+                    if (shouldLog || matches) {
+                        this.log(`[FileDecorations] Checking pending for ${fileName}: "${normalizedPath}" vs "${normalizedPendingPath}" -> ${matches}`);
+                    }
+                    
+                    if (matches) {
+                        const isNewFile = pendingFile.type === 'file creation' || pendingFile.type === 'external file';
+                        const colorType = isNewFile ? 'BLUE/PURPLE' : 'ORANGE/YELLOW';
+                        this.log(`[FileDecorations] ✅ RETURNING ${colorType} DECORATION for ${fileName} (${pendingFile.type}, ${pendingFile.ageMinutes}m ago)`);
+                        
+                        // Different colors for different types
+                        return {
+                            badge: '⏳',
+                            tooltip: `Pending review: ${pendingFile.type}, ${pendingFile.ageMinutes}m ago`,
+                            color: isNewFile 
+                                ? new vscode.ThemeColor('textLink.foreground') // Blue/purple for new files
+                                : new vscode.ThemeColor('warningForeground') // Orange/yellow for changes
+                        };
+                    }
+                }
+            }
+
+            // No decoration needed - log occasionally for debugging
+            if (shouldLog && hasDebtFiles) {
+                this.log(`[FileDecorations] No decoration for ${fileName} (checked ${scoreData.debt.files.length} debt files, ${scoreData.suggestions?.pendingFiles?.length || 0} pending files)`);
+            }
+            return null;
+
+        } catch (error) {
+            this.log(`[FileDecorations] ❌ ERROR in provideFileDecoration: ${error.message}`, true);
+            this.log(`[FileDecorations] Stack: ${error.stack}`, true);
+            return null;
+        }
+    }
+
+    /**
+     * Event emitter for decoration changes
+     */
+    get onDidChangeFileDecorations() {
+        return this._onDidChangeFileDecorations.event;
+    }
+
+    /**
+     * Triggers a refresh of all file decorations
+     * Can optionally refresh a specific URI
+     */
+    refresh(uri = null) {
+        this.log(`[FileDecorations] 🔄 Refreshing file decorations${uri ? ` for ${uri.fsPath}` : ' (all files)'}...`);
+        try {
+            // Fire the event to notify VS Code to refresh decorations
+            // If URI is provided, refresh only that file; otherwise refresh all
+            if (uri) {
+                this._onDidChangeFileDecorations.fire(uri);
+                this.log(`[FileDecorations] ✅ Refresh event fired for specific file: ${uri.fsPath}`);
+            } else {
+                // Fire with undefined to refresh all files
+                this._onDidChangeFileDecorations.fire(undefined);
+                this.log('[FileDecorations] ✅ Refresh event fired for all files');
+            }
+        } catch (error) {
+            this.log(`[FileDecorations] ❌ Error refreshing: ${error.message}`, true);
+            this.log(`[FileDecorations] Stack: ${error.stack}`, true);
+        }
+    }
+
+    /**
+     * Disposes of resources
+     */
+    dispose() {
+        this.log('[FileDecorations] Disposing file decoration provider');
+        this._onDidChangeFileDecorations.dispose();
+    }
+}
+
+module.exports = UnreviewedFileDecorationProvider;
+
+
+
+
+
+
+
+
+
+

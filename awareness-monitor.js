@@ -6,18 +6,27 @@
 const vscode = require('vscode');
 const fs = require('fs');
 const path = require('path');
+const { getLogger } = require('./logger');
 
-// Global output channel for logging (set by extension)
-let logOutput = null;
+// Global logger instance
+let logger = null;
 
 function setLogOutput(channel) {
-    logOutput = channel;
+    logger = getLogger();
+    if (channel && logger.outputChannel !== channel) {
+        logger.outputChannel = channel;
+    }
 }
 
-function log(message) {
-    console.log(message);
-    if (logOutput) {
-        logOutput.appendLine(message);
+function log(message, force = false) {
+    if (!logger) {
+        logger = getLogger();
+    }
+    // Skip verbose debug logs by default (they're throttled anyway)
+    if (message.includes('[DEBUG]') && !force) {
+        logger.debug(message);
+    } else {
+        logger.log(message, force);
     }
 }
 
@@ -123,6 +132,9 @@ class AwarenessMonitor {
         // Set up file system watcher for externally created files
         this.setupFileSystemWatcher();
         
+        // Scan for existing files that should be in review debt
+        this.scanExistingFiles();
+        
         // Start periodic score updates (every 10 seconds)
         this.updateTimer = setInterval(() => {
             this.updateScore();
@@ -135,7 +147,16 @@ class AwarenessMonitor {
         
         // Log initial state
         log(`AwarenessMonitor: Initial score update...`);
-        this.updateScore();
+        // If we have existing suggestions or debt, preserve the score calculation
+        // Otherwise, calculate fresh
+        if (this.aiSuggestions.length > 0 || this.reviewDebt.size > 0) {
+            log(`AwarenessMonitor: Preserving existing state (${this.aiSuggestions.length} suggestions, ${this.reviewDebt.size} debt files)`);
+            // Recalculate score from existing data
+            this.updateScore();
+        } else {
+            // Fresh start - no existing data
+            this.updateScore();
+        }
     }
 
     /**
@@ -166,12 +187,11 @@ class AwarenessMonitor {
             this.updateTimer = null;
         }
         
-        // Reset temporary state but KEEP review debt
-        this.aiSuggestions = [];
-        this.currentScore = 0;
-        this.scores = { review: 0, critical: 0, adaptation: 0, debt: 0 };
+        // DON'T reset state - preserve suggestions and scores when stopping
+        // This allows the meter to maintain its value when switching back to DEV mode
+        // Only clear temporary tracking that's session-specific
         this.fileReviewTracking.clear();
-        this.recentAcceptances = [];
+        // Keep: this.aiSuggestions, this.currentScore, this.scores, this.reviewDebt, this.recentAcceptances
     }
 
     /**
@@ -190,19 +210,17 @@ class AwarenessMonitor {
         }
 
         // For everything else (file, vscode-remote, cursor-remote, etc.) → track
-        log(`AwarenessMonitor: ✅ Text change detected - scheme: ${scheme}, file: ${fileName}, changes: ${event.contentChanges.length}`);
+        // Throttled: only log occasionally to avoid spam
+        if (Math.random() < 0.1) { // 10% chance
+            log(`AwarenessMonitor: ✅ Text change detected - scheme: ${scheme}, file: ${fileName}, changes: ${event.contentChanges.length}`);
+        }
         
         // Analyze each change
         for (const change of event.contentChanges) {
             const changeSize = change.text.length;
             const isMultiLine = change.text.includes('\n');
             const isInsertion = change.rangeLength === 0;
-            const preview = change.text.substring(0, 50).replace(/\n/g, '\\n');
-
-            // Log every change for debugging
-            log(
-                `[Awareness] Change: size=${changeSize}, hasNewline=${isMultiLine}, rangeLength=${change.rangeLength}, isInsertion=${isInsertion}, preview="${preview}${changeSize > 50 ? '...' : ''}"`
-            );
+            // Removed preview logging - too verbose
 
             // Ignore pure deletions (no inserted text)
             if (changeSize === 0) {
@@ -219,15 +237,14 @@ class AwarenessMonitor {
                 (isInsertion && changeSize >= 5);
             
             if (isLikelyAI) {
+                // Only log AI detections occasionally (throttled)
                 log(
-                    `AwarenessMonitor: ✅ AI-like change detected: size=${changeSize}, multiLine=${isMultiLine}, insertion=${isInsertion}, rangeLength=${change.rangeLength}, file=${event.document.fileName}`
+                    `AwarenessMonitor: ✅ AI-like change detected: size=${changeSize}, multiLine=${isMultiLine}, file=${event.document.fileName}`
                 );
                 this.recordAISuggestion(event.document, change);
             } else {
-                // Everything else counts as user edit
-                log(
-                    `AwarenessMonitor: ⚪ User edit (not AI): size=${changeSize}, multiLine=${isMultiLine}, insertion=${isInsertion}`
-                );
+                // User edits - only log occasionally (throttled)
+                // Removed verbose logging
                 this.recordUserEdit(event.document, change);
             }
         }
@@ -252,8 +269,8 @@ class AwarenessMonitor {
             vscode.workspace.openTextDocument(file).then(doc => {
                 const content = doc.getText();
                 
-                // If file has substantial content, it's likely AI-generated
-                if (content.length > 50) {
+                // Treat any non-empty file as potentially AI-generated (removed 50-char threshold)
+                if (content.trim().length > 0) {
                     log(`AwarenessMonitor: Detected AI file creation - ${content.length} chars`);
                     
                     // Create a "suggestion" for the entire file
@@ -398,8 +415,9 @@ class AwarenessMonitor {
         vscode.workspace.openTextDocument(fileUri).then(doc => {
             const content = doc.getText();
             
-            // If file has substantial content, treat it as potentially AI-generated
-            if (content.length > 50) {
+            // Treat any non-empty file as potentially AI-generated (removed 50-char threshold)
+            // Skip only completely empty files (whitespace-only files are still considered)
+            if (content.trim().length > 0) {
                 log(`AwarenessMonitor: Detected externally created file with content - ${content.length} chars`);
                 
                 // Create a "suggestion" for the entire file
@@ -444,6 +462,94 @@ class AwarenessMonitor {
             log(`AwarenessMonitor: Error reading externally created file: ${err.message}`);
             console.error('AwarenessMonitor: Error reading externally created file', err);
         });
+    }
+
+    /**
+     * Scan existing files in workspace and add them to review debt if needed
+     * Called on startup to catch files that were created before the extension was active
+     */
+    scanExistingFiles() {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders || workspaceFolders.length === 0) {
+            log('AwarenessMonitor: No workspace folders found, skipping file scan');
+            return;
+        }
+
+        log('AwarenessMonitor: Scanning existing files for review debt...');
+        
+        const codeExtensions = ['.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.cpp', '.c', '.h', '.cs', '.go', '.rs', '.rb', '.php', '.swift', '.kt', '.scala', '.clj', '.sh', '.bash', '.zsh', '.fish'];
+        const ignoreDirs = ['node_modules', '.git', '.vscode', 'dist', 'build', 'out', 'target', '.next', '.cache'];
+        
+        let scanned = 0;
+        let added = 0;
+        
+        const scanDirectory = (dirPath) => {
+            try {
+                const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+                
+                for (const entry of entries) {
+                    const fullPath = path.join(dirPath, entry.name);
+                    
+                    // Skip ignored directories
+                    if (entry.isDirectory()) {
+                        if (ignoreDirs.includes(entry.name) || entry.name.startsWith('.')) {
+                            continue;
+                        }
+                        scanDirectory(fullPath);
+                        continue;
+                    }
+                    
+                    // Check if it's a code file
+                    const ext = path.extname(entry.name).toLowerCase();
+                    if (!codeExtensions.includes(ext)) {
+                        continue;
+                    }
+                    
+                    scanned++;
+                    
+                    // Check if already in review debt
+                    const normalizedPath = path.resolve(fullPath).replace(/\\/g, '/');
+                    if (this.reviewDebt.has(normalizedPath)) {
+                        continue; // Already tracked
+                    }
+                    
+                    // Check file content
+                    try {
+                        const content = fs.readFileSync(fullPath, 'utf8');
+                        if (content.trim().length > 0) {
+                            // File has content and isn't in debt yet - add it
+                            log(`AwarenessMonitor: Found existing file to add to debt: ${fullPath}`);
+                            this.handleExternallyCreatedFile(fullPath);
+                            added++;
+                        }
+                    } catch (err) {
+                        // Skip files we can't read
+                        continue;
+                    }
+                }
+            } catch (err) {
+                // Skip directories we can't read
+                log(`AwarenessMonitor: Error scanning directory ${dirPath}: ${err.message}`);
+            }
+        };
+        
+        // Scan each workspace folder
+        for (const folder of workspaceFolders) {
+            const folderPath = folder.uri.fsPath;
+            log(`AwarenessMonitor: Scanning workspace folder: ${folderPath}`);
+            scanDirectory(folderPath);
+        }
+        
+        log(`AwarenessMonitor: File scan complete: ${scanned} files scanned, ${added} files added to review debt`);
+        
+        // Trigger score update after scan (even if no files added, to refresh UI)
+        setTimeout(() => {
+            this.updateScore();
+            if (this.onScoreUpdate) {
+                log('AwarenessMonitor: Triggering score update callback after scan...');
+                this.onScoreUpdate();
+            }
+        }, added > 0 ? 2000 : 500); // Longer delay if files were added (to allow async file reading to complete)
     }
 
     /**
@@ -537,15 +643,9 @@ class AwarenessMonitor {
         const filePath = document.uri.fsPath;
         const timestamp = Date.now();
         const changeSize = change.text.length;
-        const preview = change.text.substring(0, 100).replace(/\n/g, '\\n');
         
-        log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-        log(`[DEBUG] 📝 RECORDING AI SUGGESTION`);
-        log(`[DEBUG]   File: ${filePath}`);
-        log(`[DEBUG]   Size: ${changeSize} chars`);
-        log(`[DEBUG]   Range: L${change.range.start.line}:${change.range.start.character} → L${change.range.end.line}:${change.range.end.character}`);
-        log(`[DEBUG]   Preview: "${preview}${changeSize > 100 ? '...' : ''}"`);
-        log(`[DEBUG]   Timestamp: ${new Date(timestamp).toISOString()}`);
+        // Reduced verbose debug logging - only log summary
+        log(`[DEBUG] 📝 AI suggestion: ${changeSize} chars in ${path.basename(filePath)}`);
         
         const suggestion = {
             id: timestamp + Math.random(), // Unique ID
@@ -568,25 +668,18 @@ class AwarenessMonitor {
         };
         
         // Add to rolling window
-        const beforeCount = this.aiSuggestions.length;
         this.aiSuggestions.push(suggestion);
         
         // Keep only last 10
         if (this.aiSuggestions.length > this.maxSuggestions) {
-            const removed = this.aiSuggestions.shift();
-            log(`[DEBUG]   ⚠️  Removed oldest suggestion (ID: ${removed.id}, kept ${this.maxSuggestions} suggestions)`);
+            this.aiSuggestions.shift();
         }
         
-        log(`[DEBUG]   Suggestions array: ${beforeCount} → ${this.aiSuggestions.length}`);
-        log(`[DEBUG]   Suggestion ID: ${suggestion.id}`);
-        
         // ADD TO REVIEW DEBT
-        log(`[DEBUG]   → Calling addToReviewDebt(${filePath}, ${changeSize})`);
         this.addToReviewDebt(filePath, changeSize);
         
         // EMIT AI EVENT TO USAGE STATISTICS
         if (this.usageStats) {
-            log(`[DEBUG]   → Emitting to usageStats.trackAISuggestion`);
             this.usageStats.trackAISuggestion({
                 filePath,
                 size: suggestion.size,
@@ -595,19 +688,13 @@ class AwarenessMonitor {
             });
         }
         
-        // NEW: recompute immediately
-        log(`[DEBUG]   → Triggering immediate score update...`);
+        // Recompute immediately
         this.updateScore();
         
         // Schedule status check (after 5 seconds, classify as accept/reject)
-        log(`[DEBUG]   → Scheduling status check in 5 seconds (suggestion ID: ${suggestion.id})`);
         setTimeout(() => {
-            log(`[DEBUG] ⏰ Status check timer fired for suggestion ID: ${suggestion.id}`);
             this.checkSuggestionStatus(suggestion.id);
         }, 5000);
-        
-        log(`[DEBUG] ✅ AI suggestion recorded successfully`);
-        log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
     }
 
     /**
@@ -627,78 +714,50 @@ class AwarenessMonitor {
             // Check if edit overlaps with suggestion
             if (this.rangesOverlap(change.range, suggestion.range)) {
                 foundOverlap = true;
-                const oldEditCount = suggestion.editCount;
                 suggestion.userEdited = true;
                 suggestion.editCount++;
                 
-                log(`[DEBUG] ✏️  USER EDIT OVERLAPS AI SUGGESTION`);
-                log(`[DEBUG]   File: ${fileName}`);
-                log(`[DEBUG]   Suggestion ID: ${suggestion.id}`);
-                log(`[DEBUG]   Edit size: ${changeSize} chars`);
-                log(`[DEBUG]   Edit count: ${oldEditCount} → ${suggestion.editCount}`);
-                log(`[DEBUG]   Original suggestion size: ${suggestion.size} chars`);
-                log(`[DEBUG]   Status: ${suggestion.status} (will become 'adapted' if kept)`);
+                // Reduced logging - only log occasionally
+                if (Math.random() < 0.2) { // 20% chance
+                    log(`[DEBUG] ✏️  User edit overlaps AI suggestion in ${fileName}`);
+                }
             }
         }
         
-        if (!foundOverlap) {
-            // Only log occasionally to avoid spam
-            if (Math.random() < 0.1) { // 10% chance
-                log(`[DEBUG] ⚪ User edit (no AI suggestion overlap) - File: ${fileName}, Size: ${changeSize} chars`);
-            }
-        }
+        // Removed verbose logging for non-overlapping edits
     }
 
     /**
      * Check if suggestion was accepted, rejected, or adapted
      */
     async checkSuggestionStatus(suggestionId) {
-        log(`[DEBUG] ──────────────────────────────────────────────────────────────────────────`);
-        log(`[DEBUG] 🔍 CHECKING SUGGESTION STATUS`);
-        log(`[DEBUG]   Suggestion ID: ${suggestionId}`);
-        
         const suggestion = this.aiSuggestions.find(s => s.id === suggestionId);
         if (!suggestion) {
-            log(`[DEBUG]   ❌ Suggestion not found in array`);
-            log(`[DEBUG] ──────────────────────────────────────────────────────────────────────────`);
             return;
         }
         
         if (suggestion.status !== 'pending') {
-            log(`[DEBUG]   ⚠️  Suggestion already has status: ${suggestion.status}`);
-            log(`[DEBUG] ──────────────────────────────────────────────────────────────────────────`);
             return;
         }
         
-        log(`[DEBUG]   File: ${suggestion.document}`);
-        log(`[DEBUG]   Original size: ${suggestion.size} chars`);
-        log(`[DEBUG]   User edited: ${suggestion.userEdited}`);
-        log(`[DEBUG]   Edit count: ${suggestion.editCount}`);
-        log(`[DEBUG]   Review time: ${suggestion.reviewTime}ms`);
-        log(`[DEBUG]   Reviewed: ${suggestion.reviewed}`);
-        
         // Try to open the document to check if code still exists
         try {
-            log(`[DEBUG]   → Opening document to check current state...`);
             const doc = await vscode.workspace.openTextDocument(vscode.Uri.parse(suggestion.document));
             const currentText = doc.getText(suggestion.range);
             const currentSize = currentText.length;
             const sizeRatio = currentSize / suggestion.size;
             
-            log(`[DEBUG]   Current text size: ${currentSize} chars`);
-            log(`[DEBUG]   Size ratio: ${(sizeRatio * 100).toFixed(1)}%`);
-            
             // Check if AI code was deleted/rejected
             if (currentSize < suggestion.size * 0.5) {
                 suggestion.status = 'rejected';
                 suggestion.statusTimestamp = Date.now();
-                log(`[DEBUG]   ❌ STATUS: REJECTED (text reduced to ${(sizeRatio * 100).toFixed(1)}% of original)`);
+                log(`[DEBUG] Suggestion rejected: ${(sizeRatio * 100).toFixed(1)}% of original`);
             }
             // Check if AI code was modified/adapted
             else if (suggestion.userEdited) {
                 suggestion.status = 'adapted';
                 suggestion.statusTimestamp = Date.now();
-                log(`[DEBUG]   ✏️  STATUS: ADAPTED (user edited the code)`);
+                log(`[DEBUG] Suggestion adapted by user`);
             }
             // DEV MODE STRICTNESS: Require user review for ALL AI suggestions
             // This ensures no code is marked as "accepted" without actual user review
@@ -717,28 +776,19 @@ class AwarenessMonitor {
                     // User has reviewed it, can mark as accepted
                     suggestion.status = 'accepted';
                     suggestion.statusTimestamp = Date.now();
-                    log(`[DEBUG]   ✅ STATUS: ACCEPTED (${sourceType}, user reviewed)`);
-                    
-                    // Track acceptance for "Keep All" detection
-                    log(`[DEBUG]   → Tracking acceptance for "Keep All" detection...`);
+                    log(`[DEBUG] Suggestion accepted (${sourceType})`);
                     this.trackAcceptance(suggestion);
                 } else {
                     // No user interaction yet - keep pending
                     // DEV MODE: All suggestions require review, even if code exists unchanged
-                    log(`[DEBUG]   ⏳ STATUS: PENDING (${sourceType}, awaiting user review)`);
-                    log(`[DEBUG]   → Code exists but user hasn't reviewed it yet (DEV mode strictness)`);
-                    // Don't change status, keep it pending
                     // Schedule another check in 10 seconds
                     setTimeout(() => this.checkSuggestionStatus(suggestion.id), 10000);
                     return; // Exit early, don't emit outcome yet
                 }
             }
             
-            log(`[DEBUG]   Status timestamp: ${new Date(suggestion.statusTimestamp).toISOString()}`);
-            
             // EMIT OUTCOME TO USAGE STATISTICS
             if (this.usageStats) {
-                log(`[DEBUG]   → Emitting outcome to usageStats`);
                 this.usageStats.trackAISuggestionOutcome({
                     document: suggestion.document,
                     status: suggestion.status,
@@ -748,19 +798,16 @@ class AwarenessMonitor {
                 });
             }
             
-            log(`[DEBUG]   → Triggering score update after status change...`);
             this.updateScore();
             
         } catch (error) {
             // Document might be closed/deleted
-            log(`[DEBUG]   ⚠️  Error checking document: ${error.message}`);
             suggestion.status = 'rejected';
             suggestion.statusTimestamp = Date.now();
-            log(`[DEBUG]   ❌ STATUS: REJECTED (document error)`);
+            log(`[DEBUG] Suggestion rejected (document error): ${error.message}`, true);
             
             // EMIT OUTCOME TO USAGE STATISTICS
             if (this.usageStats) {
-                log(`[DEBUG]   → Emitting outcome to usageStats (error case)`);
                 this.usageStats.trackAISuggestionOutcome({
                     document: suggestion.document,
                     status: 'rejected',
@@ -770,73 +817,56 @@ class AwarenessMonitor {
                 });
             }
             
-            log(`[DEBUG]   → Triggering score update after status change (error case)...`);
             this.updateScore();
         }
-        
-        log(`[DEBUG] ✅ Status check complete`);
-        log(`[DEBUG] ──────────────────────────────────────────────────────────────────────────`);
     }
 
     /**
      * Calculate awareness score based on last 10 seconds of suggestions
      */
     updateScore() {
-        log(`[DEBUG] ════════════════════════════════════════════════════════════════════════════`);
-        log(`[DEBUG] 📊 UPDATING SCORE`);
-        log(`[DEBUG]   Timestamp: ${new Date().toISOString()}`);
-        
         const now = Date.now();
         const TEN_SECONDS = 10 * 1000;
         
-        log(`[DEBUG]   Total suggestions in array: ${this.aiSuggestions.length}`);
-        
-        // Filter suggestions from last 10 seconds
+        // Filter suggestions from last 10 seconds for "recent activity" calculation
         const recentSuggestions = this.aiSuggestions.filter(
             s => (now - s.timestamp) <= TEN_SECONDS
         );
         
-        log(`[DEBUG]   Recent suggestions (last 10s): ${recentSuggestions.length}`);
-        if (recentSuggestions.length > 0) {
-            recentSuggestions.forEach((s, i) => {
-                const age = Math.round((now - s.timestamp) / 1000);
-                log(`[DEBUG]     [${i+1}] ID: ${s.id}, Status: ${s.status}, Size: ${s.size} chars, Age: ${age}s`);
-            });
+        // BUT: If we have older suggestions but no recent ones, and we have review debt,
+        // preserve the score based on debt rather than resetting to zero
+        const hasOlderSuggestions = this.aiSuggestions.length > 0 && recentSuggestions.length === 0;
+        const hasDebt = this.reviewDebt.size > 0;
+        
+        // Only log score updates occasionally (throttled)
+        if (Math.random() < 0.1) { // 10% chance
+            log(`[DEBUG] Updating score: ${recentSuggestions.length} recent, ${this.aiSuggestions.length} total, ${this.reviewDebt.size} debt`);
         }
         
         // Only calculate if we have suggestions in the last 10 seconds
         if (recentSuggestions.length === 0) {
-            log(`[DEBUG]   ⚠️  No recent suggestions (last 10 seconds)`);
-            
-            // Check for pending suggestions even if they're older than 10 seconds
-            const allPending = this.aiSuggestions.filter(s => s.status === 'pending');
-            log(`[DEBUG]   Total pending suggestions (any age): ${allPending.length}`);
-            
             // Even with no recent suggestions, calculate debt score if there's review debt
-            log(`[DEBUG]   → Calculating debt score...`);
             const debtScore = this.calculateDebtScore();
-            log(`[DEBUG]   Debt score result: ${debtScore}/30`);
-            log(`[DEBUG]   Total files in debt map: ${this.reviewDebt.size}`);
             
             if (debtScore > 0) {
                 // If there's review debt but no pending, show debt score
                 this.currentScore = Math.min(debtScore, 100); // Cap at 100
                 this.scores = { review: 0, critical: 0, adaptation: 0, debt: debtScore };
-                log(`[DEBUG]   ✅ Score set to ${this.currentScore} (debt-only)`);
-                log(`[DEBUG]   Components: R:0, C:0, A:0, D:${debtScore}`);
+            } else if (hasOlderSuggestions && hasDebt) {
+                // We have older suggestions and debt - preserve a minimum score based on debt
+                // This prevents the meter from dropping to zero when monitor restarts
+                const preservedDebtScore = this.calculateDebtScore();
+                this.currentScore = Math.max(preservedDebtScore, 20); // Minimum 20 to show activity
+                this.scores = { review: 0, critical: 0, adaptation: 0, debt: preservedDebtScore };
             } else {
                 // No recent activity and no debt
                 this.currentScore = -1; // Special value: no data yet
                 this.scores = { review: 0, critical: 0, adaptation: 0, debt: 0 };
-                log(`[DEBUG]   ⚪ Score set to -1 (no activity, no debt)`);
             }
             // Trigger callback for meter update
             if (this.onScoreUpdate) {
-                log(`[DEBUG]   → Triggering score update callback`);
                 this.onScoreUpdate();
             }
-            log(`[DEBUG] ✅ Score update complete (no recent activity)`);
-            log(`[DEBUG] ════════════════════════════════════════════════════════════════════════════`);
             return;
         }
         
@@ -848,15 +878,10 @@ class AwarenessMonitor {
         const completed = recentSuggestions.filter(s => s.status !== 'pending');
         const pending = recentSuggestions.filter(s => s.status === 'pending');
         
-        log(`[DEBUG]   Completed suggestions: ${completed.length}`);
-        log(`[DEBUG]   Pending suggestions: ${pending.length}`);
-        
         if (completed.length === 0 && allRecent.length > 0) {
             // Still pending, but we have activity - show partial score based on pending count
             // This ensures meter shows activity instead of "No Activity"
-            log(`[DEBUG]   ⏳ All suggestions are pending, showing activity indicator`);
             const debtScore = this.calculateDebtScore();
-            log(`[DEBUG]   Debt score: ${debtScore}/30`);
             
             this.currentScore = 50; // Neutral - pending activity detected
             this.scores = { 
@@ -865,50 +890,35 @@ class AwarenessMonitor {
                 adaptation: 0, 
                 debt: debtScore // Still calculate debt
             };
-            log(`[DEBUG]   ✅ Score set to 50 (pending activity)`);
-            log(`[DEBUG]   Components: R:0, C:0, A:0, D:${debtScore}`);
             
             // Trigger callback for meter update
             if (this.onScoreUpdate) {
-                log(`[DEBUG]   → Triggering score update callback`);
                 this.onScoreUpdate();
             }
-            log(`[DEBUG] ✅ Score update complete (pending activity)`);
-            log(`[DEBUG] ════════════════════════════════════════════════════════════════════════════`);
             return;
         }
         
         if (completed.length === 0) {
             // No suggestions at all
-            log(`[DEBUG]   ⚠️  No completed suggestions`);
             this.currentScore = -1;
             this.scores = { review: 0, critical: 0, adaptation: 0, debt: 0 };
             if (this.onScoreUpdate) {
-                log(`[DEBUG]   → Triggering score update callback`);
                 this.onScoreUpdate();
             }
-            log(`[DEBUG] ✅ Score update complete (no suggestions)`);
-            log(`[DEBUG] ════════════════════════════════════════════════════════════════════════════`);
             return;
         }
         
-        log(`[DEBUG]   → Calculating score components from ${completed.length} completed suggestions...`);
-        
         // 1. Code Review Rate (40 points)
         this.scores.review = this.calculateReviewScore(completed);
-        log(`[DEBUG]   Review score: ${this.scores.review}/40`);
         
         // 2. Critical Evaluation (30 points)
         this.scores.critical = this.calculateCriticalScore(completed);
-        log(`[DEBUG]   Critical score: ${this.scores.critical}/30`);
         
         // 3. Code Adaptation (30 points)
         this.scores.adaptation = this.calculateAdaptationScore(completed);
-        log(`[DEBUG]   Adaptation score: ${this.scores.adaptation}/30`);
         
         // 4. Review Debt (30 points) - NEW!
         this.scores.debt = this.calculateDebtScore();
-        log(`[DEBUG]   Debt score: ${this.scores.debt}/30`);
         
         // Total score (max 130, normalized to 100)
         const rawScore = this.scores.review + 
@@ -918,17 +928,10 @@ class AwarenessMonitor {
         
         this.currentScore = Math.round(Math.min(rawScore, 100));
         
-        log(`[DEBUG]   Raw score: ${rawScore} → Normalized: ${this.currentScore}/100`);
-        log(`[DEBUG]   Final components: R:${this.scores.review}, C:${this.scores.critical}, A:${this.scores.adaptation}, D:${this.scores.debt}`);
-        
         // Trigger callback for immediate meter update
         if (this.onScoreUpdate) {
-            log(`[DEBUG]   → Triggering score update callback`);
             this.onScoreUpdate();
         }
-        
-        log(`[DEBUG] ✅ Score update complete`);
-        log(`[DEBUG] ════════════════════════════════════════════════════════════════════════════`);
     }
 
     /**
@@ -1011,6 +1014,28 @@ class AwarenessMonitor {
     }
 
     /**
+     * Helper: Get relative path from workspace folder
+     */
+    getRelativePath(filePath) {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders || workspaceFolders.length === 0) {
+            return path.basename(filePath);
+        }
+        
+        // Try each workspace folder
+        for (const folder of workspaceFolders) {
+            const folderPath = folder.uri.fsPath;
+            if (filePath.startsWith(folderPath)) {
+                const relative = path.relative(folderPath, filePath);
+                return relative || path.basename(filePath);
+            }
+        }
+        
+        // Fallback to basename if not in workspace
+        return path.basename(filePath);
+    }
+
+    /**
      * Get current awareness score and breakdown
      */
     getScore() {
@@ -1027,6 +1052,32 @@ class AwarenessMonitor {
         // But use recentSuggestions for actual score calculation
         const allSuggestions = this.aiSuggestions;
         
+        // Get pending suggestions with file paths
+        const pendingSuggestions = allSuggestions
+            .filter(s => s.status === 'pending')
+            .map(s => {
+                // Extract file path from document URI or use filePath if available
+                let filePath = s.filePath;
+                if (!filePath && s.document) {
+                    try {
+                        const uri = vscode.Uri.parse(s.document);
+                        if (uri.scheme === 'file') {
+                            filePath = uri.fsPath;
+                        }
+                    } catch (err) {
+                        log(`AwarenessMonitor: Error parsing document URI: ${err.message}`);
+                    }
+                }
+                return {
+                    path: filePath ? this.getRelativePath(filePath) : 'Unknown',
+                    fullPath: filePath || '',
+                    ageMinutes: Math.round((now - s.timestamp) / (1000 * 60)),
+                    type: s.isFileCreation ? 'file creation' : 
+                          s.isExternalCreation ? 'external file' :
+                          s.isFileWrite ? 'file write' : 'text change'
+                };
+            });
+        
         return {
             total: this.currentScore,
             components: { ...this.scores },
@@ -1038,13 +1089,15 @@ class AwarenessMonitor {
                 rejected: allSuggestions.filter(s => s.status === 'rejected').length,
                 adapted: allSuggestions.filter(s => s.status === 'adapted').length,
                 // Also include recent count for debugging
-                recentTotal: recentSuggestions.length
+                recentTotal: recentSuggestions.length,
+                // Include pending suggestions with file info
+                pendingFiles: pendingSuggestions
             },
             // Review debt information
             debt: {
                 unreviewedFiles: debtSummary.total,
                 files: debtSummary.files.map(f => ({
-                    path: f.path.split('/').pop(), // Just filename
+                    path: this.getRelativePath(f.path), // Relative path instead of just filename
                     fullPath: f.path,
                     ageMinutes: Math.round(f.age / (1000 * 60)),
                     modifications: f.modificationCount
@@ -1204,30 +1257,15 @@ class AwarenessMonitor {
      * Add file to review debt
      */
     addToReviewDebt(filePath, changeSize) {
-        log(`[DEBUG] 💳 ADDING TO REVIEW DEBT`);
-        log(`[DEBUG]   File: ${filePath}`);
-        log(`[DEBUG]   Change size: ${changeSize} chars`);
-        
         const existing = this.reviewDebt.get(filePath);
         const now = Date.now();
         
         if (existing && !existing.reviewed) {
             // File already has debt, accumulate it
-            const oldTotal = existing.totalChanges;
-            const oldModCount = existing.modificationCount;
-            const ageMinutes = Math.round((now - existing.modifiedAt) / (1000 * 60));
-            
             existing.totalChanges += changeSize;
             existing.lastModifiedAt = now;
             existing.modificationCount++;
-            
-            log(`[DEBUG]   📊 ACCUMULATING existing debt:`);
-            log(`[DEBUG]     Previous: ${oldTotal} chars, ${oldModCount} modifications`);
-            log(`[DEBUG]     New: ${existing.totalChanges} chars, ${existing.modificationCount} modifications`);
-            log(`[DEBUG]     Debt age: ${ageMinutes} minutes`);
-            log(`[DEBUG]     Last modified: ${new Date(existing.lastModifiedAt).toISOString()}`);
         } else if (existing && existing.reviewed) {
-            log(`[DEBUG]   ⚠️  File was already reviewed, creating new debt entry`);
             // File was reviewed but new changes came in - create new entry
             this.reviewDebt.set(filePath, {
                 modifiedAt: now,
@@ -1240,10 +1278,8 @@ class AwarenessMonitor {
                 lastVisitedAt: null,
                 reviewSessions: 0
             });
-            log(`[DEBUG]   ✅ New debt entry created (file was previously reviewed)`);
         } else {
             // New debt entry
-            log(`[DEBUG]   🆕 CREATING new debt entry`);
             this.reviewDebt.set(filePath, {
                 modifiedAt: now,
                 lastModifiedAt: now,
@@ -1255,18 +1291,14 @@ class AwarenessMonitor {
                 lastVisitedAt: null,
                 reviewSessions: 0
             });
-            log(`[DEBUG]   ✅ New debt entry created`);
-            log(`[DEBUG]     Total changes: ${changeSize} chars`);
-            log(`[DEBUG]     Created at: ${new Date(now).toISOString()}`);
         }
-        
-        const totalDebtFiles = Array.from(this.reviewDebt.values()).filter(d => !d.reviewed).length;
-        log(`[DEBUG]   📈 Total unreviewed files in debt: ${totalDebtFiles}`);
-        log(`[DEBUG]   💾 Saving review debt to disk...`);
         
         this.saveReviewDebt();
         
-        log(`[DEBUG] ✅ Review debt updated`);
+        // Trigger immediate score update to refresh file decorations
+        if (this.onScoreUpdate) {
+            this.updateScore();
+        }
     }
 
     /**
@@ -1279,23 +1311,12 @@ class AwarenessMonitor {
         }
         
         const filePath = document.uri.fsPath;
-        log(`[DEBUG] 📂 FILE OPENED`);
-        log(`[DEBUG]   File: ${filePath}`);
-        log(`[DEBUG]   Scheme: ${scheme}`);
-        
         const debt = this.reviewDebt.get(filePath);
         
         if (debt && !debt.reviewed) {
-            log(`[DEBUG]   ✅ File has unreviewed debt!`);
-            log(`[DEBUG]     Total changes: ${debt.totalChanges} chars`);
-            log(`[DEBUG]     Modifications: ${debt.modificationCount}`);
-            log(`[DEBUG]     Age: ${Math.round((Date.now() - debt.modifiedAt) / (1000 * 60))} minutes`);
-            log(`[DEBUG]     Review sessions: ${debt.reviewSessions}`);
-            
             // Start tracking review session
             if (!this.fileReviewTracking.has(filePath)) {
                 const now = Date.now();
-                log(`[DEBUG]   🆕 Starting new review session`);
                 this.fileReviewTracking.set(filePath, {
                     sessionStart: now,
                     lastActivity: now,
@@ -1307,19 +1328,8 @@ class AwarenessMonitor {
                 debt.lastVisitedAt = now;
                 debt.reviewSessions++;
                 
-                log(`[DEBUG]     Session start: ${new Date(now).toISOString()}`);
-                log(`[DEBUG]     First opened: ${debt.firstOpenedAt ? new Date(debt.firstOpenedAt).toISOString() : 'now'}`);
-                log(`[DEBUG]     Total sessions: ${debt.reviewSessions}`);
-                
                 this.saveReviewDebt();
-                log(`[DEBUG]   ✅ Review session tracking started`);
-            } else {
-                log(`[DEBUG]   ⚠️  Review session already active for this file`);
             }
-        } else if (debt && debt.reviewed) {
-            log(`[DEBUG]   ℹ️  File has debt but was already reviewed`);
-        } else {
-            log(`[DEBUG]   ℹ️  File has no review debt`);
         }
     }
 
@@ -1336,33 +1346,20 @@ class AwarenessMonitor {
             return; // No active review sessions
         }
         
-        log(`[DEBUG] 🔄 CHECKING REVIEW PROGRESS`);
-        log(`[DEBUG]   Active review sessions: ${activeSessions}`);
-        
         for (const [filePath, tracking] of this.fileReviewTracking.entries()) {
             const debt = this.reviewDebt.get(filePath);
             if (!debt || debt.reviewed) {
-                log(`[DEBUG]   ⚠️  Removing tracking for ${filePath} (debt not found or already reviewed)`);
                 this.fileReviewTracking.delete(filePath);
                 continue;
             }
             
             const sessionDuration = now - tracking.sessionStart;
             const timeSinceActivity = now - tracking.lastActivity;
-            const sessionMinutes = Math.round(sessionDuration / 1000 / 60);
-            const inactivitySeconds = Math.round(timeSinceActivity / 1000);
-            
-            log(`[DEBUG]   📄 File: ${filePath.split('/').pop()}`);
-            log(`[DEBUG]     Session duration: ${sessionMinutes} minutes`);
-            log(`[DEBUG]     Cursor movements: ${tracking.cursorMovements}`);
-            log(`[DEBUG]     Time since activity: ${inactivitySeconds}s`);
             
             // Check if session ended due to inactivity
             if (timeSinceActivity > ACTIVITY_TIMEOUT) {
                 debt.totalReviewTime += sessionDuration;
                 this.fileReviewTracking.delete(filePath);
-                log(`[DEBUG]     ⏸️  Session ended (inactivity timeout)`);
-                log(`[DEBUG]     Total review time: ${Math.round(debt.totalReviewTime / 1000)}s`);
                 this.saveReviewDebt();
                 continue;
             }
@@ -1370,23 +1367,13 @@ class AwarenessMonitor {
             // Check if user has reviewed enough
             if (sessionDuration >= MINIMUM_REVIEW_TIME && tracking.cursorMovements >= 5) {
                 // Debt is paid!
-                log(`[DEBUG]     ✅ DEBT CLEARED!`);
-                log(`[DEBUG]       Review time: ${Math.round(sessionDuration / 1000)}s (required: ${MINIMUM_REVIEW_TIME / 1000}s)`);
-                log(`[DEBUG]       Cursor movements: ${tracking.cursorMovements} (required: 5)`);
-                
                 debt.reviewed = true;
                 debt.reviewedAt = now;
                 debt.totalReviewTime += sessionDuration;
                 this.fileReviewTracking.delete(filePath);
                 
-                log(`[DEBUG]       Total changes reviewed: ${debt.totalChanges} chars`);
-                log(`[DEBUG]       Total modifications: ${debt.modificationCount}`);
-                log(`[DEBUG]       Total review time: ${Math.round(debt.totalReviewTime / 1000)}s`);
-                log(`[DEBUG]       Reviewed at: ${new Date(now).toISOString()}`);
-                
                 // EMIT DEBT CLEARED TO USAGE STATISTICS
                 if (this.usageStats) {
-                    log(`[DEBUG]       → Emitting debt cleared to usageStats`);
                     this.usageStats.trackAIDebtCleared({
                         filePath,
                         totalChanges: debt.totalChanges,
@@ -1396,16 +1383,9 @@ class AwarenessMonitor {
                 }
                 
                 this.saveReviewDebt();
-                log(`[DEBUG]       → Triggering score update after debt cleared...`);
                 this.updateScore(); // Recalculate score immediately
-            } else {
-                const remainingTime = Math.max(0, MINIMUM_REVIEW_TIME - sessionDuration);
-                const remainingMovements = Math.max(0, 5 - tracking.cursorMovements);
-                log(`[DEBUG]     ⏳ Still reviewing... (need ${Math.round(remainingTime / 1000)}s and ${remainingMovements} more movements)`);
             }
         }
-        
-        log(`[DEBUG] ✅ Review progress check complete`);
     }
 
     /**
@@ -1424,17 +1404,8 @@ class AwarenessMonitor {
         // Update review tracking if this file has debt
         const tracking = this.fileReviewTracking.get(filePath);
         if (tracking) {
-            const oldMovements = tracking.cursorMovements;
             tracking.lastActivity = Date.now();
             tracking.cursorMovements++;
-            
-            if (tracking.cursorMovements % 5 === 0 || tracking.cursorMovements === 1) {
-                log(`[DEBUG] 👆 CURSOR MOVEMENT (review tracking)`);
-                log(`[DEBUG]   File: ${fileName}`);
-                log(`[DEBUG]   Position: L${position.line}:${position.character}`);
-                log(`[DEBUG]   Movements: ${oldMovements} → ${tracking.cursorMovements}`);
-                log(`[DEBUG]   Session duration: ${Math.round((Date.now() - tracking.sessionStart) / 1000)}s`);
-            }
         }
         
         // Check if cursor is on any AI suggestion (original logic)
@@ -1447,12 +1418,6 @@ class AwarenessMonitor {
                 if (!suggestion.reviewed) {
                     suggestion.reviewed = true;
                     suggestion.reviewStarted = Date.now();
-                    log(`[DEBUG] 👁️  USER REVIEWING AI SUGGESTION`);
-                    log(`[DEBUG]   File: ${fileName}`);
-                    log(`[DEBUG]   Suggestion ID: ${suggestion.id}`);
-                    log(`[DEBUG]   Size: ${suggestion.size} chars`);
-                    log(`[DEBUG]   Range: L${suggestion.range.start.line}:${suggestion.range.start.character} → L${suggestion.range.end.line}:${suggestion.range.end.character}`);
-                    log(`[DEBUG]   Review started: ${new Date(suggestion.reviewStarted).toISOString()}`);
                 }
                 return; // Only track one suggestion at a time
             } else {
@@ -1460,11 +1425,6 @@ class AwarenessMonitor {
                 if (suggestion.reviewStarted) {
                     const reviewDuration = Date.now() - suggestion.reviewStarted;
                     suggestion.reviewTime += reviewDuration;
-                    log(`[DEBUG] 👋 USER LEFT SUGGESTION`);
-                    log(`[DEBUG]   File: ${fileName}`);
-                    log(`[DEBUG]   Suggestion ID: ${suggestion.id}`);
-                    log(`[DEBUG]   Review duration: ${Math.round(reviewDuration / 1000)}s`);
-                    log(`[DEBUG]   Total review time: ${Math.round(suggestion.reviewTime / 1000)}s`);
                     suggestion.reviewStarted = null;
                 }
             }
@@ -1527,7 +1487,7 @@ class AwarenessMonitor {
         
         if (allDebtTimestamps.length > 0) {
             const oldestDebt = Math.min(...allDebtTimestamps);
-            const ageHours = (now - oldestDebt) / (1000 * 60 * 60);
+        const ageHours = (now - oldestDebt) / (1000 * 60 * 60);
             debtScore += Math.min(ageHours * 1.5, 10);
         }
         

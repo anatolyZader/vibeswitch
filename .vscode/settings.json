@@ -1,8 +1,5 @@
 {
-  "cursor.chat.defaultMode": "ask",
-  "cursor.agent.requireApproval": true,
-  "cursor.agent.autoApplyEdits": false,
-  "cursor.ai.autoApply": false,
+  "npm.exclude": "**/package.json",
   "files.autoSave": "afterDelay",
-  "files.autoSaveDelay": 3000
+  "files.autoSaveDelay": 1000
 }

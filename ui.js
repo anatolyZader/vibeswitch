@@ -64,10 +64,19 @@ function showModePicker(currentMode, usageStats = null, onModeSelected = null, o
                 }
             } else if (selection.mode) {
                 if (onModeSelected) {
-                    onModeSelected(selection.mode);
+                    // Ensure callback is called and awaited properly
+                    const result = onModeSelected(selection.mode);
+                    if (result && typeof result.then === 'function') {
+                        result.catch(error => {
+                            console.error('VibeSwitch: Error in mode selection callback:', error);
+                            vscode.window.showErrorMessage(`Failed to switch mode: ${error.message}`);
+                        });
+                    }
                 }
             }
         }
+    }).catch(error => {
+        console.error('VibeSwitch: Error showing mode picker:', error);
     });
 }
 

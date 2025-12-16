@@ -111,7 +111,23 @@ function updateStatusBar(statusBarItem, currentMode, outputChannel = null) {
  * @param {vscode.OutputChannel} outputChannel - Optional output channel for logging
  */
 function updateAwarenessMeter(awarenessBarItem, awarenessMonitor, currentMode, outputChannel = null) {
-    if (!awarenessMonitor || !awarenessBarItem) return;
+    if (!awarenessBarItem) {
+        if (outputChannel) {
+            outputChannel.appendLine('WARNING: awarenessBarItem not initialized');
+        }
+        return;
+    }
+    
+    if (!awarenessMonitor) {
+        if (currentMode === 'dev') {
+            awarenessBarItem.text = '$(graph) --';
+            awarenessBarItem.tooltip = 'Awareness meter: Initializing...';
+            awarenessBarItem.show();
+        } else {
+            awarenessBarItem.hide();
+        }
+        return;
+    }
 
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders) {
@@ -127,8 +143,27 @@ function updateAwarenessMeter(awarenessBarItem, awarenessMonitor, currentMode, o
         return;
     } else if (currentMode === 'dev') {
         // DEV mode: Show real-time awareness score
-        const scoreData = awarenessMonitor.getScore();
-        const score = scoreData.total;
+        let scoreData;
+        try {
+            scoreData = awarenessMonitor.getScore();
+        } catch (error) {
+            if (outputChannel) {
+                outputChannel.appendLine(`ERROR getting score from awareness monitor: ${error.message}`);
+            }
+            awarenessBarItem.text = '$(graph) ERR';
+            awarenessBarItem.tooltip = `Awareness meter error: ${error.message}`;
+            awarenessBarItem.show();
+            return;
+        }
+        
+        if (!scoreData) {
+            awarenessBarItem.text = '$(graph) --';
+            awarenessBarItem.tooltip = 'Awareness meter: No data available';
+            awarenessBarItem.show();
+            return;
+        }
+        
+        const score = scoreData.total || 0;
         
         // Handle "no data" state (no AI suggestions detected yet)
         // Check if we have ANY suggestions (including pending) to show activity
@@ -171,15 +206,28 @@ ${scoreData.debt.files.length > 5 ? `\n... and ${scoreData.debt.files.length - 5
 Click for detailed statistics`;
             awarenessBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
         } else {
-            // Show meter even if score is 50 (pending suggestions) or if we have any suggestions
-            const displayScore = hasAnySuggestions && score === -1 ? 50 : score;
+            // Show meter - handle score of -1 (no completed suggestions yet) or valid scores
+            let displayScore = score;
+            if (score === -1) {
+                // No completed suggestions yet, but we might have pending ones
+                if (hasAnySuggestions) {
+                    displayScore = 50; // Neutral score for pending activity
+                } else {
+                    displayScore = 0; // No activity at all
+                }
+            }
+            
+            // Ensure displayScore is valid (0-100)
+            displayScore = Math.max(0, Math.min(100, displayScore));
+            
             const meter = getScoreMeter(displayScore);
             const emoji = getScoreEmoji(displayScore);
             
             awarenessBarItem.text = `${emoji} ${meter}`;
             
             // Build tooltip with debt information
-            let tooltip = `DEV Mode Awareness: ${score}/100
+            const scoreDisplay = score === -1 ? 'Calculating...' : `${score}/100`;
+            let tooltip = `DEV Mode Awareness: ${scoreDisplay}
 Review: ${scoreData.components.review}/40
 Critical: ${scoreData.components.critical}/30
 Adaptation: ${scoreData.components.adaptation}/30
@@ -250,5 +298,3 @@ module.exports = {
     getScoreMeter,
     getScoreEmoji
 };
-
-

@@ -1,429 +1,573 @@
 /**
  * VibeSwitch Extension - Main Entry Point
- * 
- * Orchestrates all extension functionality:
- * - Initializes usage statistics and awareness monitoring
- * - Manages status bar items and UI
- * - Handles mode switching and detection
- * - Registers commands and event listeners
+ * Orchestrates extension functionality: initialization, mode switching, awareness monitoring
  */
 
+// Logger will be initialized in activate()
+
 const vscode = require('vscode');
+const { window, workspace, commands, StatusBarAlignment } = vscode;
 const UsageStatsManager = require('./usage-stats');
 const AwarenessMonitor = require('./awareness-monitor');
-const AwarenessMonitorModule = require('./awareness-monitor');
-
-// Import modular components
 const modeManager = require('./mode-manager');
 const statusBar = require('./status-bar');
 const statistics = require('./statistics');
 const ui = require('./ui');
+const path = require('path');
+const fs = require('fs');
+const { createLogger, getLogger } = require('./logger');
+
+let UnreviewedFileDecorationProvider;
+try {
+    UnreviewedFileDecorationProvider = require('./file-decorations');
+    console.log('VibeSwitch: ✅ file-decorations module loaded successfully');
+} catch (error) {
+    console.error('VibeSwitch: ❌ ERROR loading file-decorations module:', error.message);
+}
 
 // Global state
-let statusBarItem;
-let awarenessBarItem;
-let currentMode = null;
-let usageStats = null;
-let awarenessMonitor = null;
-let extensionContext = null; // Stored for use in closures (command handlers)
-let meterUpdateTimer = null;
-let outputChannel = null;
+let statusBarItem, awarenessBarItem, currentMode = null;
+let usageStats = null, awarenessMonitor = null, extensionContext = null;
+let meterUpdateTimer = null, outputChannel = null, fileDecorationProvider = null;
 
-/**
- * Main extension activation function
- * Called when VS Code activates the extension (on startup or when extension is enabled)
- */
+// Helper: Log using throttled logger
+let log = (msg, show = false) => {
+    // Fallback if logger not initialized
+    console.log(msg);
+    outputChannel?.appendLine(msg);
+    if (show) outputChannel?.show(true);
+};
+
+// Helper: Update awareness meter and refresh decorations
+const updateAwarenessMeter = () => {
+    statusBar.updateAwarenessMeter(awarenessBarItem, awarenessMonitor, currentMode, outputChannel);
+    if (fileDecorationProvider && currentMode === 'dev') fileDecorationProvider.refresh();
+};
+
+// Helper: Update status bar (NEVER auto-detects mode)
+const updateStatusBar = (forceMode = null) => {
+    // Only update if mode is explicitly provided or already set
+    if (forceMode !== null) {
+        currentMode = forceMode;
+    }
+    // If no mode set at all, show neutral state (don't detect)
+    if (!currentMode) {
+        statusBar.updateStatusBar(statusBarItem, null, outputChannel);
+        updateAwarenessMeter();
+        return;
+    }
+    statusBar.updateStatusBar(statusBarItem, currentMode, outputChannel);
+    updateAwarenessMeter();
+};
+
+// Helper: Initialize file decoration provider
+const initFileDecorations = () => {
+    if (!UnreviewedFileDecorationProvider || fileDecorationProvider || !extensionContext) return;
+    
+    try {
+        log('Creating file decoration provider...');
+        fileDecorationProvider = new UnreviewedFileDecorationProvider(
+            awarenessMonitor,
+            () => currentMode,
+            outputChannel
+        );
+        
+        const provider = fileDecorationProvider.register(extensionContext);
+        if (provider) {
+            log('✅ File decoration provider registered successfully');
+        } else {
+            log('❌ ERROR: File decoration provider registration failed');
+        }
+    } catch (error) {
+        log(`❌ ERROR creating file decoration provider: ${error.message}`);
+        console.error('VibeSwitch: Error creating file decoration provider:', error);
+    }
+};
+
+// Helper: Start awareness monitor
+const startAwarenessMonitor = () => {
+    if (!awarenessMonitor || !extensionContext) return;
+    
+    awarenessMonitor.start(extensionContext);
+    log('VibeSwitch: Started real-time awareness monitoring');
+    initFileDecorations();
+    
+    if (meterUpdateTimer) clearInterval(meterUpdateTimer);
+    meterUpdateTimer = setInterval(() => {
+        if (currentMode === 'dev') updateAwarenessMeter();
+    }, 10000);
+    
+    updateAwarenessMeter();
+};
+
+// Helper: Stop awareness monitor
+const stopAwarenessMonitor = () => {
+    if (!awarenessMonitor) return;
+    
+    awarenessMonitor.stop();
+    log('VibeSwitch: Stopped awareness monitoring (VIBE mode)');
+    
+    if (fileDecorationProvider) {
+        fileDecorationProvider.dispose();
+        fileDecorationProvider = null;
+    }
+    
+    if (meterUpdateTimer) {
+        clearInterval(meterUpdateTimer);
+        meterUpdateTimer = null;
+    }
+};
+
+// Helper: Switch to mode
+const switchToMode = async (mode) => {
+    try {
+        log(`VibeSwitch: Switching to ${mode} mode (current: ${currentMode})`);
+        
+        // Set mode IMMEDIATELY before any file operations
+        // This prevents any detection from seeing the wrong mode
+        const previousMode = currentMode;
+        currentMode = mode;
+        
+        // Update UI immediately with the new mode
+        updateStatusBar(mode);
+        
+        await modeManager.switchToMode(mode, {
+            currentMode: previousMode, // Pass previous mode for stats
+            onModeSwitched: (newMode) => {
+                // Don't change currentMode here - we already set it
+                log(`VibeSwitch: Mode switched callback called with: ${newMode} (already set to ${currentMode})`);
+            },
+            onMonitorStart: startAwarenessMonitor,
+            onMonitorStop: stopAwarenessMonitor,
+            usageStats
+        });
+        
+        // Verify file was written correctly, but DON'T detect mode from file
+        // We trust what we just set
+        log(`VibeSwitch: Successfully switched to ${mode} mode (mode locked, no re-detection)`);
+        
+        // Final UI update to ensure consistency
+        updateStatusBar(mode);
+    } catch (error) {
+        // On error, try to restore previous mode
+        log(`ERROR in switchToMode: ${error.message}`, true, true);
+        console.error('VibeSwitch: Error in switchToMode:', error);
+        window.showErrorMessage(`Failed to switch mode: ${error.message}`);
+    }
+};
+
+// Command handlers
+const commandHandlers = {
+    'vibeswitch.switchMode': async () => {
+        try {
+            log(`VibeSwitch: switchMode command triggered, currentMode=${currentMode}`);
+            ui.showModePicker(
+                currentMode,
+                usageStats,
+                async (mode) => {
+                    log(`VibeSwitch: Mode selected in picker: ${mode}`);
+                    await switchToMode(mode);
+                },
+                async () => await statistics.showUsageStatistics(usageStats)
+            );
+        } catch (error) {
+            log(`ERROR in switchMode command: ${error.message}`, true, true);
+            console.error('VibeSwitch: Error in switchMode command:', error);
+            window.showErrorMessage(`Failed to show mode picker: ${error.message}`);
+        }
+    },
+    'vibeswitch.toVibe': () => switchToMode('vibe'),
+    'vibeswitch.toDev': () => switchToMode('dev'),
+    'vibeswitch.showStats': () => statistics.showUsageStatistics(usageStats),
+    'vibeswitch.resetStats': () => statistics.resetUsageStatistics(usageStats),
+    'vibeswitch.exportStats': () => statistics.exportUsageStatistics(usageStats),
+    'vibeswitch.showLogs': () => {
+        if (outputChannel) {
+            outputChannel.show(true);
+            window.showInformationMessage('VibeSwitch logs opened in Output panel');
+        }
+    },
+    'vibeswitch.showStatusBar': () => {
+        if (!statusBarItem) {
+            window.showErrorMessage('Status bar items not initialized. Please reload the window.');
+            return;
+        }
+        statusBarItem.show();
+        if (currentMode === 'dev' && awarenessBarItem) awarenessBarItem.show();
+        window.showInformationMessage('VibeSwitch status bar items shown');
+        log('Status bar items manually shown via command');
+    },
+    'vibeswitch.diagnoseDecorations': () => {
+        if (!fileDecorationProvider) {
+            window.showWarningMessage('File Decoration Provider: Not initialized');
+            log(`Current mode: ${currentMode}`);
+            log(`Awareness monitor exists: ${awarenessMonitor ? 'YES' : 'NO'}`);
+            outputChannel?.show(true);
+            return;
+        }
+        
+        const scoreData = awarenessMonitor?.getScore();
+        let message = '=== File Decoration Provider Diagnostic ===\n\n';
+        message += `Provider exists: YES\nCurrent mode: ${currentMode}\n`;
+        message += `Awareness monitor exists: ${awarenessMonitor ? 'YES' : 'NO'}\n`;
+        message += `Debug call count: ${fileDecorationProvider.debugCallCount || 0}\n\nScore Data:\n`;
+        message += `  Debt files: ${scoreData?.debt?.files?.length || 0}\n`;
+        
+        scoreData?.debt?.files?.forEach((f, i) => {
+            message += `    [${i}] ${f.path} (${f.fullPath})\n`;
+        });
+        
+        message += `  Pending files: ${scoreData?.suggestions?.pendingFiles?.length || 0}\n`;
+        scoreData?.suggestions?.pendingFiles?.forEach((f, i) => {
+            message += `    [${i}] ${f.path} (${f.fullPath})\n`;
+        });
+        
+        message += '\nTriggering manual refresh...\n';
+        outputChannel?.appendLine(message);
+        outputChannel?.show(true);
+        fileDecorationProvider.refresh();
+        window.showInformationMessage('File decoration refresh triggered. Check Output panel for details.');
+    },
+    'vibeswitch.detectTestingFiles': async () => {
+        if (!awarenessMonitor) {
+            window.showWarningMessage('Awareness Monitor: Not initialized');
+            return;
+        }
+        
+        const workspaceFolders = workspace.workspaceFolders;
+        if (!workspaceFolders?.length) {
+            window.showWarningMessage('No workspace folder found');
+            return;
+        }
+        
+        const testingPath = path.join(workspaceFolders[0].uri.fsPath, 'testing');
+        if (!fs.existsSync(testingPath)) {
+            window.showWarningMessage('Testing folder not found');
+            return;
+        }
+        
+        const files = fs.readdirSync(testingPath)
+            .filter(f => f.endsWith('.js'))
+            .map(f => path.join(testingPath, f))
+            .filter(f => fs.existsSync(f) && fs.statSync(f).isFile())
+            .filter(f => fs.readFileSync(f, 'utf8').trim().length > 0);
+        
+        let detected = 0;
+        for (const filePath of files) {
+            awarenessMonitor.handleExternallyCreatedFile(filePath);
+            detected++;
+        }
+        
+        if (detected > 0) {
+            window.showInformationMessage(`Detected ${detected} file(s) in testing folder. Check decorations!`);
+            if (fileDecorationProvider && currentMode === 'dev') fileDecorationProvider.refresh();
+        } else {
+            window.showInformationMessage('No files detected in testing folder');
+        }
+    },
+    'vibeswitch.diagnoseMonitor': () => {
+        if (!awarenessMonitor) {
+            window.showWarningMessage('Awareness Monitor: Not initialized');
+            outputChannel?.appendLine('Awareness Monitor: Not initialized');
+            outputChannel?.show(true);
+            return;
+        }
+        
+        const status = awarenessMonitor.getStatus();
+        const scoreData = awarenessMonitor.getScore();
+        const mode = currentMode;
+        
+        let message = '=== Awareness Monitor Diagnostic ===\n\n';
+        message += `Current Mode: ${mode || 'null'}\nMonitor Active: ${status.isActive ? 'YES' : 'NO'}\n`;
+        message += `Has Context: ${status.hasContext ? 'YES' : 'NO'}\nHas Callback: ${status.hasCallback ? 'YES' : 'NO'}\n`;
+        message += `Has Usage Stats: ${status.hasUsageStats ? 'YES' : 'NO'}\nAI Suggestions: ${status.aiSuggestionsCount}\n`;
+        message += `Review Debt Files: ${status.reviewDebtCount}\nCurrent Score: ${status.currentScore}\n`;
+        message += `Score Components: ${JSON.stringify(status.scores, null, 2)}\n`;
+        message += `Watched Directories: ${status.watchedDirectories.length}\n`;
+        status.watchedDirectories.forEach(dir => message += `  - ${dir}\n`);
+        
+        message += '\n=== File Decoration Diagnostic ===\n\n';
+        message += `File Decoration Provider: ${fileDecorationProvider ? 'EXISTS' : 'NULL'}\n`;
+        if (fileDecorationProvider) {
+            message += `Debug Call Count: ${fileDecorationProvider.debugCallCount || 0}\n`;
+        }
+        
+        message += '\nReview Debt Files (from score data):\n';
+        if (scoreData?.debt?.files?.length > 0) {
+            scoreData.debt.files.forEach((f, i) => {
+                message += `  [${i}] ${f.path}\n      Full Path: ${f.fullPath}\n      Modifications: ${f.modifications}\n      Age: ${f.ageMinutes}m\n`;
+            });
+        } else {
+            message += '  (none)\n';
+        }
+        
+        message += '\nPending Files (from score data):\n';
+        if (scoreData?.suggestions?.pendingFiles?.length > 0) {
+            scoreData.suggestions.pendingFiles.forEach((f, i) => {
+                message += `  [${i}] ${f.path}\n      Full Path: ${f.fullPath}\n      Type: ${f.type}\n      Age: ${f.ageMinutes}m\n`;
+            });
+        } else {
+            message += '  (none)\n';
+        }
+        
+        // Testing folder files check
+        const workspaceFolders = workspace.workspaceFolders;
+        if (workspaceFolders?.length) {
+            const testingPath = path.join(workspaceFolders[0].uri.fsPath, 'testing');
+            if (fs.existsSync(testingPath)) {
+                message += '\n=== Testing Folder Files ===\n';
+                const files = fs.readdirSync(testingPath)
+                    .filter(f => f.endsWith('.js'))
+                    .map(f => path.join(testingPath, f));
+                
+                files.forEach(filePath => {
+                    const relativePath = path.relative(workspaceFolders[0].uri.fsPath, filePath);
+                    const inDebt = scoreData?.debt?.files?.some(f => 
+                        path.resolve(f.fullPath).toLowerCase() === path.resolve(filePath).toLowerCase()
+                    );
+                    const inPending = scoreData?.suggestions?.pendingFiles?.some(f => 
+                        path.resolve(f.fullPath).toLowerCase() === path.resolve(filePath).toLowerCase()
+                    );
+                    
+                    message += `  ${relativePath}: ${inDebt ? '✅ IN DEBT' : inPending ? '⏳ IN PENDING' : '❌ NOT DETECTED'}\n`;
+                    
+                    if (!inDebt && !inPending && fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+                        const content = fs.readFileSync(filePath, 'utf8');
+                        if (content.trim().length > 0) {
+                            try {
+                                awarenessMonitor.handleExternallyCreatedFile(filePath);
+                                message += '      → Manually triggered detection\n';
+                            } catch (err) {
+                                message += `      → Error triggering: ${err.message}\n`;
+                            }
+                        }
+                    }
+                });
+            }
+        }
+        
+        message += `\nFile System Watcher: ${status.hasFileSystemWatcher ? 'ACTIVE' : 'INACTIVE'}\n`;
+        message += `Update Timer: ${status.hasUpdateTimer ? 'ACTIVE' : 'INACTIVE'}\n`;
+        message += `Recent Acceptances: ${status.recentAcceptances}\n`;
+        message += `Workspace Folders: ${status.workspaceFolders.length}\n`;
+        status.workspaceFolders.forEach(folder => message += `  - ${folder}\n`);
+        
+        outputChannel?.appendLine(message);
+        outputChannel?.show(true);
+        const summary = `Monitor: ${status.isActive ? 'ACTIVE' : 'INACTIVE'} | Mode: ${mode || 'null'} | Suggestions: ${status.aiSuggestionsCount} | Score: ${status.currentScore}`;
+        window.showInformationMessage(summary);
+    },
+    'vibeswitch.showUnreviewedFiles': async () => {
+        if (!awarenessMonitor) {
+            window.showWarningMessage('Awareness Monitor: Not initialized');
+            return;
+        }
+        
+        if (currentMode !== 'dev') {
+            window.showInformationMessage('Unreviewed files are only tracked in DEV mode');
+            return;
+        }
+        
+        const scoreData = awarenessMonitor.getScore();
+        const allItems = [];
+        
+        scoreData.debt.files?.forEach(file => {
+            const timeStr = file.ageMinutes < 60 ? `${file.ageMinutes}m ago` : `${Math.round(file.ageMinutes / 60)}h ago`;
+            allItems.push({
+                label: `$(file) ${file.path}`,
+                description: `Review debt • ${timeStr} • ${file.modifications} changes`,
+                detail: file.fullPath,
+                filePath: file.fullPath,
+                type: 'debt'
+            });
+        });
+        
+        scoreData.suggestions.pendingFiles?.forEach(file => {
+            const timeStr = file.ageMinutes < 60 ? `${file.ageMinutes}m ago` : `${Math.round(file.ageMinutes / 60)}h ago`;
+            allItems.push({
+                label: `$(clock) ${file.path}`,
+                description: `Pending ${file.type} • ${timeStr}`,
+                detail: file.fullPath,
+                filePath: file.fullPath,
+                type: 'pending'
+            });
+        });
+        
+        if (allItems.length === 0) {
+            window.showInformationMessage('✅ No unreviewed files - great job!');
+            return;
+        }
+        
+        const selected = await window.showQuickPick(allItems, {
+            placeHolder: `Select a file to open and review (${allItems.length} unreviewed items)`,
+            matchOnDescription: true,
+            matchOnDetail: true
+        });
+        
+        if (selected?.filePath) {
+            try {
+                const document = await workspace.openTextDocument(selected.filePath);
+                await window.showTextDocument(document);
+                log(`Opened unreviewed file: ${selected.filePath}`);
+            } catch (error) {
+                window.showErrorMessage(`Failed to open file: ${error.message}`);
+                log(`Error opening file ${selected.filePath}: ${error.message}`);
+            }
+        }
+    }
+};
+
+// Register all commands
+const registerCommands = (context) => {
+    Object.entries(commandHandlers).forEach(([command, handler]) => {
+        context.subscriptions.push(commands.registerCommand(command, handler));
+    });
+};
+
+// Setup usage stats listeners
+const setupUsageStatsListeners = (context) => {
+    context.subscriptions.push(
+        workspace.onDidOpenTextDocument((doc) => usageStats?.trackFileOpen(doc.fileName)),
+        workspace.onDidChangeTextDocument((event) => {
+            if (usageStats && event.contentChanges.length > 0) usageStats.trackEdit();
+        }),
+        workspace.onDidSaveTextDocument(() => usageStats?.trackFileSave()),
+        { dispose: () => usageStats?.endSession() }
+    );
+};
+
+// Main activation function
 function activate(context) {
     try {
-        outputChannel = vscode.window.createOutputChannel('VibeSwitch');
+        outputChannel = window.createOutputChannel('VibeSwitch');
         context.subscriptions.push(outputChannel);
         
-        const workspaceCount = vscode.workspace.workspaceFolders?.length ?? 0;
-        outputChannel.appendLine('VibeSwitch extension is now active');
-        outputChannel.appendLine(`Workspace folders: ${workspaceCount}`);
+        // Initialize throttled logger
+        const logger = createLogger(outputChannel);
+        log = (msg, show = false, force = false) => {
+            logger.log(msg, force, show);
+        };
+        
+        const workspaceCount = workspace.workspaceFolders?.length ?? 0;
+        log(UnreviewedFileDecorationProvider 
+            ? 'VibeSwitch: ✅ file-decorations module loaded successfully'
+            : 'VibeSwitch: ❌ ERROR: file-decorations module NOT loaded', false, true);
+        log('VibeSwitch extension is now active', false, true);
+        log(`Workspace folders: ${workspaceCount}`, false, true);
         outputChannel.show(true);
-        console.log('VibeSwitch extension is now active');
     } catch (error) {
         console.error('VibeSwitch: Error during activation:', error);
         outputChannel?.appendLine(`ERROR: ${error.message}`);
         outputChannel?.show(true);
     }
     
-    // Store context for use in closures (command handlers need it for awareness monitor)
     extensionContext = context;
-    
-    // Initialize usage statistics
     usageStats = new UsageStatsManager(context);
     
-    // Initialize awareness monitor (with usage statistics integration for AI-aware tracking)
-    // Pass callback for immediate meter updates when score changes
     awarenessMonitor = new AwarenessMonitor(usageStats, () => {
-        const msg = `VibeSwitch: Score update callback triggered, currentMode=${currentMode}`;
-        console.log(msg);
-        outputChannel?.appendLine(msg);
-        
+        log(`VibeSwitch: Score update callback triggered, currentMode=${currentMode}`);
         if (currentMode === 'dev') {
             updateAwarenessMeter();
+            if (fileDecorationProvider) {
+                log('VibeSwitch: Refreshing file decorations from score update callback');
+                fileDecorationProvider.refresh();
+            }
         }
     });
     
-    console.log('VibeSwitch: AwarenessMonitor initialized with callback');
-    outputChannel?.appendLine('VibeSwitch: AwarenessMonitor initialized with callback');
-    
-    // Set output channel for awareness monitor logging
-    if (AwarenessMonitorModule.setLogOutput) {
-        AwarenessMonitorModule.setLogOutput(outputChannel);
-        outputChannel?.appendLine('VibeSwitch: Log output channel connected to AwarenessMonitor');
+    log('VibeSwitch: AwarenessMonitor initialized with callback');
+    if (AwarenessMonitor.setLogOutput) {
+        AwarenessMonitor.setLogOutput(outputChannel);
+        log('VibeSwitch: Log output channel connected to AwarenessMonitor');
     }
-
+    
     // Create status bar items
-    statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+    statusBarItem = window.createStatusBarItem(StatusBarAlignment.Right, 100);
     statusBarItem.command = 'vibeswitch.switchMode';
     context.subscriptions.push(statusBarItem);
-
-    // Create awareness meter bar item (appears right next to mode indicator)
-    awarenessBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
+    
+    awarenessBarItem = window.createStatusBarItem(StatusBarAlignment.Right, 99);
     awarenessBarItem.command = 'vibeswitch.showStats';
     context.subscriptions.push(awarenessBarItem);
-
-    // Register commands
+    
     registerCommands(context);
-
-    // CRITICAL: Show status bar items IMMEDIATELY after creation
-    // This ensures they're visible even if mode detection fails or errors occur
+    
+    // Show status bar items immediately
     if (statusBarItem) {
         statusBarItem.text = '$(gear) VibeSwitch';
         statusBarItem.tooltip = 'VibeSwitch: Initializing...';
         statusBarItem.show();
-        outputChannel?.appendLine('Status bar item created and shown immediately');
+        log('Status bar item created and shown immediately');
     }
     
     if (awarenessBarItem) {
         awarenessBarItem.text = '$(graph)';
         awarenessBarItem.tooltip = 'Awareness meter: Initializing...';
-        // Don't show yet - will be shown after mode detection
-        outputChannel?.appendLine('Awareness bar item created');
+        log('Awareness bar item created');
     }
-
-    // Initialize and update status bar with mode detection
-    try {
-        updateStatusBar();
-        outputChannel?.appendLine(`Status bar updated, currentMode=${currentMode}`);
-        
-        // Force show status bar item one more time after update (defensive)
-        if (statusBarItem) {
-            statusBarItem.show();
-        }
-        
-        // Update awareness meter (will show/hide based on mode)
-        updateAwarenessMeter();
-    } catch (error) {
-        console.error('VibeSwitch: Error updating status bar:', error);
-        outputChannel?.appendLine(`ERROR updating status bar: ${error.message}`);
-        outputChannel?.appendLine(`Stack: ${error.stack}`);
-        
-        // Ensure status bar is still visible even on error
-        if (statusBarItem) {
-            statusBarItem.text = '$(alert) VibeSwitch';
-            statusBarItem.tooltip = `VibeSwitch: Error - ${error.message}\nClick to switch modes`;
-            statusBarItem.show();
-        }
-    }
-
-    // Start awareness monitor if already in DEV mode
-    if (currentMode === 'dev' && awarenessMonitor) {
-        console.log('VibeSwitch: Starting awareness monitor (already in DEV mode)...');
-        awarenessMonitor.start(context);
-        console.log('VibeSwitch: ✅ Awareness monitor started successfully');
-        
-        // Update meter every 10 seconds in DEV mode
-        meterUpdateTimer = setInterval(() => {
-            if (currentMode === 'dev') {
-                updateAwarenessMeter();
+    
+    // Initialize and update status bar - detect mode ONCE on startup, then never again
+    setTimeout(() => {
+        try {
+            // Detect mode ONCE on initialization
+            const initialMode = modeManager.detectCurrentMode(true);
+            if (initialMode) {
+                currentMode = initialMode;
+                log(`VibeSwitch: Initial mode detected: ${initialMode}`);
+            } else {
+                log(`VibeSwitch: No mode detected on initialization`);
             }
-        }, 10000);
-        
-        // Initial meter update
-        updateAwarenessMeter();
-    }
-
-    // Watch for .cursorrules changes
-    modeManager.watchForModeChanges(() => {
-        updateStatusBar();
-    });
-
-    // Track file operations for usage statistics
+            
+            // Update status bar with detected mode (don't detect again)
+            updateStatusBar(currentMode);
+            if (statusBarItem) statusBarItem.show();
+            
+            log(`VibeSwitch: Initialization complete. Mode: ${currentMode || 'none'}. No file watcher - mode only changes on explicit user action.`);
+        } catch (error) {
+            console.error('VibeSwitch: Error updating status bar:', error);
+            log(`ERROR updating status bar: ${error.message}`, true, true);
+            log(`Stack: ${error.stack}`, false, true);
+            
+            if (statusBarItem) {
+                statusBarItem.text = '$(alert) VibeSwitch';
+                statusBarItem.tooltip = `VibeSwitch: Error - ${error.message}\nClick to switch modes`;
+                statusBarItem.show();
+            }
+        }
+    }, 500);
+    
+    // Start awareness monitor if in DEV mode
+    setTimeout(() => {
+        if (currentMode === 'dev' && awarenessMonitor) {
+            log('VibeSwitch: Starting awareness monitor (already in DEV mode)...');
+            startAwarenessMonitor();
+            log('VibeSwitch: ✅ Awareness monitor started successfully');
+            updateAwarenessMeter();
+        } else {
+            log(`VibeSwitch: Monitor not started - currentMode=${currentMode}, awarenessMonitor=${awarenessMonitor ? 'exists' : 'null'}`);
+        }
+    }, 1000);
+    
+    // NO FILE WATCHER - mode only changes when user explicitly switches
+    // This prevents all flashing and race conditions
+    log('VibeSwitch: File watcher disabled - mode only changes on explicit user action');
+    
     setupUsageStatsListeners(context);
 }
 
-/**
- * Registers all extension commands
- * 
- * @param {vscode.ExtensionContext} context - Extension context for subscriptions
- */
-function registerCommands(context) {
-    // Main mode switcher command
-    context.subscriptions.push(
-        vscode.commands.registerCommand('vibeswitch.switchMode', async () => {
-            ui.showModePicker(
-                currentMode,
-                usageStats,
-                async (mode) => await switchToMode(mode),
-                async () => await statistics.showUsageStatistics(usageStats)
-            );
-        })
-    );
-    
-    // Quick switch commands
-    context.subscriptions.push(
-        vscode.commands.registerCommand('vibeswitch.toVibe', async () => {
-            await switchToMode('vibe');
-        })
-    );
-    
-    context.subscriptions.push(
-        vscode.commands.registerCommand('vibeswitch.toDev', async () => {
-            await switchToMode('dev');
-        })
-    );
-
-    // Usage statistics commands
-    context.subscriptions.push(
-        vscode.commands.registerCommand('vibeswitch.showStats', async () => {
-            await statistics.showUsageStatistics(usageStats);
-        })
-    );
-
-    context.subscriptions.push(
-        vscode.commands.registerCommand('vibeswitch.resetStats', async () => {
-            await statistics.resetUsageStatistics(usageStats);
-        })
-    );
-
-    context.subscriptions.push(
-        vscode.commands.registerCommand('vibeswitch.exportStats', async () => {
-            await statistics.exportUsageStatistics(usageStats);
-        })
-    );
-    
-    // Utility commands
-    context.subscriptions.push(
-        vscode.commands.registerCommand('vibeswitch.showLogs', () => {
-            if (outputChannel) {
-                outputChannel.show(true);
-                vscode.window.showInformationMessage('VibeSwitch logs opened in Output panel');
-            }
-        })
-    );
-    
-    context.subscriptions.push(
-        vscode.commands.registerCommand('vibeswitch.showStatusBar', () => {
-            if (!statusBarItem) {
-                vscode.window.showErrorMessage('Status bar items not initialized. Please reload the window.');
-                return;
-            }
-            
-            statusBarItem.show();
-            if (currentMode === 'dev' && awarenessBarItem) {
-                awarenessBarItem.show();
-            }
-            
-            vscode.window.showInformationMessage('VibeSwitch status bar items shown');
-            outputChannel?.appendLine('Status bar items manually shown via command');
-        })
-    );
-
-    // Diagnostic command to check awareness monitor status
-    context.subscriptions.push(
-        vscode.commands.registerCommand('vibeswitch.diagnoseMonitor', () => {
-            if (!awarenessMonitor) {
-                vscode.window.showWarningMessage('Awareness Monitor: Not initialized');
-                outputChannel?.appendLine('Awareness Monitor: Not initialized');
-                outputChannel?.show(true);
-                return;
-            }
-
-            const status = awarenessMonitor.getStatus();
-            const mode = currentMode;
-            
-            let message = '=== Awareness Monitor Diagnostic ===\n\n';
-            message += `Current Mode: ${mode || 'null'}\n`;
-            message += `Monitor Active: ${status.isActive ? 'YES' : 'NO'}\n`;
-            message += `Has Context: ${status.hasContext ? 'YES' : 'NO'}\n`;
-            message += `Has Callback: ${status.hasCallback ? 'YES' : 'NO'}\n`;
-            message += `Has Usage Stats: ${status.hasUsageStats ? 'YES' : 'NO'}\n`;
-            message += `AI Suggestions: ${status.aiSuggestionsCount}\n`;
-            message += `Review Debt Files: ${status.reviewDebtCount}\n`;
-            message += `Current Score: ${status.currentScore}\n`;
-            message += `Score Components: ${JSON.stringify(status.scores, null, 2)}\n`;
-            message += `Watched Directories: ${status.watchedDirectories.length}\n`;
-            if (status.watchedDirectories.length > 0) {
-                status.watchedDirectories.forEach(dir => {
-                    message += `  - ${dir}\n`;
-                });
-            }
-            message += `File System Watcher: ${status.hasFileSystemWatcher ? 'ACTIVE' : 'INACTIVE'}\n`;
-            message += `Update Timer: ${status.hasUpdateTimer ? 'ACTIVE' : 'INACTIVE'}\n`;
-            message += `Recent Acceptances: ${status.recentAcceptances}\n`;
-            message += `Workspace Folders: ${status.workspaceFolders.length}\n`;
-            if (status.workspaceFolders.length > 0) {
-                status.workspaceFolders.forEach(folder => {
-                    message += `  - ${folder}\n`;
-                });
-            }
-
-            outputChannel?.appendLine(message);
-            outputChannel?.show(true);
-            
-            // Also show a quick summary in a message
-            const summary = `Monitor: ${status.isActive ? 'ACTIVE' : 'INACTIVE'} | Mode: ${mode || 'null'} | Suggestions: ${status.aiSuggestionsCount} | Score: ${status.currentScore}`;
-            vscode.window.showInformationMessage(summary);
-        })
-    );
-}
-
-/**
- * Sets up event listeners for usage statistics tracking
- * 
- * @param {vscode.ExtensionContext} context - Extension context for subscriptions
- */
-function setupUsageStatsListeners(context) {
-    // Track file opens for awareness metrics
-    context.subscriptions.push(
-        vscode.workspace.onDidOpenTextDocument((document) => {
-            usageStats?.trackFileOpen(document.fileName);
-        })
-    );
-
-    // Track edits for awareness metrics
-    context.subscriptions.push(
-        vscode.workspace.onDidChangeTextDocument((event) => {
-            if (usageStats && event.contentChanges.length > 0) {
-                usageStats.trackEdit();
-            }
-        })
-    );
-
-    // Track saves
-    context.subscriptions.push(
-        vscode.workspace.onDidSaveTextDocument(() => {
-            usageStats?.trackFileSave();
-        })
-    );
-
-    // End usage statistics session on deactivation
-    context.subscriptions.push({
-        dispose: () => {
-            usageStats?.endSession();
-        }
-    });
-}
-
-/**
- * Updates the status bar to reflect current mode
- * Delegates to status-bar module
- */
-const updateStatusBar = () => {
-    currentMode = modeManager.detectCurrentMode();
-    statusBar.updateStatusBar(statusBarItem, currentMode, outputChannel);
-    updateAwarenessMeter();
-};
-
-/**
- * Updates the awareness meter display
- * Delegates to status-bar module
- */
-const updateAwarenessMeter = () => {
-    statusBar.updateAwarenessMeter(awarenessBarItem, awarenessMonitor, currentMode, outputChannel);
-};
-
-/**
- * Starts the awareness monitor with proper timer setup
- */
-const startAwarenessMonitor = () => {
-    if (!awarenessMonitor || !extensionContext) {
-        return;
-    }
-    
-    awarenessMonitor.start(extensionContext);
-    console.log('VibeSwitch: Started real-time awareness monitoring');
-    
-    // Clear any existing meter update timer
-    if (meterUpdateTimer) {
-        clearInterval(meterUpdateTimer);
-    }
-    
-    // Update meter every 10 seconds in DEV mode
-    meterUpdateTimer = setInterval(() => {
-        if (currentMode === 'dev') {
-            updateAwarenessMeter();
-        }
-    }, 10000);
-    
-    // Initial meter update
-    updateAwarenessMeter();
-};
-
-/**
- * Stops the awareness monitor and clears the timer
- */
-const stopAwarenessMonitor = () => {
-    if (!awarenessMonitor) {
-        return;
-    }
-    
-    awarenessMonitor.stop();
-    console.log('VibeSwitch: Stopped awareness monitoring (VIBE mode)');
-    
-    // Clear meter update timer
-    if (meterUpdateTimer) {
-        clearInterval(meterUpdateTimer);
-        meterUpdateTimer = null;
-    }
-};
-
-/**
- * Switches to the specified mode
- * Delegates to mode-manager module
- * 
- * @param {string} mode - The mode to switch to ('vibe' or 'dev')
- */
-const switchToMode = async (mode) => {
-    await modeManager.switchToMode(mode, {
-        currentMode,
-        onModeSwitched: (newMode) => {
-            currentMode = newMode;
-            updateStatusBar();
-        },
-        onMonitorStart: startAwarenessMonitor,
-        onMonitorStop: stopAwarenessMonitor,
-        usageStats
-    });
-};
-
-/**
- * Extension deactivation function
- * Called when VS Code deactivates the extension (on shutdown or when extension is disabled)
- * 
- * Performs cleanup:
- * - Disposes status bar items
- * - Ends usage statistics session
- * - Cleans up any resources that need explicit disposal
- * 
- * Note: VS Code automatically disposes items registered in context.subscriptions
- */
+// Deactivation function
 const deactivate = () => {
     statusBarItem?.dispose();
     awarenessBarItem?.dispose();
     usageStats?.endSession();
-    
+    if (fileDecorationProvider) {
+        fileDecorationProvider.dispose();
+        fileDecorationProvider = null;
+    }
     if (meterUpdateTimer) {
         clearInterval(meterUpdateTimer);
         meterUpdateTimer = null;
     }
 };
 
-module.exports = {
-    activate,
-    deactivate
-};
+module.exports = { activate, deactivate };
