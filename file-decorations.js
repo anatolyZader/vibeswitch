@@ -2,7 +2,7 @@
  * File Decorations Provider for VibeSwitch
  * 
  * Provides visual indicators in the VS Code Explorer for unreviewed AI changes:
- * - Review debt files: Red with ⚠ badge
+ * - Review debt files: Violet/purple with ⚠ badge
  * - Pending new files: Blue/purple with ⏳ badge  
  * - Pending changes: Orange/yellow with ⏳ badge
  */
@@ -129,11 +129,11 @@ class UnreviewedFileDecorationProvider {
                     }
                     
                     if (matches) {
-                        this.log(`[FileDecorations] ✅ RETURNING RED DECORATION for ${fileName} (${debtFile.modifications} modifications, ${debtFile.ageMinutes}m ago)`);
+                        this.log(`[FileDecorations] ✅ RETURNING VIOLET DECORATION for ${fileName} (${debtFile.modifications} modifications, ${debtFile.ageMinutes}m ago)`);
                         return {
                             badge: '⚠',
                             tooltip: `Unreviewed AI changes: ${debtFile.modifications} modifications, ${debtFile.ageMinutes}m ago`,
-                            color: new vscode.ThemeColor('errorForeground') // Red
+                            color: new vscode.ThemeColor('textLink.activeForeground') // Violet/purple
                         };
                     }
                 }

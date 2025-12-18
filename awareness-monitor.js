@@ -124,6 +124,11 @@ class AwarenessMonitor {
             vscode.window.onDidChangeTextEditorSelection(this.onCursorMove.bind(this))
         );
         
+        // Track scroll events (user reviewing code by scrolling)
+        this.disposables.push(
+            vscode.window.onDidChangeTextEditorVisibleRanges(this.onScroll.bind(this))
+        );
+        
         // Track active editor (user switching to review)
         this.disposables.push(
             vscode.window.onDidChangeActiveTextEditor(this.onEditorChange.bind(this))
@@ -1302,7 +1307,7 @@ class AwarenessMonitor {
     }
 
     /**
-     * Handle file opened (user might be reviewing debt)
+     * Handle file opened (user might be reviewing debt or pending suggestions)
      */
     onFileOpened(document) {
         const scheme = document.uri.scheme;
@@ -1313,6 +1318,7 @@ class AwarenessMonitor {
         const filePath = document.uri.fsPath;
         const debt = this.reviewDebt.get(filePath);
         
+        // Check if file has unreviewed debt
         if (debt && !debt.reviewed) {
             // Start tracking review session
             if (!this.fileReviewTracking.has(filePath)) {
@@ -1331,6 +1337,22 @@ class AwarenessMonitor {
                 this.saveReviewDebt();
             }
         }
+        
+        // Also check if file has pending suggestions
+        const hasPendingSuggestions = this.aiSuggestions.some(s => 
+            s.status === 'pending' && s.filePath === filePath
+        );
+        
+        if (hasPendingSuggestions && !this.fileReviewTracking.has(filePath)) {
+            // Start tracking review session for pending suggestions too
+            const now = Date.now();
+            this.fileReviewTracking.set(filePath, {
+                sessionStart: now,
+                lastActivity: now,
+                cursorMovements: 0,
+                scrollEvents: 0
+            });
+        }
     }
 
     /**
@@ -1348,7 +1370,12 @@ class AwarenessMonitor {
         
         for (const [filePath, tracking] of this.fileReviewTracking.entries()) {
             const debt = this.reviewDebt.get(filePath);
-            if (!debt || debt.reviewed) {
+            const hasPendingSuggestions = this.aiSuggestions.some(s => 
+                s.status === 'pending' && s.filePath === filePath
+            );
+            
+            // If no debt and no pending suggestions, remove tracking
+            if ((!debt || debt.reviewed) && !hasPendingSuggestions) {
                 this.fileReviewTracking.delete(filePath);
                 continue;
             }
@@ -1358,32 +1385,55 @@ class AwarenessMonitor {
             
             // Check if session ended due to inactivity
             if (timeSinceActivity > ACTIVITY_TIMEOUT) {
-                debt.totalReviewTime += sessionDuration;
+                if (debt) {
+                    debt.totalReviewTime += sessionDuration;
+                    this.saveReviewDebt();
+                }
                 this.fileReviewTracking.delete(filePath);
-                this.saveReviewDebt();
                 continue;
             }
             
-            // Check if user has reviewed enough
-            if (sessionDuration >= MINIMUM_REVIEW_TIME && tracking.cursorMovements >= 5) {
-                // Debt is paid!
-                debt.reviewed = true;
-                debt.reviewedAt = now;
-                debt.totalReviewTime += sessionDuration;
-                this.fileReviewTracking.delete(filePath);
+            // Check if user has reviewed enough (scrolling OR cursor movements)
+            if (sessionDuration >= MINIMUM_REVIEW_TIME && (tracking.cursorMovements >= 5 || tracking.scrollEvents >= 3)) {
+                let needsScoreUpdate = false;
                 
-                // EMIT DEBT CLEARED TO USAGE STATISTICS
-                if (this.usageStats) {
-                    this.usageStats.trackAIDebtCleared({
-                        filePath,
-                        totalChanges: debt.totalChanges,
-                        totalReviewTime: debt.totalReviewTime,
-                        modificationCount: debt.modificationCount
-                    });
+                // Mark review debt as paid
+                if (debt && !debt.reviewed) {
+                    debt.reviewed = true;
+                    debt.reviewedAt = now;
+                    debt.totalReviewTime += sessionDuration;
+                    
+                    // EMIT DEBT CLEARED TO USAGE STATISTICS
+                    if (this.usageStats) {
+                        this.usageStats.trackAIDebtCleared({
+                            filePath,
+                            totalChanges: debt.totalChanges,
+                            totalReviewTime: debt.totalReviewTime,
+                            modificationCount: debt.modificationCount
+                        });
+                    }
+                    
+                    this.saveReviewDebt();
+                    needsScoreUpdate = true;
                 }
                 
-                this.saveReviewDebt();
-                this.updateScore(); // Recalculate score immediately
+                // Mark all pending suggestions in this file as reviewed
+                if (hasPendingSuggestions) {
+                    for (const suggestion of this.aiSuggestions) {
+                        if (suggestion.status === 'pending' && suggestion.filePath === filePath) {
+                            suggestion.reviewed = true;
+                            suggestion.reviewStarted = tracking.sessionStart;
+                            suggestion.reviewTime = sessionDuration;
+                            needsScoreUpdate = true;
+                        }
+                    }
+                }
+                
+                this.fileReviewTracking.delete(filePath);
+                
+                if (needsScoreUpdate) {
+                    this.updateScore(); // Recalculate score immediately
+                }
             }
         }
     }
@@ -1428,6 +1478,24 @@ class AwarenessMonitor {
                     suggestion.reviewStarted = null;
                 }
             }
+        }
+    }
+
+    /**
+     * Track scroll activity in files being reviewed
+     */
+    onScroll(event) {
+        if (!event.textEditor) return;
+        
+        const filePath = event.textEditor.document.uri.fsPath;
+        
+        // Update review tracking if this file has debt
+        const tracking = this.fileReviewTracking.get(filePath);
+        if (tracking) {
+            tracking.lastActivity = Date.now();
+            tracking.scrollEvents++;
+            // Count scrolling as cursor movement for review purposes
+            tracking.cursorMovements++;
         }
     }
 
