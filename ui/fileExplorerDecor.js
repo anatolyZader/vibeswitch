@@ -8,13 +8,14 @@
  */
 
 const vscode = require('vscode');
-const { getLogger } = require('./logger');
+const { getLogger } = require('../logger');
 
-class UnreviewedFileDecorationProvider {
-    constructor(awarenessMonitor, getCurrentMode, logOutput) {
+class UnreviewedFileDecor {
+    constructor(awarenessMonitor, getCurrentMode, logOutput, disableLogging = false) {
         this.awarenessMonitor = awarenessMonitor;
         this.getCurrentMode = getCurrentMode;
         this.logOutput = logOutput;
+        this.disableLogging = disableLogging;
         this._onDidChangeFileDecorations = new vscode.EventEmitter();
         this.debugCallCount = 0;
         this.logger = getLogger();
@@ -27,6 +28,7 @@ class UnreviewedFileDecorationProvider {
      * Logs a message using throttled logger
      */
     log(message, force = false) {
+        if (this.disableLogging && !force) return; // Exit early if logging disabled
         if (this.logger) {
             this.logger.log(message, force);
         } else {
@@ -219,7 +221,7 @@ class UnreviewedFileDecorationProvider {
     }
 }
 
-module.exports = UnreviewedFileDecorationProvider;
+module.exports = UnreviewedFileDecor;
 
 
 

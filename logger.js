@@ -126,7 +126,12 @@ class ThrottledLogger {
      * Internal: Write log to console and output channel
      */
     _writeLog(message, show = false) {
+        // Always log to console for debugging
         console.log(message);
+        
+        // Respect DISABLE_LOGGING flag for output channel
+        if (DISABLE_LOGGING) return;
+        
         if (this.outputChannel) {
             this.outputChannel.appendLine(message);
             if (show) {
@@ -151,6 +156,7 @@ class ThrottledLogger {
 
 // Create singleton instance
 let loggerInstance = null;
+let DISABLE_LOGGING = false;
 
 function createLogger(outputChannel) {
     loggerInstance = new ThrottledLogger(outputChannel);
@@ -164,10 +170,15 @@ function getLogger() {
     return loggerInstance;
 }
 
+function setDisableLogging(disabled) {
+    DISABLE_LOGGING = disabled;
+}
+
 module.exports = {
     ThrottledLogger,
     createLogger,
-    getLogger
+    getLogger,
+    setDisableLogging
 };
 
 
