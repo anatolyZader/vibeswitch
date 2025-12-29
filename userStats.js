@@ -4,38 +4,27 @@
  */
 
 const vscode = require('vscode');
-const fs = require('fs');
-const path = require('path');
+const PersistInSystem = require('./awarenessMonitor/persistInSystem');
 
 class UsageStatsManager {
     constructor(context) {
         this.context = context;
         // Keep 'telemetry.json' filename for backwards compatibility with existing user data
-        this.usageStatsPath = path.join(context.globalStorageUri.fsPath, 'telemetry.json');
+        this.persistence = new PersistInSystem(context, 'global', 'telemetry.json');
         this.currentSession = null;
-        this.ensureStorageExists();
         this.loadUsageStats();
     }
 
-    ensureStorageExists() {
-        const dir = path.dirname(this.usageStatsPath);
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-        }
-    }
-
     loadUsageStats() {
-        try {
-            if (fs.existsSync(this.usageStatsPath)) {
-                const data = fs.readFileSync(this.usageStatsPath, 'utf8');
-                this.data = JSON.parse(data);
-            } else {
-                this.data = this.getDefaultData();
-                this.saveUsageStats();
-            }
-        } catch (error) {
-            console.error('VibeSwitch: Failed to load usage statistics:', error);
-            this.data = this.getDefaultData();
+        const defaultData = this.getDefaultData();
+        const loaded = this.persistence.load(defaultData);
+        
+        // If file doesn't exist, we'll get default data - save it to create the file
+        if (!this.persistence.exists()) {
+            this.data = defaultData;
+            this.saveUsageStats();
+        } else {
+            this.data = loaded;
         }
     }
 
@@ -105,12 +94,8 @@ class UsageStatsManager {
     }
 
     saveUsageStats() {
-        try {
-            this.data.lastUpdated = new Date().toISOString();
-            fs.writeFileSync(this.usageStatsPath, JSON.stringify(this.data, null, 2));
-        } catch (error) {
-            console.error('VibeSwitch: Failed to save usage statistics:', error);
-        }
+        this.data.lastUpdated = new Date().toISOString();
+        this.persistence.save(this.data, null, { pretty: true });
     }
 
     // Track mode switch

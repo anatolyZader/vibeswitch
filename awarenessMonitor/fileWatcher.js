@@ -10,9 +10,9 @@ const { getLogger } = require('../logger');
 const { CODE_EXTENSIONS, isNonCodeDocument } = require('./utils');
 
 class FileWatcher {
-    constructor(suggestionTracker, reviewDebtManager, updateScore, onScoreUpdate) {
-        this.suggestionTracker = suggestionTracker;
-        this.reviewDebtManager = reviewDebtManager;
+    constructor(agentSuggestionHandler, debtManager, updateScore, onScoreUpdate) {
+        this.agentSuggestionHandler = agentSuggestionHandler;
+        this.debtManager = debtManager;
         this.updateScore = updateScore;
         this.onScoreUpdate = onScoreUpdate;
         
@@ -117,8 +117,8 @@ class FileWatcher {
         getLogger().log(`AwarenessMonitor: Processing externally created file: ${filePath}`);
         
         // Process file as suggestion
-        if (this.suggestionTracker) {
-            this.suggestionTracker.processFileAsSuggestion(fileUri, {
+        if (this.agentSuggestionHandler) {
+            this.agentSuggestionHandler.processFileAsSuggestion(fileUri, {
                 isFileCreation: true,
                 isExternalCreation: true,
                 filePath: filePath
@@ -134,7 +134,7 @@ class FileWatcher {
     }
 
     /**
-     * Scan existing files in workspace and add them to review debt if needed
+     * Scan existing files in workspace and add them to debt if needed
      * Called on startup to catch files that were created before the extension was active
      */
     scanExistingFiles() {
@@ -144,7 +144,7 @@ class FileWatcher {
             return;
         }
 
-        getLogger().log('AwarenessMonitor: Scanning existing files for review debt...');
+        getLogger().log('AwarenessMonitor: Scanning existing files for debt...');
         
         const ignoreDirs = ['node_modules', '.git', '.vscode', 'dist', 'build', 'out', 'target', '.next', '.cache'];
         
@@ -175,9 +175,9 @@ class FileWatcher {
                     
                     scanned++;
                     
-                    // Check if already in review debt
+                    // Check if already in debt
                     const normalizedPath = path.resolve(fullPath).replace(/\\/g, '/');
-                    if (this.reviewDebtManager && this.reviewDebtManager.getDebtMap().has(normalizedPath)) {
+                    if (this.debtManager && this.debtManager.getDebtMap().has(normalizedPath)) {
                         continue; // Already tracked
                     }
                     
@@ -208,7 +208,7 @@ class FileWatcher {
             scanDirectory(folderPath);
         }
         
-        getLogger().log(`AwarenessMonitor: File scan complete: ${scanned} files scanned, ${added} files added to review debt`);
+        getLogger().log(`AwarenessMonitor: File scan complete: ${scanned} files scanned, ${added} files added to debt`);
         
         // Trigger score update after scan (even if no files added, to refresh UI)
         setTimeout(() => {

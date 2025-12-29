@@ -1,5 +1,5 @@
 {
   "npm.exclude": "**/package.json",
   "files.autoSave": "afterDelay",
-  "files.autoSaveDelay": 3000
+  "files.autoSaveDelay": 1000
 }

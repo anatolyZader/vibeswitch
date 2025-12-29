@@ -1,67 +1,68 @@
 /**
- * Review Debt Manager
+ * Debt Manager
  * Manages persistent tracking of unreviewed files and calculates debt scores
  */
 
 const { getLogger } = require('../logger');
+const PersistInContext = require('./persistInContext');
 
-class ReviewDebtManager {
+class DebtManager {
     constructor(context, onScoreUpdate) {
         this.context = context;
         this.onScoreUpdate = onScoreUpdate;
-        this.reviewDebt = new Map(); // filepath -> debt object
+        this.debt = new Map(); // filepath -> debt object
+        
+        // Initialize persistence manager for workspace storage
+        this.persistence = context ? new PersistInContext(context, 'workspace') : null;
     }
 
     /**
-     * Load review debt from workspace storage
+     * Load debt from workspace storage
      */
-    loadReviewDebt() {
-        if (!this.context) return;
+    loadDebt() {
+        if (!this.persistence) return;
         
         try {
-            const stored = this.context.workspaceState.get('reviewDebt', {});
-            this.reviewDebt = new Map(Object.entries(stored));
+            // Load debt data as Map using persistence manager
+            this.debt = this.persistence.loadAsMap('debt', new Map());
             
-            getLogger().log(`AwarenessMonitor: Loaded ${this.reviewDebt.size} files with review debt`);
+            getLogger().log(`AwarenessMonitor: Loaded ${this.debt.size} files with debt`);
             
             // Clean up old debt (older than 7 days)
             const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
-            for (const [path, debt] of this.reviewDebt.entries()) {
+            for (const [path, debt] of this.debt.entries()) {
                 if (debt.modifiedAt < sevenDaysAgo) {
-                    this.reviewDebt.delete(path);
+                    this.debt.delete(path);
                     getLogger().log(`AwarenessMonitor: Removed stale debt for ${path}`);
                 }
             }
             
-            this.saveReviewDebt();
+            // Save cleaned up data
+            this.saveDebt();
         } catch (error) {
-            console.error('AwarenessMonitor: Error loading review debt', error);
-            this.reviewDebt = new Map();
+            console.error('AwarenessMonitor: Error loading debt', error);
+            this.debt = new Map();
         }
     }
 
     /**
-     * Save review debt to workspace storage
+     * Save debt to workspace storage
      */
-    saveReviewDebt() {
-        if (!this.context) return;
+    saveDebt() {
+        if (!this.persistence) return;
         
-        try {
-            const debtObject = Object.fromEntries(this.reviewDebt);
-            this.context.workspaceState.update('reviewDebt', debtObject);
-        } catch (error) {
-            console.error('AwarenessMonitor: Error saving review debt', error);
-        }
+        // Use persistence manager to save debt data
+        this.persistence.saveSync('debt', this.debt);
     }
 
     /**
-     * Add file to review debt
+     * Add file to debt
      * @param {string} filePath - Path to the file
      * @param {number} changeSize - Size of the change
      * @param {Function} updateScore - Callback to trigger score update
      */
-    addToReviewDebt(filePath, changeSize, updateScore) {
-        const existing = this.reviewDebt.get(filePath);
+    addToDebt(filePath, changeSize, updateScore) {
+        const existing = this.debt.get(filePath);
         const now = Date.now();
         
         if (existing && !existing.reviewed) {
@@ -71,7 +72,7 @@ class ReviewDebtManager {
             existing.modificationCount++;
         } else if (existing && existing.reviewed) {
             // File was reviewed but new changes came in - create new entry
-            this.reviewDebt.set(filePath, {
+            this.debt.set(filePath, {
                 modifiedAt: now,
                 lastModifiedAt: now,
                 totalChanges: changeSize,
@@ -84,7 +85,7 @@ class ReviewDebtManager {
             });
         } else {
             // New debt entry
-            this.reviewDebt.set(filePath, {
+            this.debt.set(filePath, {
                 modifiedAt: now,
                 lastModifiedAt: now,
                 totalChanges: changeSize,
@@ -97,7 +98,7 @@ class ReviewDebtManager {
             });
         }
         
-        this.saveReviewDebt();
+        this.saveDebt();
         
         // Trigger immediate score update to refresh file decorations
         if (updateScore) {
@@ -111,7 +112,7 @@ class ReviewDebtManager {
      * @returns {Object|null} Debt object or null
      */
     getDebt(filePath) {
-        return this.reviewDebt.get(filePath) || null;
+        return this.debt.get(filePath) || null;
     }
 
     /**
@@ -120,29 +121,29 @@ class ReviewDebtManager {
      * @param {number} reviewTime - Time spent reviewing
      */
     markAsReviewed(filePath, reviewTime) {
-        const debt = this.reviewDebt.get(filePath);
+        const debt = this.debt.get(filePath);
         if (debt) {
             debt.reviewed = true;
             debt.reviewedAt = Date.now();
             debt.totalReviewTime += reviewTime;
-            this.saveReviewDebt();
+            this.saveDebt();
         }
     }
 
     /**
-     * Update debt with review session info
+     * Update debt with session info
      * @param {string} filePath - Path to the file
-     * @param {Object} sessionData - Review session data
+     * @param {Object} sessionData - Session data
      */
-    updateReviewSession(filePath, sessionData) {
-        const debt = this.reviewDebt.get(filePath);
+    updateSession(filePath, sessionData) {
+        const debt = this.debt.get(filePath);
         if (debt) {
             if (!debt.firstOpenedAt) {
                 debt.firstOpenedAt = sessionData.sessionStart;
             }
             debt.lastVisitedAt = Date.now();
             debt.reviewSessions = (debt.reviewSessions || 0) + 1;
-            this.saveReviewDebt();
+            this.saveDebt();
         }
     }
 
@@ -153,7 +154,7 @@ class ReviewDebtManager {
      * @returns {number} Debt score (0-30)
      */
     calculateDebtScore(aiSuggestions) {
-        const unreviewedFiles = Array.from(this.reviewDebt.values())
+        const unreviewedFiles = Array.from(this.debt.values())
             .filter(d => !d.reviewed);
         
         // Pending suggestions are also debt - they represent unreviewed AI-generated code
@@ -192,11 +193,11 @@ class ReviewDebtManager {
     }
 
     /**
-     * Get review debt summary for UI
+     * Get debt summary for UI
      * @returns {Object} Summary with total count and top 10 oldest files
      */
-    getReviewDebtSummary() {
-        const unreviewedFiles = Array.from(this.reviewDebt.entries())
+    getDebtSummary() {
+        const unreviewedFiles = Array.from(this.debt.entries())
             .filter(([_, debt]) => !debt.reviewed)
             .map(([path, debt]) => ({
                 path: path,
@@ -214,19 +215,19 @@ class ReviewDebtManager {
     }
 
     /**
-     * Get the review debt Map (for direct access when needed)
-     * @returns {Map} Review debt Map
+     * Get the debt Map (for direct access when needed)
+     * @returns {Map} Debt Map
      */
     getDebtMap() {
-        return this.reviewDebt;
+        return this.debt;
     }
 
     /**
-     * Get size of review debt
+     * Get size of debt
      * @returns {number} Number of files in debt
      */
     getDebtSize() {
-        return this.reviewDebt.size;
+        return this.debt.size;
     }
 
     /**
@@ -235,10 +236,10 @@ class ReviewDebtManager {
      * @returns {boolean} True if file has unreviewed debt
      */
     hasUnreviewedDebt(filePath) {
-        const debt = this.reviewDebt.get(filePath);
+        const debt = this.debt.get(filePath);
         return debt && !debt.reviewed;
     }
 }
 
-module.exports = ReviewDebtManager;
+module.exports = DebtManager;
 

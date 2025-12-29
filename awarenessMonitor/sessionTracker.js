@@ -1,26 +1,26 @@
 /**
- * Review Session Tracker
- * Tracks active review sessions for files with review debt or pending suggestions
+ * Session Tracker
+ * Tracks active sessions for files with debt or pending suggestions
  */
 
-class ReviewSessionTracker {
-    constructor(reviewDebtManager, suggestionTracker, usageStats, updateScore) {
-        this.reviewDebtManager = reviewDebtManager;
-        this.suggestionTracker = suggestionTracker;
+class SessionTracker {
+    constructor(debtManager, agentSuggestionHandler, usageStats, updateScore) {
+        this.debtManager = debtManager;
+        this.agentSuggestionHandler = agentSuggestionHandler;
         this.usageStats = usageStats;
         this.updateScore = updateScore;
         
-        // Active review sessions: filepath -> review session data
-        this.fileReviewTracking = new Map();
+        // Active sessions: filepath -> session data
+        this.fileTracking = new Map();
     }
 
     /**
-     * Initialize review session tracking for a file
-     * Handles both review debt and pending suggestions
+     * Initialize session tracking for a file
+     * Handles both debt and pending suggestions
      * @param {string} filePath - Path to the file
      */
-    initializeReviewSession(filePath) {
-        if (this.fileReviewTracking.has(filePath)) {
+    initializeSession(filePath) {
+        if (this.fileTracking.has(filePath)) {
             return; // Already tracking
         }
 
@@ -32,11 +32,11 @@ class ReviewSessionTracker {
             scrollEvents: 0
         };
         
-        this.fileReviewTracking.set(filePath, tracking);
+        this.fileTracking.set(filePath, tracking);
         
-        // Update review debt if file has debt
-        if (this.reviewDebtManager) {
-            this.reviewDebtManager.updateReviewSession(filePath, {
+        // Update debt if file has debt
+        if (this.debtManager) {
+            this.debtManager.updateSession(filePath, {
                 sessionStart: now
             });
         }
@@ -47,7 +47,7 @@ class ReviewSessionTracker {
      * @param {string} filePath - Path to the file
      */
     updateCursorActivity(filePath) {
-        const tracking = this.fileReviewTracking.get(filePath);
+        const tracking = this.fileTracking.get(filePath);
         if (tracking) {
             tracking.lastActivity = Date.now();
             tracking.cursorMovements++;
@@ -59,7 +59,7 @@ class ReviewSessionTracker {
      * @param {string} filePath - Path to the file
      */
     updateScrollActivity(filePath) {
-        const tracking = this.fileReviewTracking.get(filePath);
+        const tracking = this.fileTracking.get(filePath);
         if (tracking) {
             tracking.lastActivity = Date.now();
             tracking.scrollEvents++;
@@ -69,27 +69,27 @@ class ReviewSessionTracker {
     }
 
     /**
-     * Check review progress periodically
-     * Determines if review sessions should be marked as complete
+     * Check session progress periodically
+     * Determines if sessions should be marked as complete
      */
-    checkReviewProgress() {
+    checkProgress() {
         const now = Date.now();
         const MINIMUM_REVIEW_TIME = 30000; // 30 seconds
         const ACTIVITY_TIMEOUT = 60000; // 1 minute of inactivity ends session
         
-        const activeSessions = this.fileReviewTracking.size;
+        const activeSessions = this.fileTracking.size;
         if (activeSessions === 0) {
-            return; // No active review sessions
+            return; // No active sessions
         }
         
-        for (const [filePath, tracking] of this.fileReviewTracking.entries()) {
-            const hasUnreviewedDebt = this.reviewDebtManager && this.reviewDebtManager.hasUnreviewedDebt(filePath);
-            const hasPendingSuggestions = this.suggestionTracker ? 
-                this.suggestionTracker.getPendingSuggestionsForFile(filePath).length > 0 : false;
+        for (const [filePath, tracking] of this.fileTracking.entries()) {
+            const hasUnreviewedDebt = this.debtManager && this.debtManager.hasUnreviewedDebt(filePath);
+            const hasPendingSuggestions = this.agentSuggestionHandler ? 
+                this.agentSuggestionHandler.getPendingSuggestionsForFile(filePath).length > 0 : false;
             
             // If no debt and no pending suggestions, remove tracking
             if (!hasUnreviewedDebt && !hasPendingSuggestions) {
-                this.fileReviewTracking.delete(filePath);
+                this.fileTracking.delete(filePath);
                 continue;
             }
             
@@ -98,13 +98,13 @@ class ReviewSessionTracker {
             
             // Check if session ended due to inactivity
             if (timeSinceActivity > ACTIVITY_TIMEOUT) {
-                if (this.reviewDebtManager && hasUnreviewedDebt) {
-                    const debt = this.reviewDebtManager.getDebt(filePath);
+                if (this.debtManager && hasUnreviewedDebt) {
+                    const debt = this.debtManager.getDebt(filePath);
                     if (debt) {
-                        this.reviewDebtManager.markAsReviewed(filePath, sessionDuration);
+                        this.debtManager.markAsReviewed(filePath, sessionDuration);
                     }
                 }
-                this.fileReviewTracking.delete(filePath);
+                this.fileTracking.delete(filePath);
                 continue;
             }
             
@@ -112,11 +112,11 @@ class ReviewSessionTracker {
             if (sessionDuration >= MINIMUM_REVIEW_TIME && (tracking.cursorMovements >= 5 || tracking.scrollEvents >= 3)) {
                 let needsScoreUpdate = false;
                 
-                // Mark review debt as paid
-                if (this.reviewDebtManager && hasUnreviewedDebt) {
-                    const debt = this.reviewDebtManager.getDebt(filePath);
+                // Mark debt as paid
+                if (this.debtManager && hasUnreviewedDebt) {
+                    const debt = this.debtManager.getDebt(filePath);
                     if (debt) {
-                        this.reviewDebtManager.markAsReviewed(filePath, sessionDuration);
+                        this.debtManager.markAsReviewed(filePath, sessionDuration);
                         
                         // EMIT DEBT CLEARED TO USAGE STATISTICS
                         if (this.usageStats) {
@@ -133,8 +133,8 @@ class ReviewSessionTracker {
                 }
                 
                 // Mark all pending suggestions in this file as reviewed
-                if (hasPendingSuggestions && this.suggestionTracker) {
-                    const pendingSuggestions = this.suggestionTracker.getPendingSuggestionsForFile(filePath);
+                if (hasPendingSuggestions && this.agentSuggestionHandler) {
+                    const pendingSuggestions = this.agentSuggestionHandler.getPendingSuggestionsForFile(filePath);
                     for (const suggestion of pendingSuggestions) {
                         suggestion.reviewed = true;
                         suggestion.reviewStarted = tracking.sessionStart;
@@ -143,7 +143,7 @@ class ReviewSessionTracker {
                     }
                 }
                 
-                this.fileReviewTracking.delete(filePath);
+                this.fileTracking.delete(filePath);
                 
                 if (needsScoreUpdate && this.updateScore) {
                     this.updateScore(); // Recalculate score immediately
@@ -158,7 +158,7 @@ class ReviewSessionTracker {
      * @returns {Object|null} Tracking data or null
      */
     getTracking(filePath) {
-        return this.fileReviewTracking.get(filePath) || null;
+        return this.fileTracking.get(filePath) || null;
     }
 
     /**
@@ -167,24 +167,24 @@ class ReviewSessionTracker {
      * @returns {boolean} True if file is being tracked
      */
     isTracking(filePath) {
-        return this.fileReviewTracking.has(filePath);
+        return this.fileTracking.has(filePath);
     }
 
     /**
      * Clear all tracking sessions
      */
     clear() {
-        this.fileReviewTracking.clear();
+        this.fileTracking.clear();
     }
 
     /**
      * Get number of active sessions
-     * @returns {number} Number of active review sessions
+     * @returns {number} Number of active sessions
      */
     getActiveSessionCount() {
-        return this.fileReviewTracking.size;
+        return this.fileTracking.size;
     }
 }
 
-module.exports = ReviewSessionTracker;
+module.exports = SessionTracker;
 

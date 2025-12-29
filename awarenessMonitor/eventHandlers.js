@@ -8,10 +8,10 @@ const { getLogger } = require('../logger');
 const { isNonCodeDocument, isPositionInRange } = require('./utils');
 
 class EventHandlers {
-    constructor(suggestionTracker, reviewDebtManager, reviewSessionTracker, activeDocument, cursorPosition) {
-        this.suggestionTracker = suggestionTracker;
-        this.reviewDebtManager = reviewDebtManager;
-        this.reviewSessionTracker = reviewSessionTracker;
+    constructor(agentSuggestionHandler, debtManager, sessionTracker, activeDocument, cursorPosition) {
+        this.agentSuggestionHandler = agentSuggestionHandler;
+        this.debtManager = debtManager;
+        this.sessionTracker = sessionTracker;
         this.activeDocument = activeDocument;
         this.cursorPosition = cursorPosition;
     }
@@ -47,8 +47,8 @@ class EventHandlers {
 
             // Ignore pure deletions (no inserted text)
             if (changeSize === 0) {
-                if (this.suggestionTracker) {
-                    this.suggestionTracker.recordUserEdit(event.document, change);
+                if (this.agentSuggestionHandler) {
+                    this.agentSuggestionHandler.recordUserEdit(event.document, change);
                 }
                 continue;
             }
@@ -66,14 +66,14 @@ class EventHandlers {
                 getLogger().log(
                     `AwarenessMonitor: ✅ AI-like change detected: size=${changeSize}, multiLine=${isMultiLine}, file=${event.document.fileName}`
                 );
-                if (this.suggestionTracker) {
-                    this.suggestionTracker.recordAISuggestion(event.document, change);
+                if (this.agentSuggestionHandler) {
+                    this.agentSuggestionHandler.recordAISuggestion(event.document, change);
                 }
             } else {
                 // User edits - only log occasionally (throttled)
                 // Removed verbose logging
-                if (this.suggestionTracker) {
-                    this.suggestionTracker.recordUserEdit(event.document, change);
+                if (this.agentSuggestionHandler) {
+                    this.agentSuggestionHandler.recordUserEdit(event.document, change);
                 }
             }
         }
@@ -96,8 +96,8 @@ class EventHandlers {
             getLogger().log(`AwarenessMonitor: Processing file creation - ${file.fsPath}`);
             
             // Process file as suggestion
-            if (this.suggestionTracker) {
-                this.suggestionTracker.processFileAsSuggestion(file, {
+            if (this.agentSuggestionHandler) {
+                this.agentSuggestionHandler.processFileAsSuggestion(file, {
                     isFileCreation: true,
                     filePath: file.fsPath
                 }).then(suggestion => {
@@ -129,16 +129,16 @@ class EventHandlers {
             getLogger().log(`AwarenessMonitor: Large file saved - ${content.length} chars in ${document.fileName}`);
             
             // Check if we already tracked this file recently (avoid duplicates)
-            const suggestions = this.suggestionTracker ? this.suggestionTracker.getSuggestions() : [];
+            const suggestions = this.agentSuggestionHandler ? this.agentSuggestionHandler.getSuggestions() : [];
             const recentSuggestion = suggestions.find(s => 
                 s.document === document.uri.toString() && 
                 (Date.now() - s.timestamp) < 3000 // Within last 3 seconds
             );
             
-            if (!recentSuggestion && this.suggestionTracker) {
+            if (!recentSuggestion && this.agentSuggestionHandler) {
                 getLogger().log('AwarenessMonitor: Detected AI file write');
                 
-                const suggestion = this.suggestionTracker.createSuggestionObject({
+                const suggestion = this.agentSuggestionHandler.createSuggestionObject({
                     document: document.uri.toString(),
                     range: new vscode.Range(0, 0, document.lineCount, 0),
                     text: content,
@@ -146,7 +146,7 @@ class EventHandlers {
                     isFileWrite: true
                 });
                 
-                this.suggestionTracker.addSuggestionAndTrack(suggestion, document.uri.fsPath, content.length);
+                this.agentSuggestionHandler.addSuggestionAndTrack(suggestion, document.uri.fsPath, content.length);
             }
         }
     }
@@ -162,16 +162,16 @@ class EventHandlers {
         }
         
         const filePath = document.uri.fsPath;
-        const hasUnreviewedDebt = this.reviewDebtManager && this.reviewDebtManager.hasUnreviewedDebt(filePath);
+        const hasUnreviewedDebt = this.debtManager && this.debtManager.hasUnreviewedDebt(filePath);
         
         // Check if file has unreviewed debt or pending suggestions
-        const hasPendingSuggestions = this.suggestionTracker ? 
-            this.suggestionTracker.hasPendingSuggestions(document.uri.toString()) : false;
+        const hasPendingSuggestions = this.agentSuggestionHandler ? 
+            this.agentSuggestionHandler.hasPendingSuggestions(document.uri.toString()) : false;
         
         if (hasUnreviewedDebt || hasPendingSuggestions) {
             // Initialize review session tracking
-            if (this.reviewSessionTracker) {
-                this.reviewSessionTracker.initializeReviewSession(filePath);
+            if (this.sessionTracker) {
+                this.sessionTracker.initializeSession(filePath);
             }
         }
     }
@@ -193,13 +193,13 @@ class EventHandlers {
         }
         
         // Update review tracking if this file has debt
-        if (this.reviewSessionTracker) {
-            this.reviewSessionTracker.updateCursorActivity(filePath);
+        if (this.sessionTracker) {
+            this.sessionTracker.updateCursorActivity(filePath);
         }
         
         // Check if cursor is on any AI suggestion (original logic)
-        if (this.suggestionTracker) {
-            const pendingSuggestions = this.suggestionTracker.getSuggestionsByStatus('pending');
+        if (this.agentSuggestionHandler) {
+            const pendingSuggestions = this.agentSuggestionHandler.getSuggestionsByStatus('pending');
             for (const suggestion of pendingSuggestions) {
                 if (suggestion.document !== editor.document.uri.toString()) continue;
                 
@@ -232,8 +232,8 @@ class EventHandlers {
         const filePath = event.textEditor.document.uri.fsPath;
         
         // Update review tracking if this file has debt
-        if (this.reviewSessionTracker) {
-            this.reviewSessionTracker.updateScrollActivity(filePath);
+        if (this.sessionTracker) {
+            this.sessionTracker.updateScrollActivity(filePath);
         }
     }
 
@@ -253,8 +253,8 @@ class EventHandlers {
         }
         
         // Stop any active reviews when switching files
-        if (this.suggestionTracker) {
-            const suggestions = this.suggestionTracker.getSuggestions();
+        if (this.agentSuggestionHandler) {
+            const suggestions = this.agentSuggestionHandler.getSuggestions();
             for (const suggestion of suggestions) {
                 if (suggestion.reviewStarted) {
                     suggestion.reviewTime += Date.now() - suggestion.reviewStarted;

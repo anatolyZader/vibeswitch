@@ -23,31 +23,31 @@
  * 
  * This orchestrator coordinates the following specialized modules:
  * 
- * 1. SuggestionTracker (suggestion-tracker.js)
+ * 1. AgentSuggestionHandler (agentSuggestionHandler.js)
  *    - Manages AI suggestion lifecycle (creation, tracking, status detection)
  *    - Handles suggestion objects and their status changes
  * 
- * 2. ReviewDebtManager (review-debt-manager.js)
+ * 2. DebtManager (debtManager.js)
  *    - Manages persistent tracking of unreviewed files
  *    - Handles debt persistence and calculation
  * 
- * 3. ReviewSessionTracker (review-session-tracker.js)
+ * 3. SessionTracker (sessionTracker.js)
  *    - Tracks active review sessions for files
  *    - Monitors user review activity (cursor, scroll)
  * 
- * 4. ScoreCalculator (score-calculator.js)
+ * 4. ScoreCalculator (scoreCalculator.js)
  *    - Calculates awareness score from suggestions and debt
  *    - Handles all score component calculations
  * 
- * 5. EventHandlers (event-handlers.js)
+ * 5. EventHandlers (eventHandlers.js)
  *    - Handles all VS Code events (text changes, file ops, cursor, etc.)
  *    - Routes events to appropriate modules
  * 
- * 6. FileWatcher (file-watcher.js)
+ * 6. FileWatcher (fileWatcher.js)
  *    - Monitors file system for externally created files
  *    - Scans existing files on startup
  * 
- * 7. KeepAllDetector (keep-all-detector.js)
+ * 7. KeepAllDetector (keepAllDetector.js)
  *    - Detects rapid acceptance patterns ("Keep All")
  *    - Emits to usage statistics
  * 
@@ -63,9 +63,9 @@
  *    The primary orchestrator class that coordinates all monitoring modules.
  *    
  *    Key Properties:
- *    - suggestionTracker: SuggestionTracker instance
- *    - reviewDebtManager: ReviewDebtManager instance
- *    - reviewSessionTracker: ReviewSessionTracker instance
+ *    - agentSuggestionHandler: AgentSuggestionHandler instance
+ *    - debtManager: DebtManager instance
+ *    - sessionTracker: SessionTracker instance
  *    - scoreCalculator: ScoreCalculator instance
  *    - eventHandlers: EventHandlers instance
  *    - fileWatcher: FileWatcher instance
@@ -76,16 +76,16 @@
  * 
  * 
  * 2. AI Suggestion Object
- *    See suggestion-tracker.js for detailed structure.
- *    Managed by SuggestionTracker module.
+ *    See agentSuggestionHandler.js for detailed structure.
+ *    Managed by AgentSuggestionHandler module.
  * 
- * 3. Review Debt Object
- *    See review-debt-manager.js for detailed structure.
- *    Managed by ReviewDebtManager module.
+ * 3. Debt Object
+ *    See debtManager.js for detailed structure.
+ *    Managed by DebtManager module.
  * 
- * 4. Review Session Data
- *    See review-session-tracker.js for detailed structure.
- *    Managed by ReviewSessionTracker module.
+ * 4. Session Data
+ *    See sessionTracker.js for detailed structure.
+ *    Managed by SessionTracker module.
  * 
  * 
  * HOW IT WORKS:
@@ -101,22 +101,22 @@
  * 
  * 2. EVENT FLOW
  *    - VS Code events → EventHandlers → appropriate modules
- *    - Text changes → SuggestionTracker (AI detection)
- *    - File operations → SuggestionTracker + ReviewDebtManager
- *    - User interactions → ReviewSessionTracker
+ *    - Text changes → AgentSuggestionHandler (AI detection)
+ *    - File operations → AgentSuggestionHandler + DebtManager
+ *    - User interactions → SessionTracker
  *    - Score updates → ScoreCalculator
  * 
  * 3. MODULE COORDINATION
- *    - SuggestionTracker manages AI suggestions and status
- *    - ReviewDebtManager handles persistent debt tracking
- *    - ReviewSessionTracker monitors active review sessions
+ *    - AgentSuggestionHandler manages AI suggestions and status
+ *    - DebtManager handles persistent debt tracking
+ *    - SessionTracker monitors active sessions
  *    - ScoreCalculator computes awareness scores
  *    - FileWatcher monitors external file creation
  *    - KeepAllDetector identifies rapid acceptance patterns
  *    - EventHandlers routes all VS Code events
  * 
  * 4. SCORE CALCULATION
- *    See score-calculator.js for detailed calculation logic.
+ *    See scoreCalculator.js for detailed calculation logic.
  *    Delegated to ScoreCalculator module.
  * 
  * 
@@ -124,7 +124,7 @@
  * -------------------
  * 
  * 1. UsageStatsManager (usageStats):
- *    - Receives AI suggestion outcomes via SuggestionTracker
+ *    - Receives AI suggestion outcomes via AgentSuggestionHandler
  *    - Receives "Keep All" detections via KeepAllDetector
  *    - Tracks acceptance/rejection rates
  *    - Provides long-term statistics
@@ -135,7 +135,7 @@
  *    - Provides real-time feedback to user
  * 
  * 3. VS Code Workspace Storage:
- *    - Persists review debt across sessions (via ReviewDebtManager)
+ *    - Persists review debt across sessions (via DebtManager)
  *    - Stores file paths and review metadata
  *    - Loaded on extension activation
  * 
@@ -143,17 +143,17 @@
  * EVENT FLOW EXAMPLE:
  * -------------------
  * 
- * 1. AI generates code → EventHandlers.onTextChange() → SuggestionTracker
- * 2. Suggestion created → SuggestionTracker.addSuggestionAndTrack()
- * 3. File added to review debt → ReviewDebtManager.addToReviewDebt()
- * 4. User opens file → EventHandlers.onFileOpened() → ReviewSessionTracker
- * 5. User moves cursor → EventHandlers.onCursorMove() → ReviewSessionTracker
- * 6. User scrolls → EventHandlers.onScroll() → ReviewSessionTracker
- * 7. User edits code → EventHandlers.onTextChange() → SuggestionTracker.recordUserEdit()
- * 8. After 5 seconds → SuggestionTracker.checkSuggestionStatus()
+ * 1. AI generates code → EventHandlers.onTextChange() → AgentSuggestionHandler
+ * 2. Suggestion created → AgentSuggestionHandler.addSuggestionAndTrack()
+ * 3. File added to review debt → DebtManager.addToDebt()
+ * 4. User opens file → EventHandlers.onFileOpened() → SessionTracker
+ * 5. User moves cursor → EventHandlers.onCursorMove() → SessionTracker
+ * 6. User scrolls → EventHandlers.onScroll() → SessionTracker
+ * 7. User edits code → EventHandlers.onTextChange() → AgentSuggestionHandler.recordUserEdit()
+ * 8. After 5 seconds → AgentSuggestionHandler.checkSuggestionStatus()
  * 9. Score recalculated → ScoreCalculator.updateScore()
  * 10. UI updated → onScoreUpdate() callback triggered
- * 11. Review debt updated → ReviewDebtManager.markAsReviewed()
+ * 11. Review debt updated → DebtManager.markAsReviewed()
  * 
  * 
  * CLEANUP:
@@ -163,7 +163,7 @@
  * - Disposes all VS Code event listeners
  * - Closes file system watcher (FileWatcher.close())
  * - Clears update timer
- * - Saves review debt to storage (ReviewDebtManager.saveReviewDebt())
+ * - Saves review debt to storage (DebtManager.saveReviewDebt())
  * - Preserves state (suggestions, scores) for next session
  * 
  * 
@@ -171,11 +171,11 @@
  * --------------
  * 
  * - DISABLE_LOGGING: Controlled centrally from extension.js (see logger.js)
- * - maxSuggestions: Maximum suggestions to track (default: 10, in SuggestionTracker)
+ * - maxSuggestions: Maximum suggestions to track (default: 10, in AgentSuggestionHandler)
  * - keepAllDetectionWindow: Time window for "keep all" detection (2 seconds, in KeepAllDetector)
  * - keepAllThreshold: Minimum acceptances to trigger "keep all" (3, in KeepAllDetector)
  * - Update interval: 10 seconds
- * - Review debt cleanup: 7 days (in ReviewDebtManager)
+ * - Review debt cleanup: 7 days (in DebtManager)
  * 
  * 
  * ============================================================================
@@ -186,28 +186,28 @@ const fs = require('fs');
 const path = require('path');
 const { getLogger } = require('../logger');
 const { NON_CODE_SCHEMES, CODE_EXTENSIONS, isNonCodeDocument, getRelativePath, isPositionInRange, rangesOverlap } = require('./utils');
-const ScoreCalculator = require('./score-calculator');
-const ReviewDebtManager = require('./review-debt-manager');
-const SuggestionTracker = require('./suggestion-tracker');
-const ReviewSessionTracker = require('./review-session-tracker');
-const FileWatcher = require('./file-watcher');
-const EventHandlers = require('./event-handlers');
-const KeepAllDetector = require('./keep-all-detector');
+const ScoreCalculator = require('./scoreCalculator');
+const DebtManager = require('./debtManager');
+const AgentSuggestionHandler = require('./agentSuggestionHandler');
+const SessionTracker = require('./sessionTracker');
+const FileWatcher = require('./fileWatcher');
+const EventHandlers = require('./eventHandlers');
+const KeepAllDetector = require('./keepAllDetector');
 
 class AwarenessMonitor {
     constructor(usageStats = null, onScoreUpdate = null) {
         // Usage statistics integration for AI-aware event tracking
         this.usageStats = usageStats;
         
-        // Callback for immediate meter updates
+        // callback function used to update the awareness meter UI when the score changes.
         this.onScoreUpdate = onScoreUpdate;
         
-        // Suggestion tracker - will be initialized in start()
-        this.suggestionTracker = null;
+        // Agent suggestion handler - will be initialized in start()
+        this.agentSuggestionHandler = null;
         
-        // REVIEW DEBT SYSTEM - persistent tracking of unreviewed files
-        this.reviewDebtManager = null; // Will be initialized in start()
-        this.reviewSessionTracker = null; // Will be initialized in start()
+        // DEBT SYSTEM - persistent tracking of unreviewed files
+        this.debtManager = null; // Will be initialized in start()
+        this.sessionTracker = null; // Will be initialized in start()
         
         // Score calculator
         this.scoreCalculator = new ScoreCalculator();
@@ -222,7 +222,7 @@ class AwarenessMonitor {
         // Event handlers - will be initialized in start()
         this.eventHandlers = null;
         
-        // Extension context for storage
+        // Storage persists review debt across VS Code sessions using VS Code's workspace storage API (context.workspaceState). This context provides access to workspaceState, which persists data per workspace
         this.context = null;
         
         // Store disposables for cleanup
@@ -236,58 +236,58 @@ class AwarenessMonitor {
     }
 
     // ==================== HELPER METHODS ====================
-    // Suggestion management is now handled by SuggestionTracker
+    // Suggestion management is now handled by AgentSuggestionHandler
 
-    // Review session tracking is now handled by ReviewSessionTracker
+    // Session tracking is now handled by SessionTracker
 
     /**
      * Start monitoring (called when switching to DEV mode)
      */
     start(context) {
         getLogger().log('AwarenessMonitor: Starting real-time monitoring');
-        getLogger().log(`AwarenessMonitor: Callback registered: ${this.onScoreUpdate ? 'YES' : 'NO'}`);
+        getLogger().log(`AwarenessMonitor: onScoreUpdate Callback registered: ${this.onScoreUpdate ? 'YES' : 'NO'}`);
         
         // Store context for workspace storage
         this.context = context;
         
-        // Initialize review debt manager
-        this.reviewDebtManager = new ReviewDebtManager(context, this.onScoreUpdate);
+        // Initialize debt manager
+        this.debtManager = new DebtManager(context, this.onScoreUpdate);
         
-        // Load existing review debt from storage
-        this.reviewDebtManager.loadReviewDebt();
+        // Load existing debt from storage
+        this.debtManager.loadDebt();
         
         // Initialize keep-all detector
         this.keepAllDetector = new KeepAllDetector(this.usageStats);
         
-        // Initialize suggestion tracker
-        this.suggestionTracker = new SuggestionTracker(
-            this.reviewDebtManager,
+        // Initialize agent suggestion handler
+        this.agentSuggestionHandler = new AgentSuggestionHandler(
+            this.debtManager,
             () => this.updateScore(),
             this.usageStats,
             (suggestion) => this.keepAllDetector ? this.keepAllDetector.trackAcceptance(suggestion) : null
         );
         
-        // Initialize review session tracker
-        this.reviewSessionTracker = new ReviewSessionTracker(
-            this.reviewDebtManager,
-            this.suggestionTracker,
+        // Initialize session tracker
+        this.sessionTracker = new SessionTracker(
+            this.debtManager,
+            this.agentSuggestionHandler,
             this.usageStats,
             () => this.updateScore()
         );
         
         // Initialize file watcher
         this.fileWatcher = new FileWatcher(
-            this.suggestionTracker,
-            this.reviewDebtManager,
+            this.agentSuggestionHandler,
+            this.debtManager,
             () => this.updateScore(),
             this.onScoreUpdate
         );
         
         // Initialize event handlers
         this.eventHandlers = new EventHandlers(
-            this.suggestionTracker,
-            this.reviewDebtManager,
-            this.reviewSessionTracker,
+            this.agentSuggestionHandler,
+            this.debtManager,
+            this.sessionTracker,
             this.activeDocument,
             this.cursorPosition
         );
@@ -313,7 +313,7 @@ class AwarenessMonitor {
                 vscode.workspace.onDidSaveTextDocument((document) => this.eventHandlers.onFileSaved(document))
             );
             
-            // Track file opens (user reviewing debt)
+            // Track file opens (user reviewing files)
             this.disposables.push(
                 vscode.workspace.onDidOpenTextDocument((document) => this.eventHandlers.onFileOpened(document))
             );
@@ -339,7 +339,7 @@ class AwarenessMonitor {
             this.fileWatcher.setupFileSystemWatcher();
         }
         
-        // Scan for existing files that should be in review debt
+        // Scan for existing files that should be in debt
         if (this.fileWatcher) {
             this.fileWatcher.scanExistingFiles();
         }
@@ -347,12 +347,12 @@ class AwarenessMonitor {
         // Start periodic score updates (every 10 seconds)
         this.updateTimer = setInterval(() => {
             this.updateScore();
-            if (this.reviewSessionTracker) {
-                this.reviewSessionTracker.checkReviewProgress();
+            if (this.sessionTracker) {
+                this.sessionTracker.checkProgress();
             }
         }, 10000);
         
-        getLogger().log(`AwarenessMonitor: Monitoring active with ${this.reviewDebtManager.getDebtSize()} files in debt`);
+        getLogger().log(`AwarenessMonitor: Monitoring active with ${this.debtManager.getDebtSize()} files in debt`);
         getLogger().log(`AwarenessMonitor: All event listeners registered and active`);
         getLogger().log(`AwarenessMonitor: File system watcher active for ${this.fileWatcher.getWatchedDirectories().length} directories`);
         
@@ -360,9 +360,9 @@ class AwarenessMonitor {
         getLogger().log(`AwarenessMonitor: Initial score update...`);
         // If we have existing suggestions or debt, preserve the score calculation
         // Otherwise, calculate fresh
-        const suggestionCount = this.suggestionTracker ? this.suggestionTracker.getSuggestions().length : 0;
-        if (suggestionCount > 0 || this.reviewDebtManager.getDebtSize() > 0) {
-            getLogger().log(`AwarenessMonitor: Preserving existing state (${suggestionCount} suggestions, ${this.reviewDebtManager.getDebtSize()} debt files)`);
+        const suggestionCount = this.agentSuggestionHandler ? this.agentSuggestionHandler.getSuggestions().length : 0;
+        if (suggestionCount > 0 || this.debtManager.getDebtSize() > 0) {
+            getLogger().log(`AwarenessMonitor: Preserving existing state (${suggestionCount} suggestions, ${this.debtManager.getDebtSize()} debt files)`);
             // Recalculate score from existing data
             this.updateScore();
         } else {
@@ -377,9 +377,9 @@ class AwarenessMonitor {
     stop() {
         getLogger().log('AwarenessMonitor: Stopping monitoring');
         
-        // Save review debt before stopping
-        if (this.reviewDebtManager) {
-            this.reviewDebtManager.saveReviewDebt();
+        // Save debt before stopping
+        if (this.debtManager) {
+            this.debtManager.saveDebt();
         }
         
         // Dispose all event listeners
@@ -399,10 +399,10 @@ class AwarenessMonitor {
         // DON'T reset state - preserve suggestions and scores when stopping
         // This allows the meter to maintain its value when switching back to DEV mode
         // Only clear temporary tracking that's session-specific
-        if (this.reviewSessionTracker) {
-            this.reviewSessionTracker.clear();
+        if (this.sessionTracker) {
+            this.sessionTracker.clear();
         }
-        // Keep: this.suggestionTracker, this.scoreCalculator, this.reviewDebtManager, this.keepAllDetector
+        // Keep: this.agentSuggestionHandler, this.scoreCalculator, this.debtManager, this.keepAllDetector
     }
 
     // Event handlers are now in EventHandlers class
@@ -417,8 +417,8 @@ class AwarenessMonitor {
             hasContext: !!this.context,
             hasCallback: !!this.onScoreUpdate,
             hasUsageStats: !!this.usageStats,
-            aiSuggestionsCount: this.suggestionTracker ? this.suggestionTracker.getSuggestions().length : 0,
-            reviewDebtCount: this.reviewDebtManager ? this.reviewDebtManager.getDebtSize() : 0,
+            aiSuggestionsCount: this.agentSuggestionHandler ? this.agentSuggestionHandler.getSuggestions().length : 0,
+            reviewDebtCount: this.debtManager ? this.debtManager.getDebtSize() : 0,
             currentScore: this.scoreCalculator.getCurrentScore(),
             scores: this.scoreCalculator.getScoreComponents(),
             watchedDirectories: this.fileWatcher ? this.fileWatcher.getWatchedDirectories() : [],
@@ -434,11 +434,11 @@ class AwarenessMonitor {
      * Delegates to ScoreCalculator
      */
     updateScore() {
-        const suggestions = this.suggestionTracker ? this.suggestionTracker.getSuggestions() : [];
+        const suggestions = this.agentSuggestionHandler ? this.agentSuggestionHandler.getSuggestions() : [];
         this.scoreCalculator.updateScore(
             suggestions,
-            () => this.reviewDebtManager ? this.reviewDebtManager.calculateDebtScore(suggestions) : 0,
-            () => this.reviewDebtManager ? this.reviewDebtManager.getReviewDebtSummary() : { total: 0, files: [] },
+            () => this.debtManager ? this.debtManager.calculateDebtScore(suggestions) : 0,
+            () => this.debtManager ? this.debtManager.getDebtSummary() : { total: 0, files: [] },
             this.onScoreUpdate
         );
     }
@@ -449,10 +449,10 @@ class AwarenessMonitor {
      * Delegates to ScoreCalculator
      */
     getScore() {
-        const suggestions = this.suggestionTracker ? this.suggestionTracker.getSuggestions() : [];
+        const suggestions = this.agentSuggestionHandler ? this.agentSuggestionHandler.getSuggestions() : [];
         const score = this.scoreCalculator.getScore(
             suggestions,
-            () => this.reviewDebtManager ? this.reviewDebtManager.getReviewDebtSummary() : { total: 0, files: [] }
+            () => this.debtManager ? this.debtManager.getDebtSummary() : { total: 0, files: [] }
         );
         
         // Add monitoringActive to debug info
@@ -464,8 +464,8 @@ class AwarenessMonitor {
 
     // Keep-all detection is now handled by KeepAllDetector
 
-    // ==================== REVIEW DEBT SYSTEM ====================
-    // Review debt management is now handled by ReviewDebtManager
+    // ==================== DEBT SYSTEM ====================
+    // Debt management is now handled by DebtManager
 
     // Event handlers are now in EventHandlers class
 

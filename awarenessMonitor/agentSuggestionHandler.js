@@ -1,5 +1,5 @@
 /**
- * Suggestion Tracker
+ * Agent Suggestion Handler
  * Manages AI suggestion lifecycle: creation, tracking, status detection, and user interaction
  */
 
@@ -8,9 +8,9 @@ const path = require('path');
 const { getLogger } = require('../logger');
 const { rangesOverlap } = require('./utils');
 
-class SuggestionTracker {
-    constructor(reviewDebtManager, updateScore, usageStats, trackAcceptance) {
-        this.reviewDebtManager = reviewDebtManager;
+class AgentSuggestionHandler {
+    constructor(debtManager, updateScore, usageStats, trackAcceptance) {
+        this.debtManager = debtManager;
         this.updateScore = updateScore;
         this.usageStats = usageStats;
         this.trackAcceptance = trackAcceptance;
@@ -76,9 +76,9 @@ class SuggestionTracker {
             this.aiSuggestions.shift();
         }
         
-        // Add to review debt
-        if (this.reviewDebtManager) {
-            this.reviewDebtManager.addToReviewDebt(filePath, contentLength, this.updateScore);
+        // Add to debt
+        if (this.debtManager) {
+            this.debtManager.addToDebt(filePath, contentLength, this.updateScore);
         }
         
         // Schedule status check after 5 seconds
@@ -158,7 +158,7 @@ class SuggestionTracker {
         suggestion.timestamp = timestamp;
         suggestion.id = timestamp + Math.random();
         
-        // Add to tracking (includes adding to array, review debt, status check, score update)
+        // Add to tracking (includes adding to array, debt, status check, score update)
         this.addSuggestionAndTrack(suggestion, filePath, changeSize);
         
         // EMIT AI EVENT TO USAGE STATISTICS
@@ -346,5 +346,5 @@ class SuggestionTracker {
     }
 }
 
-module.exports = SuggestionTracker;
+module.exports = AgentSuggestionHandler;
 
