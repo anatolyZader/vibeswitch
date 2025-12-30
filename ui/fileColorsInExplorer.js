@@ -1,5 +1,5 @@
 /**
- * File Decorations Provider for VibeSwitch
+ * File Colors in Explorer Provider for VibeSwitch
  * 
  * Provides visual indicators in the VS Code Explorer for unreviewed AI changes:
  * - Review debt files: Violet/purple with ⚠ badge
@@ -222,13 +222,4 @@ class UnreviewedFileDecor {
 }
 
 module.exports = UnreviewedFileDecor;
-
-
-
-
-
-
-
-
-
 

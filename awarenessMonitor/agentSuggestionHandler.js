@@ -9,11 +9,12 @@ const { getLogger } = require('../logger');
 const { rangesOverlap } = require('./utils');
 
 class AgentSuggestionHandler {
-    constructor(debtManager, updateScore, usageStats, trackAcceptance) {
+    constructor(debtManager, updateScore, usageStats, trackAcceptance, updateFileColorsInExplorer = null) {
         this.debtManager = debtManager;
         this.updateScore = updateScore;
         this.usageStats = usageStats;
         this.trackAcceptance = trackAcceptance;
+        this.updateFileColorsInExplorer = updateFileColorsInExplorer;
         
         // Rolling window of last 10 AI suggestions (for immediate feedback)
         this.aiSuggestions = [];
@@ -79,6 +80,11 @@ class AgentSuggestionHandler {
         // Add to debt
         if (this.debtManager) {
             this.debtManager.addToDebt(filePath, contentLength, this.updateScore);
+        }
+        
+        // Update file colors immediately when new suggestion is added (for pending files)
+        if (this.updateFileColorsInExplorer) {
+            this.updateFileColorsInExplorer();
         }
         
         // Schedule status check after 5 seconds

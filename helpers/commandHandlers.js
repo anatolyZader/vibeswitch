@@ -15,10 +15,11 @@ const userStatsUI = require('../ui/userStatsUI');
  * @param {Object} dependencies - Injected dependencies
  * @param {Function} dependencies.log - Logging function
  * @param {Function} dependencies.switchToMode - Mode switching function
+ * @param {Function} dependencies.updateFileColorsInExplorer - Function to update file name colors in Explorer
  * @param {Object} dependencies.state - Extension state (DIContainer)
  * @returns {Object} Command handlers map
  */
-function commandHandlers({ log, switchToMode, state }) {
+function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state }) {
     return {
         'vibeswitch.switchMode': async () => {
             try {
@@ -94,7 +95,11 @@ function commandHandlers({ log, switchToMode, state }) {
             message += '\nTriggering manual refresh...\n';
             state.outputChannel?.appendLine(message);
             state.outputChannel?.show(true);
-            state.fileDecorationProvider.refresh();
+            if (updateFileColorsInExplorer) {
+                updateFileColorsInExplorer();
+            } else {
+                state.fileDecorationProvider?.refresh();
+            }
             window.showInformationMessage('File decoration refresh triggered. Check Output panel for details.');
         },
 
@@ -130,7 +135,9 @@ function commandHandlers({ log, switchToMode, state }) {
             
             if (detected > 0) {
                 window.showInformationMessage(`Detected ${detected} file(s) in testing folder. Check decorations!`);
-                if (state.fileDecorationProvider && state.currentMode === 'dev') {
+                if (updateFileColorsInExplorer) {
+                    updateFileColorsInExplorer();
+                } else if (state.fileDecorationProvider && state.currentMode === 'dev') {
                     state.fileDecorationProvider.refresh();
                 }
             } else {

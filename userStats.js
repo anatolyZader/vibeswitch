@@ -23,7 +23,7 @@ class UsageStatsManager {
         if (!this.persistence.exists()) {
             this.data = defaultData;
             this.saveUsageStats();
-        } else {
+            } else {
             this.data = loaded;
         }
     }
@@ -94,7 +94,7 @@ class UsageStatsManager {
     }
 
     saveUsageStats() {
-        this.data.lastUpdated = new Date().toISOString();
+            this.data.lastUpdated = new Date().toISOString();
         this.persistence.save(this.data, null, { pretty: true });
     }
 

@@ -242,16 +242,21 @@ class AwarenessMonitor {
 
     /**
      * Start monitoring (called when switching to DEV mode)
+     * @param {vscode.ExtensionContext} context - VS Code extension context
+     * @param {Function} updateFileColorsInExplorer - Callback to update file colors in Explorer
      */
-    start(context) {
+    start(context, updateFileColorsInExplorer = null) {
         getLogger().log('AwarenessMonitor: Starting real-time monitoring');
         getLogger().log(`AwarenessMonitor: onScoreUpdate Callback registered: ${this.onScoreUpdate ? 'YES' : 'NO'}`);
         
         // Store context for workspace storage
         this.context = context;
         
+        // Store file color update callback
+        this.updateFileColorsInExplorer = updateFileColorsInExplorer;
+        
         // Initialize debt manager
-        this.debtManager = new DebtManager(context, this.onScoreUpdate);
+        this.debtManager = new DebtManager(context, this.onScoreUpdate, updateFileColorsInExplorer);
         
         // Load existing debt from storage
         this.debtManager.loadDebt();
@@ -264,7 +269,8 @@ class AwarenessMonitor {
             this.debtManager,
             () => this.updateScore(),
             this.usageStats,
-            (suggestion) => this.keepAllDetector ? this.keepAllDetector.trackAcceptance(suggestion) : null
+            (suggestion) => this.keepAllDetector ? this.keepAllDetector.trackAcceptance(suggestion) : null,
+            updateFileColorsInExplorer
         );
         
         // Initialize session tracker
@@ -272,7 +278,8 @@ class AwarenessMonitor {
             this.debtManager,
             this.agentSuggestionHandler,
             this.usageStats,
-            () => this.updateScore()
+            () => this.updateScore(),
+            updateFileColorsInExplorer
         );
         
         // Initialize file watcher

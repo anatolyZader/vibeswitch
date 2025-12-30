@@ -14,7 +14,7 @@
  * 
  * INITIALIZATION ORDER (critical):
  * 1. Create log helper (needed by everything)
- * 2. Create UI helpers (updateAwarenessMeter, updateStatusBar)
+ * 2. Create UI helpers (updateAwarenessMeter, switchModeInStatusBar, updateFileColorsInExplorer)
  * 3. Create monitor lifecycle helpers (start/stop)
  * 4. Create mode switching helper (depends on UI helpers)
  * 5. Create file decoration helper
@@ -31,7 +31,7 @@ const commandHandlersFactory = require('./commandHandlers');
 
 // Import modules
 const switchToModeFunc = require('../mode/switchToMode');
-const UnreviewedFileDecor = require('../ui/fileExplorerDecor');
+const UnreviewedFileDecor = require('../ui/fileColorsInExplorer');
 
 /**
  * Initialize all helpers with dependency injection
@@ -54,6 +54,14 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
     // ============================================================================
     // STEP 2: Initialize UI helpers (needed by monitor and mode switching)
     // ============================================================================
+    // Update file colors in Explorer - updates file name colors in Explorer based on review debt/pending status
+    // Called when mode changes or when score updates to reflect current state
+    const updateFileColorsInExplorer = () => {
+        if (state.fileDecorationProvider && state.currentMode === 'dev') {
+            state.fileDecorationProvider.refresh();
+        }
+    };
+    
     // Update awareness meter - called after score calculation
     const updateAwarenessMeter = () => {
         statusBar.updateAwarenessMeter(
@@ -62,13 +70,11 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
             state.currentMode, 
             state.outputChannel
         );
-        if (state.fileDecorationProvider && state.currentMode === 'dev') {
-            state.fileDecorationProvider.refresh();
-        }
     };
     
-    // Update status bar - called when mode changes or after score calculation
-    const updateStatusBar = (forceMode = null) => {
+    // Switch mode in status bar - shows/omits awareness meter based on mode
+    // Called when mode changes to update mode indicator and show/hide awareness meter
+    const switchModeInStatusBar = (forceMode = null) => {
         // Only update if mode is explicitly provided or already set
         if (forceMode !== null) {
             state.setMode(forceMode);
@@ -79,12 +85,17 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
         // If no mode set at all, show neutral state (don't detect)
         if (!currentMode) {
             statusBar.updateStatusBar(state.statusBarItem, null, state.outputChannel);
-            updateAwarenessMeter();
+            updateAwarenessMeter(); // This will hide the meter if no mode
+            updateFileColorsInExplorer(); // Hide file colors when no mode
             return;
         }
         
+        // Update mode indicator in status bar
         statusBar.updateStatusBar(state.statusBarItem, currentMode, state.outputChannel);
+        // Update awareness meter (will show in 'dev' mode, hide in 'vibe' mode)
         updateAwarenessMeter();
+        // Update file colors to show/hide based on mode change
+        updateFileColorsInExplorer();
     };
 
     // ============================================================================
@@ -124,7 +135,10 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
             return;
         }
         
-        state.awarenessMonitor.start(state.extensionContext);
+        // Store updateFileColorsInExplorer in state so modules can access it
+        state.updateFileColorsInExplorer = updateFileColorsInExplorer;
+        
+        state.awarenessMonitor.start(state.extensionContext, updateFileColorsInExplorer);
         log('VibeSwitch: Started real-time awareness monitoring');
         initFileDecorations();
         
@@ -171,8 +185,8 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
             const previousMode = state.currentMode;
             state.setMode(mode);
             
-            // Update UI immediately with the new mode
-            updateStatusBar(mode);
+            // Update UI immediately with the new mode (shows/omits awareness meter)
+            switchModeInStatusBar(mode);
             
             await switchToModeFunc(mode, {
                 currentMode: previousMode, // Pass previous mode for stats
@@ -189,8 +203,8 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
             // We trust what we just set
             log(`VibeSwitch: Successfully switched to ${mode} mode (mode locked, no re-detection)`);
             
-            // Final UI update to ensure consistency
-            updateStatusBar(mode);
+            // Final UI update to ensure consistency (shows/omits awareness meter)
+            switchModeInStatusBar(mode);
         } catch (error) {
             // On error, try to restore previous mode
             log(`ERROR in switchToMode: ${error.message}`, true, true);
@@ -205,6 +219,7 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
     const commandHandlers = commandHandlersFactory({
         log,
         switchToMode,
+        updateFileColorsInExplorer,
         state
     });
 
@@ -214,7 +229,8 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
     return {
         log,
         updateAwarenessMeter,
-        updateStatusBar,
+        switchModeInStatusBar,
+        updateFileColorsInExplorer,
         commandHandlers,
         initFileDecorations,
         startAwarenessMonitor,

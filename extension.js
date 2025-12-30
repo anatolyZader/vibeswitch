@@ -10,7 +10,7 @@ const userStatsUI = require('./ui/userStatsUI'); // todo
 const detectCurrentMode = require('./mode/detectCurrentMode');
 const AwarenessMonitor = require('./awarenessMonitor');
 const statusBar = require('./ui/status-bar');
-const UnreviewedFileDecor = require('./ui/fileExplorerDecor');
+const UnreviewedFileDecor = require('./ui/fileColorsInExplorer');
 const ui = require('./ui/ui');
 const DIContainer = require('./diContainer');
 const initializeHelpers = require('./helpers/initializeHelpers');
@@ -60,7 +60,7 @@ function activate(context) {
         
         // Initialize helpers with state
         const helpers = initializeHelpers(state, DISABLE_LOGGING);
-        const { log, updateStatusBar, commandHandlers } = helpers;
+        const { log, switchModeInStatusBar, commandHandlers } = helpers;
         
         // Initialize status bar items using VS Code API
         state.statusBarItem = window.createStatusBarItem(StatusBarAlignment.Right, 100);
@@ -74,7 +74,7 @@ function activate(context) {
         // Detect initial mode from file
         const initialMode = detectCurrentMode();
         log(`VibeSwitch: Detected initial mode from file: ${initialMode}`);
-        updateStatusBar(initialMode);
+        switchModeInStatusBar(initialMode);
         
         // Disable file-based mode detection completely
         // This prevents all flashing and race conditions

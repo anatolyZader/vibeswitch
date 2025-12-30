@@ -7,9 +7,10 @@ const { getLogger } = require('../logger');
 const PersistInContext = require('./persistInContext');
 
 class DebtManager {
-    constructor(context, onScoreUpdate) {
+    constructor(context, onScoreUpdate, updateFileColorsInExplorer = null) {
         this.context = context;
         this.onScoreUpdate = onScoreUpdate;
+        this.updateFileColorsInExplorer = updateFileColorsInExplorer;
         this.debt = new Map(); // filepath -> debt object
         
         // Initialize persistence manager for workspace storage
@@ -100,7 +101,12 @@ class DebtManager {
         
         this.saveDebt();
         
-        // Trigger immediate score update to refresh file decorations
+        // Update file colors immediately when debt changes
+        if (this.updateFileColorsInExplorer) {
+            this.updateFileColorsInExplorer();
+        }
+        
+        // Trigger immediate score update
         if (updateScore) {
             updateScore();
         }
@@ -127,6 +133,11 @@ class DebtManager {
             debt.reviewedAt = Date.now();
             debt.totalReviewTime += reviewTime;
             this.saveDebt();
+            
+            // Update file colors immediately when debt is cleared
+            if (this.updateFileColorsInExplorer) {
+                this.updateFileColorsInExplorer();
+            }
         }
     }
 

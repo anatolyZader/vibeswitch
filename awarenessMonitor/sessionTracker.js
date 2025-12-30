@@ -4,11 +4,12 @@
  */
 
 class SessionTracker {
-    constructor(debtManager, agentSuggestionHandler, usageStats, updateScore) {
+    constructor(debtManager, agentSuggestionHandler, usageStats, updateScore, updateFileColorsInExplorer = null) {
         this.debtManager = debtManager;
         this.agentSuggestionHandler = agentSuggestionHandler;
         this.usageStats = usageStats;
         this.updateScore = updateScore;
+        this.updateFileColorsInExplorer = updateFileColorsInExplorer;
         
         // Active sessions: filepath -> session data
         this.fileTracking = new Map();
@@ -144,6 +145,11 @@ class SessionTracker {
                 }
                 
                 this.fileTracking.delete(filePath);
+                
+                // Update file colors immediately when suggestions are reviewed
+                if (needsScoreUpdate && this.updateFileColorsInExplorer) {
+                    this.updateFileColorsInExplorer();
+                }
                 
                 if (needsScoreUpdate && this.updateScore) {
                     this.updateScore(); // Recalculate score immediately
