@@ -14,7 +14,7 @@
  * 
  * INITIALIZATION ORDER (critical):
  * 1. Create log helper (needed by everything)
- * 2. Create UI helpers (updateAwarenessMeter, switchModeInStatusBar, updateFileColorsInExplorer)
+ * 2. Create UI helpers (updateAwarenessMeter, switchModeInStatusBar, updateFileColorsInExplorer, updateFileColorsForMode)
  * 3. Create monitor lifecycle helpers (start/stop)
  * 4. Create mode switching helper (depends on UI helpers)
  * 5. Create file decoration helper
@@ -28,10 +28,9 @@ const { window } = vscode;
 const { getLogger } = require('../logger');
 const statusBar = require('../ui/status-bar');
 const commandHandlersFactory = require('./commandHandlers');
-
-// Import modules
 const switchToModeFunc = require('../mode/switchToMode');
 const UnreviewedFileDecor = require('../ui/fileColorsInExplorer');
+const safe = require('./safe');
 
 /**
  * Initialize all helpers with dependency injection
@@ -40,6 +39,11 @@ const UnreviewedFileDecor = require('../ui/fileColorsInExplorer');
  * @returns {Object} Object containing all helper functions
  */
 module.exports = function initializeHelpers(state, disableLogging = false) {
+    // Validate state parameter
+    if (!state) {
+        throw new Error('initializeHelpers: state parameter is required');
+    }
+    
     // ============================================================================
     // STEP 1: Initialize logging (needed by everything)
     // ============================================================================
@@ -54,15 +58,29 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
     // ============================================================================
     // STEP 2: Initialize UI helpers (needed by monitor and mode switching)
     // ============================================================================
-    // Update file colors in Explorer - updates file name colors in Explorer based on review debt/pending status
-    // Called when mode changes or when score updates to reflect current state
+    // Update file colors in Explorer - updates file name colors based on review debt/pending status
+    // Called when debt/suggestions change to reflect current state
+    // NOTE: This is for content-based updates (debt/suggestions), NOT mode changes
+    // Internal helper - errors propagate to caller (boundary)
     const updateFileColorsInExplorer = () => {
         if (state.fileDecorationProvider && state.currentMode === 'dev') {
             state.fileDecorationProvider.refresh();
         }
     };
     
+    // Update file colors for mode change - shows/hides file colors based on mode
+    // Called when mode changes to show/hide file decorations
+    // NOTE: This is separate from content-based updates to isolate mode switching concerns
+    // Internal helper - errors propagate to caller (boundary)
+    const updateFileColorsForMode = () => {
+        if (state.fileDecorationProvider) {
+            // Refresh to show/hide based on current mode (provider checks mode internally)
+            state.fileDecorationProvider.refresh();
+        }
+    };
+    
     // Update awareness meter - called after score calculation
+    // Internal helper - errors propagate to caller (boundary)
     const updateAwarenessMeter = () => {
         statusBar.updateAwarenessMeter(
             state.awarenessBarItem, 
@@ -74,6 +92,7 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
     
     // Switch mode in status bar - shows/omits awareness meter based on mode
     // Called when mode changes to update mode indicator and show/hide awareness meter
+    // NOTE: File colors are updated separately via updateFileColorsForMode()
     const switchModeInStatusBar = (forceMode = null) => {
         // Only update if mode is explicitly provided or already set
         if (forceMode !== null) {
@@ -86,7 +105,6 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
         if (!currentMode) {
             statusBar.updateStatusBar(state.statusBarItem, null, state.outputChannel);
             updateAwarenessMeter(); // This will hide the meter if no mode
-            updateFileColorsInExplorer(); // Hide file colors when no mode
             return;
         }
         
@@ -94,42 +112,38 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
         statusBar.updateStatusBar(state.statusBarItem, currentMode, state.outputChannel);
         // Update awareness meter (will show in 'dev' mode, hide in 'vibe' mode)
         updateAwarenessMeter();
-        // Update file colors to show/hide based on mode change
-        updateFileColorsInExplorer();
+        // NOTE: File colors are updated separately - not mixed with status bar updates
     };
 
     // ============================================================================
     // STEP 3: Initialize file decoration helper
     // ============================================================================
+    // Internal helper - errors propagate to caller (boundary: startAwarenessMonitor)
     const initFileDecorations = () => {
         if (!UnreviewedFileDecor || state.fileDecorationProvider || !state.extensionContext) {
             return;
         }
         
-        try {
-            log('Creating file decoration provider...');
-            state.fileDecorationProvider = new UnreviewedFileDecor(
-                state.awarenessMonitor,
-                () => state.currentMode,
-                state.outputChannel,
-                disableLogging
-            );
-            
-            const provider = state.fileDecorationProvider.register(state.extensionContext);
-            if (provider) {
-                log('✅ File decoration provider registered successfully');
-            } else {
-                log('❌ ERROR: File decoration provider registration failed');
-            }
-        } catch (error) {
-            log(`❌ ERROR creating file decoration provider: ${error.message}`);
-            console.error('VibeSwitch: Error creating file decoration provider:', error);
+        log('Creating file decoration provider...');
+        state.fileDecorationProvider = new UnreviewedFileDecor(
+            state.awarenessMonitor,
+            () => state.currentMode,
+            state.outputChannel,
+            disableLogging
+        );
+        
+        const provider = state.fileDecorationProvider.register(state.extensionContext);
+        if (provider) {
+            log('✅ File decoration provider registered successfully');
+        } else {
+            log('❌ ERROR: File decoration provider registration failed');
         }
     };
 
     // ============================================================================
     // STEP 4: Initialize monitor lifecycle helpers
     // ============================================================================
+    // Boundary: Called from mode switching (command handler boundary)
     const startAwarenessMonitor = () => {
         if (!state.awarenessMonitor || !state.extensionContext) {
             return;
@@ -138,22 +152,29 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
         // Store updateFileColorsInExplorer in state so modules can access it
         state.updateFileColorsInExplorer = updateFileColorsInExplorer;
         
-        state.awarenessMonitor.start(state.extensionContext, updateFileColorsInExplorer);
+        // Pass current mode to classifier for mode-specific thresholds
+        const currentMode = state.getMode() || 'dev';
+        state.awarenessMonitor.start(state.extensionContext, updateFileColorsInExplorer, currentMode);
         log('VibeSwitch: Started real-time awareness monitoring');
         initFileDecorations();
         
         if (state.meterUpdateTimer) {
             clearInterval(state.meterUpdateTimer);
         }
+        
+        // Timer is a boundary - use safe() wrapper
         state.meterUpdateTimer = setInterval(() => {
-            if (state.currentMode === 'dev') {
-                updateAwarenessMeter();
-            }
+            safe('meterUpdateTimer', () => {
+                if (state.currentMode === 'dev') {
+                    updateAwarenessMeter();
+                }
+            });
         }, 10000);
         
         updateAwarenessMeter();
     };
 
+    // Boundary: Called from mode switching (command handler boundary)
     const stopAwarenessMonitor = () => {
         if (!state.awarenessMonitor) {
             return;
@@ -176,6 +197,7 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
     // ============================================================================
     // STEP 5: Initialize mode switching helper (depends on UI helpers)
     // ============================================================================
+    // Boundary: Command handler - errors handled at boundary
     const switchToMode = async (mode) => {
         try {
             log(`VibeSwitch: Switching to ${mode} mode (current: ${state.currentMode})`);
@@ -187,6 +209,8 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
             
             // Update UI immediately with the new mode (shows/omits awareness meter)
             switchModeInStatusBar(mode);
+            // Update file colors separately based on mode change
+            updateFileColorsForMode();
             
             await switchToModeFunc(mode, {
                 currentMode: previousMode, // Pass previous mode for stats
@@ -205,11 +229,13 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
             
             // Final UI update to ensure consistency (shows/omits awareness meter)
             switchModeInStatusBar(mode);
+            // Update file colors separately to ensure they reflect the new mode
+            updateFileColorsForMode();
         } catch (error) {
-            // On error, try to restore previous mode
+            // Boundary: Command handler - show user-facing error
             log(`ERROR in switchToMode: ${error.message}`, true, true);
-            console.error('VibeSwitch: Error in switchToMode:', error);
             window.showErrorMessage(`Failed to switch mode: ${error.message}`);
+            throw error; // Re-throw so caller knows it failed
         }
     };
 
@@ -231,6 +257,7 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
         updateAwarenessMeter,
         switchModeInStatusBar,
         updateFileColorsInExplorer,
+        updateFileColorsForMode,
         commandHandlers,
         initFileDecorations,
         startAwarenessMonitor,

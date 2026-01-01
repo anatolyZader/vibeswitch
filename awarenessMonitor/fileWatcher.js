@@ -127,8 +127,7 @@ class FileWatcher {
                     getLogger().log(`AwarenessMonitor: Detected externally created file with content - ${suggestion.size} chars`);
                 }
             }).catch(err => {
-                getLogger().log(`AwarenessMonitor: Error reading externally created file: ${err.message}`);
-                console.error('AwarenessMonitor: Error reading externally created file', err);
+                getLogger().log(`AwarenessMonitor: Error reading externally created file: ${err.message}`, true);
             });
         }
     }

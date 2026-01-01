@@ -7,15 +7,44 @@ const vscode = require('vscode');
 const path = require('path');
 
 // Constants for file filtering
-const NON_CODE_SCHEMES = ['output', 'vscode', 'vscode-notebook', 'debug'];
+const NON_CODE_SCHEMES = ['output', 'vscode', 'vscode-notebook', 'debug', 'vscode-userdata', 'git'];
 const CODE_EXTENSIONS = ['.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.cpp', '.c', '.h', '.cs', '.go', '.rs', '.rb', '.php', '.swift', '.kt', '.scala', '.clj', '.sh', '.bash', '.zsh', '.fish'];
 
 /**
- * Check if a document scheme should be skipped (non-code documents)
- * @param {string} scheme - The URI scheme to check
- * @returns {boolean} True if the scheme should be skipped
+ * Check if a document should be skipped (non-code documents)
+ * FIXED: Consistent API - always accepts document
+ * @param {vscode.TextDocument} document - The document to check
+ * @returns {boolean} True if the document should be skipped
  */
-function isNonCodeDocument(scheme) {
+function isNonCodeDocument(document) {
+    if (!document) return true;
+    
+    const scheme = document.uri.scheme;
+    
+    // Scheme blacklist (always skip these)
+    if (NON_CODE_SCHEMES.includes(scheme)) {
+        return true;
+    }
+    
+    // Handle untitled documents (user-controlled)
+    // untitled can be code, so we don't skip it by default
+    
+    return false;
+}
+
+/**
+ * Check if a URI scheme should be skipped (for cases where we only have URI, not document)
+ * @param {vscode.Uri|string} uriOrScheme - URI or scheme string
+ * @returns {boolean} True if the URI should be skipped
+ */
+function isSkippableUri(uriOrScheme) {
+    let scheme;
+    if (typeof uriOrScheme === 'string') {
+        scheme = uriOrScheme;
+    } else {
+        scheme = uriOrScheme.scheme;
+    }
+    
     return NON_CODE_SCHEMES.includes(scheme);
 }
 
@@ -77,9 +106,8 @@ module.exports = {
     NON_CODE_SCHEMES,
     CODE_EXTENSIONS,
     isNonCodeDocument,
+    isSkippableUri,
     getRelativePath,
     isPositionInRange,
     rangesOverlap
 };
-
-

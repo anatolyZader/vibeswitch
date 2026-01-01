@@ -5,7 +5,7 @@
  * - Validates mode input
  * - Tracks usage statistics
  * - Manages awareness monitor lifecycle (start/stop)
- * - Copies mode-specific .cursorrules files
+ * - Copies mode-specific .cursor/rules.{mode}.md files to .cursor/rules.md
  * - Verifies file writes
  * - Applies mode-specific settings
  * - Triggers callbacks for UI updates
@@ -15,7 +15,6 @@ const vscode = require('vscode');
 const fs = require('fs');
 const path = require('path');
 const config = require('../config');
-const fileManager = require('../file-manager');
 
 // Import the detection module to update its cache
 const detectCurrentMode = require('./detectCurrentMode');
@@ -65,18 +64,18 @@ async function switchToMode(mode, options = {}) {
             onMonitorStop();
         }
 
-        // Create mode-specific .cursorrules file if it doesn't exist
-        const modeFile = path.join(workspaceRoot, `.cursorrules.${mode}`);
-        if (!fs.existsSync(modeFile)) {
-            await fileManager.createDefaultModeFiles(workspaceRoot);
+        // Create .cursor directory if it doesn't exist
+        const cursorDir = path.join(workspaceRoot, '.cursor');
+        if (!fs.existsSync(cursorDir)) {
+            fs.mkdirSync(cursorDir, { recursive: true });
         }
 
-        // Switch .cursorrules to point to the mode file
-        const rulesFile = path.join(workspaceRoot, '.cursorrules');
-        const targetModeFile = path.join(workspaceRoot, `.cursorrules.${mode}`);
+        // Switch .cursor/rules.md to point to the mode file
+        const rulesFile = path.join(cursorDir, 'rules.md');
+        const targetModeFile = path.join(cursorDir, `rules.${mode}.md`);
 
         if (fs.existsSync(targetModeFile)) {
-            // Copy mode-specific file to .cursorrules
+            // Copy mode-specific file to .cursor/rules.md
             const modeContent = fs.readFileSync(targetModeFile, 'utf8');
             fs.writeFileSync(rulesFile, modeContent, 'utf8');
             
@@ -84,7 +83,7 @@ async function switchToMode(mode, options = {}) {
             const writtenContent = fs.readFileSync(rulesFile, 'utf8');
             if (writtenContent !== modeContent) {
                 console.error(`VibeSwitch: File write verification failed - content mismatch`);
-                throw new Error('Failed to write .cursorrules file correctly');
+                throw new Error('Failed to write .cursor/rules.md file correctly');
             }
             
             // Update detection cache directly to prevent race conditions
@@ -96,10 +95,10 @@ async function switchToMode(mode, options = {}) {
                 // to ensure next detection reads the file we just wrote
             }
             
-            console.log(`VibeSwitch: Switched .cursorrules to ${mode} mode (verified)`);
+            console.log(`VibeSwitch: Switched .cursor/rules.md to ${mode} mode (verified)`);
         } else {
             console.error(`VibeSwitch: Target mode file not found: ${targetModeFile}`);
-            throw new Error(`Mode file not found: .cursorrules.${mode}`);
+            throw new Error(`Mode file not found: .cursor/rules.${mode}.md`);
         }
 
         // Apply mode settings (skip cursor.* settings to avoid reload)

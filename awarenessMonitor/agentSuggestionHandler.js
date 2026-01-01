@@ -117,9 +117,14 @@ class AgentSuggestionHandler {
             
             // Treat any non-empty file as potentially AI-generated
             if (content.trim().length > 0) {
+                // Fixed: Range math bug - lineCount is 1-based count, but line indices are 0-based
+                const lastLine = Math.max(0, doc.lineCount - 1);
+                const lastLineText = doc.lineAt(lastLine).text;
+                const lastChar = lastLineText.length;
+                
                 const suggestion = this.createSuggestionObject({
                     document: doc.uri.toString(),
-                    range: new vscode.Range(0, 0, doc.lineCount, 0),
+                    range: new vscode.Range(0, 0, lastLine, lastChar),
                     text: content,
                     size: content.length,
                     isFileCreation: isFileCreation,
@@ -133,8 +138,7 @@ class AgentSuggestionHandler {
                 return suggestion;
             }
         } catch (err) {
-            getLogger().log(`AwarenessMonitor: Error processing file ${fileUri.fsPath || fileUri}: ${err.message}`);
-            console.error('AwarenessMonitor: Error processing file', err);
+            getLogger().log(`AwarenessMonitor: Error processing file ${fileUri.fsPath || fileUri}: ${err.message}`, true);
         }
         
         return null;

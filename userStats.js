@@ -306,7 +306,7 @@ class UsageStatsManager {
             if (mode === 'dev') {
                 this.data.awareness[mode].settingsVerification++;
             }
-        } else if (fileName.includes('.cursorrules')) {
+        } else if (fileName.includes('.cursorrules') || fileName.includes('.cursor/rules.md') || fileName.includes('.cursor/rules.')) {
             this.data.awareness[mode].cursorrulesFileOpens++;
         } else if (fileName.match(/README|SETTINGS-COMPARISON|TESTING|USAGE-STATS/i)) {
             this.data.awareness[mode].documentationViews++;

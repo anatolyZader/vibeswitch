@@ -108,17 +108,17 @@
         "vibeswitch.rulesPath": {
           "type": "string",
           "default": "",
-          "description": "Custom path to .cursorrules files (leave empty for workspace root)"
+          "description": "Custom path to .cursor/rules.md files (leave empty for workspace root)"
         },
         "vibeswitch.autoReload": {
           "type": "boolean",
           "default": false,
-          "description": "[DEPRECATED] Not used - mode switches are instant via .cursorrules"
+          "description": "[DEPRECATED] Not used - mode switches are instant via .cursor/rules.md"
         },
         "vibeswitch.skipCursorSettings": {
           "type": "boolean",
           "default": false,
-          "description": "[DEPRECATED] Not used - extension only modifies .cursorrules, not settings"
+          "description": "[DEPRECATED] Not used - extension only modifies .cursor/rules.md, not settings"
         },
         "vibeswitch.enableTelemetry": {
           "type": "boolean",

@@ -49,7 +49,7 @@ suite('Path Safety Tests', () => {
 
     test('isPathSafe should accept valid workspace paths', () => {
         const workspaceRoot = '/home/user/project';
-        const validPath = path.join(workspaceRoot, '.cursorrules');
+        const validPath = path.join(workspaceRoot, '.cursor', 'rules.md');
         
         assert.ok(validPath.startsWith(workspaceRoot));
     });
@@ -76,8 +76,14 @@ suite('Mode Switching Tests', () => {
     test('Should create default mode files when missing', async function() {
         this.timeout(5000);
         
-        const vibeRules = path.join(testWorkspacePath, '.cursorrules.vibe');
-        const devRules = path.join(testWorkspacePath, '.cursorrules.dev');
+        const cursorDir = path.join(testWorkspacePath, '.cursor');
+        const vibeRules = path.join(cursorDir, 'rules.vibe.md');
+        const devRules = path.join(cursorDir, 'rules.dev.md');
+        
+        // Create .cursor directory if it doesn't exist
+        if (!fs.existsSync(cursorDir)) {
+            fs.mkdirSync(cursorDir, { recursive: true });
+        }
         
         // Create files
         if (!fs.existsSync(vibeRules)) {
@@ -100,8 +106,9 @@ suite('Mode Switching Tests', () => {
     });
 
     test('Mode files should contain correct markers', () => {
-        const vibeRules = path.join(testWorkspacePath, '.cursorrules.vibe');
-        const devRules = path.join(testWorkspacePath, '.cursorrules.dev');
+        const cursorDir = path.join(testWorkspacePath, '.cursor');
+        const vibeRules = path.join(cursorDir, 'rules.vibe.md');
+        const devRules = path.join(cursorDir, 'rules.dev.md');
         
         if (fs.existsSync(vibeRules)) {
             const content = fs.readFileSync(vibeRules, 'utf8');

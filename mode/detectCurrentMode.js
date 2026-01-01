@@ -1,9 +1,9 @@
 /**
- * Mode Detection - Detects current mode from .cursorrules files
+ * Mode Detection - Detects current mode from .cursor/rules.md files
  * 
  * Determines which mode (VIBE/DEV) the workspace is currently in by:
- * - Reading .cursorrules file content and analyzing indicators
- * - Falling back to mode-specific file existence (.cursorrules.vibe, .cursorrules.dev)
+ * - Reading .cursor/rules.md file content and analyzing indicators
+ * - Falling back to mode-specific file existence (.cursor/rules.vibe.md, .cursor/rules.dev.md)
  * - Caching results to prevent rapid re-detection
  */
 
@@ -17,7 +17,7 @@ let lastDetectionTime = 0;
 const DETECTION_CACHE_MS = 2000; // Cache for 2 seconds
 
 /**
- * Detects the current mode by checking .cursorrules files
+ * Detects the current mode by checking .cursor/rules.md files
  * @param {boolean} forceFresh - Force fresh detection, bypassing cache
  * @returns {string|null} 'vibe', 'dev', or null if undetermined
  */
@@ -35,15 +35,16 @@ function detectCurrentMode(forceFresh = false) {
         return null;
     }
 
-    // Check workspace root for .cursorrules files
+    // Check workspace root for .cursor/rules.md files
     const workspaceRoot = workspaceFolders[0].uri.fsPath;
-    const rulesFile = path.join(workspaceRoot, '.cursorrules');
-    const devFile = path.join(workspaceRoot, '.cursorrules.dev');
-    const vibeFile = path.join(workspaceRoot, '.cursorrules.vibe');
+    const cursorDir = path.join(workspaceRoot, '.cursor');
+    const rulesFile = path.join(cursorDir, 'rules.md');
+    const devFile = path.join(cursorDir, 'rules.dev.md');
+    const vibeFile = path.join(cursorDir, 'rules.vibe.md');
 
     let detectedMode = null;
 
-    // Priority: Check .cursorrules content FIRST (it's the active file)
+    // Priority: Check .cursor/rules.md content FIRST (it's the active file)
     // This ensures we detect the mode that was just switched to, even if mode-specific files exist
     if (fs.existsSync(rulesFile)) {
         try {
@@ -60,24 +61,24 @@ function detectCurrentMode(forceFresh = false) {
                 detectedMode = 'dev';
             }
         } catch (error) {
-            console.error('VibeSwitch: Error reading .cursorrules:', error);
+            console.error('VibeSwitch: Error reading .cursor/rules.md:', error);
         }
     }
 
-    // Only fallback to mode-specific files if .cursorrules doesn't exist or has no clear indicators
-    // DO NOT fallback if .cursorrules exists but detection failed - this prevents false positives
+    // Only fallback to mode-specific files if .cursor/rules.md doesn't exist or has no clear indicators
+    // DO NOT fallback if .cursor/rules.md exists but detection failed - this prevents false positives
     if (!detectedMode) {
-        // If .cursorrules exists but we couldn't detect mode, don't fallback
-        // This prevents detecting 'dev' when .cursorrules has vibe content but detection failed
+        // If .cursor/rules.md exists but we couldn't detect mode, don't fallback
+        // This prevents detecting 'dev' when .cursor/rules.md has vibe content but detection failed
         if (!fs.existsSync(rulesFile)) {
-            // .cursorrules doesn't exist, safe to check mode-specific files
+            // .cursor/rules.md doesn't exist, safe to check mode-specific files
             if (fs.existsSync(devFile)) {
                 detectedMode = 'dev';
             } else if (fs.existsSync(vibeFile)) {
                 detectedMode = 'vibe';
             }
         }
-        // If .cursorrules exists but we couldn't detect, return null (ambiguous)
+        // If .cursor/rules.md exists but we couldn't detect, return null (ambiguous)
     }
 
     // Update cache

@@ -56,6 +56,20 @@
  *    - File filtering, path utilities, range utilities
  * 
  * 
+ * ERROR HANDLING ARCHITECTURE:
+ * -----------------------------
+ * 
+ * This module follows boundary-based error handling patterns:
+ * 
+ * - Error handling occurs ONLY at system boundaries (VS Code event callbacks, timers)
+ * - Uses centralized `safe()` wrapper utility for all event listeners
+ * - Internal methods (updateScore, getScore, getStatus) let errors propagate to boundaries
+ * - No nested try/catch blocks - each boundary has a single error handler
+ * - Fail-fast validation at module boundaries (start, handleExternallyCreatedFile)
+ * 
+ * See helpers/safe.js for the centralized error handling wrapper.
+ * 
+ * 
  * MAIN ENTITIES:
  * --------------
  * 
@@ -72,6 +86,7 @@
  *    - keepAllDetector: KeepAllDetector instance
  *    - usageStats: Reference to UsageStatsManager for event tracking
  *    - onScoreUpdate: Callback function for immediate UI updates
+ *    - updateFileColorsInExplorer: Callback to update file colors in Explorer
  *    - disposables: Array of VS Code event subscriptions for cleanup
  * 
  * 
@@ -91,20 +106,21 @@
  * HOW IT WORKS:
  * -------------
  * 
- * 1. INITIALIZATION (start(context))
+ * 1. INITIALIZATION (start(context, updateFileColorsInExplorer))
+ *    - Validates context parameter (fail-fast at boundary)
  *    - Initializes all module instances (debt manager, trackers, handlers, etc.)
  *    - Loads existing review debt from workspace storage
- *    - Registers VS Code event listeners via EventHandlers
- *    - Sets up file system watcher via FileWatcher
- *    - Scans existing workspace files for review debt
- *    - Starts periodic score updates (every 10 seconds)
+ *    - Registers VS Code event listeners via EventHandlers (wrapped in safe())
+ *    - Sets up file system watcher via FileWatcher (optional, uses safe())
+ *    - Scans existing workspace files for review debt (optional, uses safe())
+ *    - Starts periodic score updates (every 10 seconds, timer wrapped in safe())
  * 
  * 2. EVENT FLOW
- *    - VS Code events → EventHandlers → appropriate modules
- *    - Text changes → AgentSuggestionHandler (AI detection)
- *    - File operations → AgentSuggestionHandler + DebtManager
- *    - User interactions → SessionTracker
- *    - Score updates → ScoreCalculator
+ *    - VS Code events → safe() wrapper → EventHandlers → appropriate modules
+ *    - Text changes → EventHandlers.onTextChange() → AgentSuggestionHandler (AI detection)
+ *    - File operations → EventHandlers → AgentSuggestionHandler + DebtManager
+ *    - User interactions → EventHandlers → SessionTracker
+ *    - Score updates → ScoreCalculator (via timer or callback)
  * 
  * 3. MODULE COORDINATION
  *    - AgentSuggestionHandler manages AI suggestions and status
@@ -118,6 +134,10 @@
  * 4. SCORE CALCULATION
  *    See scoreCalculator.js for detailed calculation logic.
  *    Delegated to ScoreCalculator module.
+ *    Called via:
+ *    - Immediate callback when suggestions/debt change
+ *    - Periodic timer (every 10 seconds)
+ *    - Manual trigger via updateScore() method
  * 
  * 
  * INTEGRATION POINTS:
@@ -134,37 +154,54 @@
  *    - Updates awareness meter in status bar
  *    - Provides real-time feedback to user
  * 
- * 3. VS Code Workspace Storage:
+ * 3. Extension State (updateFileColorsInExplorer callback):
+ *    - Called when debt or suggestions change
+ *    - Updates file name colors in Explorer
+ *    - Provides visual indicators for unreviewed files
+ * 
+ * 4. VS Code Workspace Storage:
  *    - Persists review debt across sessions (via DebtManager)
  *    - Stores file paths and review metadata
  *    - Loaded on extension activation
  * 
  * 
- * EVENT FLOW EXAMPLE:
- * -------------------
+ * EVENT FLOW EXAMPLE (Agent Change to Existing File):
+ * ----------------------------------------------------
  * 
- * 1. AI generates code → EventHandlers.onTextChange() → AgentSuggestionHandler
- * 2. Suggestion created → AgentSuggestionHandler.addSuggestionAndTrack()
- * 3. File added to review debt → DebtManager.addToDebt()
- * 4. User opens file → EventHandlers.onFileOpened() → SessionTracker
- * 5. User moves cursor → EventHandlers.onCursorMove() → SessionTracker
- * 6. User scrolls → EventHandlers.onScroll() → SessionTracker
- * 7. User edits code → EventHandlers.onTextChange() → AgentSuggestionHandler.recordUserEdit()
- * 8. After 5 seconds → AgentSuggestionHandler.checkSuggestionStatus()
- * 9. Score recalculated → ScoreCalculator.updateScore()
- * 10. UI updated → onScoreUpdate() callback triggered
- * 11. Review debt updated → DebtManager.markAsReviewed()
+ * 1. AI generates code → VS Code fires onDidChangeTextDocument event
+ * 2. safe('onTextChange') → EventHandlers.onTextChange() → analyzes change
+ * 3. AI-like change detected → AgentSuggestionHandler.recordAISuggestion()
+ * 4. Suggestion created → AgentSuggestionHandler.addSuggestionAndTrack()
+ * 5. File added to review debt → DebtManager.addToDebt()
+ *    - Updates debt Map
+ *    - Calls updateFileColorsInExplorer() → file colors updated
+ *    - Calls updateScore() → score recalculated
+ * 6. ScoreCalculator.updateScore() → calculates new score
+ * 7. onScoreUpdate() callback → updateAwarenessMeter() → meter updated
+ * 8. User opens file → EventHandlers.onFileOpened() → SessionTracker
+ * 9. User moves cursor → EventHandlers.onCursorMove() → SessionTracker
+ * 10. User scrolls → EventHandlers.onScroll() → SessionTracker
+ * 11. User edits code → EventHandlers.onTextChange() → AgentSuggestionHandler.recordUserEdit()
+ * 12. After 5 seconds → AgentSuggestionHandler.checkSuggestionStatus()
+ * 13. Score recalculated → ScoreCalculator.updateScore()
+ * 14. UI updated → onScoreUpdate() callback triggered
+ * 15. Review debt updated → DebtManager.markAsReviewed()
+ * 
+ * See LIFECYCLE-AGENT-CHANGE.md for detailed lifecycle documentation.
  * 
  * 
  * CLEANUP:
  * --------
  * 
  * stop():
- * - Disposes all VS Code event listeners
- * - Closes file system watcher (FileWatcher.close())
+ * - Saves review debt to storage (via safe() wrapper)
+ * - Disposes all VS Code event listeners (via safe() wrapper)
+ * - Closes file system watcher (via safe() wrapper)
  * - Clears update timer
- * - Saves review debt to storage (DebtManager.saveReviewDebt())
+ * - Clears session tracker (via safe() wrapper)
  * - Preserves state (suggestions, scores) for next session
+ * 
+ * All cleanup operations use safe() wrapper to prevent errors from blocking cleanup.
  * 
  * 
  * CONFIGURATION:
@@ -182,10 +219,8 @@
  */
 
 const vscode = require('vscode');
-const fs = require('fs');
-const path = require('path');
 const { getLogger } = require('../logger');
-const { NON_CODE_SCHEMES, CODE_EXTENSIONS, isNonCodeDocument, getRelativePath, isPositionInRange, rangesOverlap } = require('./utils');
+const safe = require('../helpers/safe');
 const ScoreCalculator = require('./scoreCalculator');
 const DebtManager = require('./debtManager');
 const AgentSuggestionHandler = require('./agentSuggestionHandler');
@@ -244,8 +279,15 @@ class AwarenessMonitor {
      * Start monitoring (called when switching to DEV mode)
      * @param {vscode.ExtensionContext} context - VS Code extension context
      * @param {Function} updateFileColorsInExplorer - Callback to update file colors in Explorer
+     * @param {string} mode - Current mode ('vibe', 'dev', 'owner') for classifier config
      */
-    start(context, updateFileColorsInExplorer = null) {
+    // Boundary: Called from mode switching (command handler boundary)
+    start(context, updateFileColorsInExplorer = null, mode = 'dev') {
+        // Validate context parameter at boundary
+        if (!context) {
+            throw new Error('AwarenessMonitor.start() called with null/undefined context');
+        }
+        
         getLogger().log('AwarenessMonitor: Starting real-time monitoring');
         getLogger().log(`AwarenessMonitor: onScoreUpdate Callback registered: ${this.onScoreUpdate ? 'YES' : 'NO'}`);
         
@@ -255,16 +297,12 @@ class AwarenessMonitor {
         // Store file color update callback
         this.updateFileColorsInExplorer = updateFileColorsInExplorer;
         
-        // Initialize debt manager
+        // Initialize required modules - fail fast if any fail
         this.debtManager = new DebtManager(context, this.onScoreUpdate, updateFileColorsInExplorer);
-        
-        // Load existing debt from storage
         this.debtManager.loadDebt();
         
-        // Initialize keep-all detector
         this.keepAllDetector = new KeepAllDetector(this.usageStats);
         
-        // Initialize agent suggestion handler
         this.agentSuggestionHandler = new AgentSuggestionHandler(
             this.debtManager,
             () => this.updateScore(),
@@ -273,7 +311,6 @@ class AwarenessMonitor {
             updateFileColorsInExplorer
         );
         
-        // Initialize session tracker
         this.sessionTracker = new SessionTracker(
             this.debtManager,
             this.agentSuggestionHandler,
@@ -282,7 +319,6 @@ class AwarenessMonitor {
             updateFileColorsInExplorer
         );
         
-        // Initialize file watcher
         this.fileWatcher = new FileWatcher(
             this.agentSuggestionHandler,
             this.debtManager,
@@ -290,86 +326,116 @@ class AwarenessMonitor {
             this.onScoreUpdate
         );
         
-        // Initialize event handlers
         this.eventHandlers = new EventHandlers(
             this.agentSuggestionHandler,
             this.debtManager,
             this.sessionTracker,
             this.activeDocument,
-            this.cursorPosition
+            this.cursorPosition,
+            mode
         );
         
         // Clear any existing subscriptions
         this.stop();
         
-        // Register all event handlers
+        // Register all event handlers - use safe() wrapper for boundaries
         if (this.eventHandlers) {
             // Track text changes (potential AI edits)
             this.disposables.push(
-                vscode.workspace.onDidChangeTextDocument((event) => this.eventHandlers.onTextChange(event))
+                vscode.workspace.onDidChangeTextDocument((event) => {
+                    safe('onTextChange', () => this.eventHandlers.onTextChange(event));
+                })
             );
             getLogger().log('AwarenessMonitor: Text change listener registered');
             
             // Track file creation (AI creating new files)
             this.disposables.push(
-                vscode.workspace.onDidCreateFiles((event) => this.eventHandlers.onFilesCreated(event))
+                vscode.workspace.onDidCreateFiles((event) => {
+                    safe('onFilesCreated', () => this.eventHandlers.onFilesCreated(event));
+                })
             );
             
             // Track file saves (AI writing entire files)
             this.disposables.push(
-                vscode.workspace.onDidSaveTextDocument((document) => this.eventHandlers.onFileSaved(document))
+                vscode.workspace.onDidSaveTextDocument((document) => {
+                    safe('onFileSaved', () => this.eventHandlers.onFileSaved(document));
+                })
             );
             
             // Track file opens (user reviewing files)
             this.disposables.push(
-                vscode.workspace.onDidOpenTextDocument((document) => this.eventHandlers.onFileOpened(document))
+                vscode.workspace.onDidOpenTextDocument((document) => {
+                    safe('onFileOpened', () => this.eventHandlers.onFileOpened(document));
+                })
+            );
+            
+            // Track document close (flush classifier, close reviews)
+            this.disposables.push(
+                vscode.workspace.onDidCloseTextDocument((document) => {
+                    safe('onDocumentClose', () => this.eventHandlers.onDocumentClose(document));
+                })
             );
             
             // Track cursor position (user reviewing code)
             this.disposables.push(
-                vscode.window.onDidChangeTextEditorSelection((event) => this.eventHandlers.onCursorMove(event))
+                vscode.window.onDidChangeTextEditorSelection((event) => {
+                    safe('onCursorMove', () => this.eventHandlers.onCursorMove(event));
+                })
             );
             
             // Track scroll events (user reviewing code by scrolling)
             this.disposables.push(
-                vscode.window.onDidChangeTextEditorVisibleRanges((event) => this.eventHandlers.onScroll(event))
+                vscode.window.onDidChangeTextEditorVisibleRanges((event) => {
+                    safe('onScroll', () => this.eventHandlers.onScroll(event));
+                })
             );
             
             // Track active editor (user switching to review)
             this.disposables.push(
-                vscode.window.onDidChangeActiveTextEditor((editor) => this.eventHandlers.onEditorChange(editor))
+                vscode.window.onDidChangeActiveTextEditor((editor) => {
+                    safe('onEditorChange', () => this.eventHandlers.onEditorChange(editor));
+                })
             );
         }
         
-        // Set up file system watcher for externally created files
+        // Set up file system watcher for externally created files (optional - don't throw)
         if (this.fileWatcher) {
-            this.fileWatcher.setupFileSystemWatcher();
+            safe('setupFileSystemWatcher', () => {
+                this.fileWatcher.setupFileSystemWatcher();
+            });
         }
         
-        // Scan for existing files that should be in debt
+        // Scan for existing files that should be in debt (optional - don't throw)
         if (this.fileWatcher) {
-            this.fileWatcher.scanExistingFiles();
+            safe('scanExistingFiles', () => {
+                this.fileWatcher.scanExistingFiles();
+            });
         }
         
-        // Start periodic score updates (every 10 seconds)
+        // Start periodic score updates (every 10 seconds) - timer is a boundary
         this.updateTimer = setInterval(() => {
-            this.updateScore();
-            if (this.sessionTracker) {
-                this.sessionTracker.checkProgress();
-            }
+            safe('updateTimer', () => {
+                this.updateScore();
+                if (this.sessionTracker) {
+                    this.sessionTracker.checkProgress();
+                }
+            });
         }, 10000);
         
-        getLogger().log(`AwarenessMonitor: Monitoring active with ${this.debtManager.getDebtSize()} files in debt`);
+        const debtSize = this.debtManager ? this.debtManager.getDebtSize() : 0;
+        const watchedDirs = this.fileWatcher ? this.fileWatcher.getWatchedDirectories().length : 0;
+        
+        getLogger().log(`AwarenessMonitor: Monitoring active with ${debtSize} files in debt`);
         getLogger().log(`AwarenessMonitor: All event listeners registered and active`);
-        getLogger().log(`AwarenessMonitor: File system watcher active for ${this.fileWatcher.getWatchedDirectories().length} directories`);
+        getLogger().log(`AwarenessMonitor: File system watcher active for ${watchedDirs} directories`);
         
         // Log initial state
         getLogger().log(`AwarenessMonitor: Initial score update...`);
         // If we have existing suggestions or debt, preserve the score calculation
         // Otherwise, calculate fresh
         const suggestionCount = this.agentSuggestionHandler ? this.agentSuggestionHandler.getSuggestions().length : 0;
-        if (suggestionCount > 0 || this.debtManager.getDebtSize() > 0) {
-            getLogger().log(`AwarenessMonitor: Preserving existing state (${suggestionCount} suggestions, ${this.debtManager.getDebtSize()} debt files)`);
+        if (suggestionCount > 0 || debtSize > 0) {
+            getLogger().log(`AwarenessMonitor: Preserving existing state (${suggestionCount} suggestions, ${debtSize} debt files)`);
             // Recalculate score from existing data
             this.updateScore();
         } else {
@@ -381,23 +447,40 @@ class AwarenessMonitor {
     /**
      * Stop monitoring (called when switching away from DEV mode)
      */
+    // Boundary: Called from mode switching (command handler boundary)
     stop() {
         getLogger().log('AwarenessMonitor: Stopping monitoring');
         
         // Save debt before stopping
         if (this.debtManager) {
-            this.debtManager.saveDebt();
+            safe('saveDebt', () => {
+                this.debtManager.saveDebt();
+            });
         }
         
         // Dispose all event listeners
-        this.disposables.forEach(d => d.dispose());
+        this.disposables.forEach(d => {
+            safe('disposeListener', () => {
+                d.dispose();
+            });
+        });
         this.disposables = [];
+        
+        // Clean up event handlers (clears rate limiter, change classifier, caches)
+        if (this.eventHandlers) {
+            safe('disposeEventHandlers', () => {
+                this.eventHandlers.dispose();
+            });
+        }
         
         // Clean up file system watcher
         if (this.fileWatcher) {
-            this.fileWatcher.close();
+            safe('closeFileWatcher', () => {
+                this.fileWatcher.close();
+            });
         }
         
+        // Clear update timer
         if (this.updateTimer) {
             clearInterval(this.updateTimer);
             this.updateTimer = null;
@@ -407,7 +490,9 @@ class AwarenessMonitor {
         // This allows the meter to maintain its value when switching back to DEV mode
         // Only clear temporary tracking that's session-specific
         if (this.sessionTracker) {
-            this.sessionTracker.clear();
+            safe('clearSessionTracker', () => {
+                this.sessionTracker.clear();
+            });
         }
         // Keep: this.agentSuggestionHandler, this.scoreCalculator, this.debtManager, this.keepAllDetector
     }
@@ -417,6 +502,7 @@ class AwarenessMonitor {
     /**
      * Get diagnostic status information
      */
+    // Internal method - errors propagate to caller (boundary)
     getStatus() {
         const workspaceFolders = vscode.workspace.workspaceFolders;
         return {
@@ -426,8 +512,8 @@ class AwarenessMonitor {
             hasUsageStats: !!this.usageStats,
             aiSuggestionsCount: this.agentSuggestionHandler ? this.agentSuggestionHandler.getSuggestions().length : 0,
             reviewDebtCount: this.debtManager ? this.debtManager.getDebtSize() : 0,
-            currentScore: this.scoreCalculator.getCurrentScore(),
-            scores: this.scoreCalculator.getScoreComponents(),
+            currentScore: this.scoreCalculator ? this.scoreCalculator.getCurrentScore() : 0,
+            scores: this.scoreCalculator ? this.scoreCalculator.getScoreComponents() : {},
             watchedDirectories: this.fileWatcher ? this.fileWatcher.getWatchedDirectories() : [],
             hasFileSystemWatcher: this.fileWatcher ? this.fileWatcher.isActive() : false,
             workspaceFolders: workspaceFolders ? workspaceFolders.map(f => f.uri.fsPath) : [],
@@ -440,14 +526,17 @@ class AwarenessMonitor {
      * Calculate awareness score based on last 10 seconds of suggestions
      * Delegates to ScoreCalculator
      */
+    // Internal method - errors propagate to caller (boundary: timer)
     updateScore() {
         const suggestions = this.agentSuggestionHandler ? this.agentSuggestionHandler.getSuggestions() : [];
-        this.scoreCalculator.updateScore(
-            suggestions,
-            () => this.debtManager ? this.debtManager.calculateDebtScore(suggestions) : 0,
-            () => this.debtManager ? this.debtManager.getDebtSummary() : { total: 0, files: [] },
-            this.onScoreUpdate
-        );
+        if (this.scoreCalculator) {
+            this.scoreCalculator.updateScore(
+                suggestions,
+                () => this.debtManager ? this.debtManager.calculateDebtScore(suggestions) : 0,
+                () => this.debtManager ? this.debtManager.getDebtSummary() : { total: 0, files: [] },
+                this.onScoreUpdate
+            );
+        }
     }
 
 
@@ -455,15 +544,27 @@ class AwarenessMonitor {
      * Get current awareness score and breakdown
      * Delegates to ScoreCalculator
      */
+    // Internal method - errors propagate to caller (boundary)
     getScore() {
         const suggestions = this.agentSuggestionHandler ? this.agentSuggestionHandler.getSuggestions() : [];
+        if (!this.scoreCalculator) {
+            // Return default score if calculator not initialized
+            return {
+                score: 0,
+                components: {},
+                debug: { monitoringActive: false, error: 'ScoreCalculator not initialized' }
+            };
+        }
+        
         const score = this.scoreCalculator.getScore(
             suggestions,
             () => this.debtManager ? this.debtManager.getDebtSummary() : { total: 0, files: [] }
         );
         
         // Add monitoringActive to debug info
-        score.debug.monitoringActive = this.updateTimer !== null;
+        if (score.debug) {
+            score.debug.monitoringActive = this.updateTimer !== null;
+        }
         
         return score;
     }
@@ -480,7 +581,13 @@ class AwarenessMonitor {
      * Handle externally created file (delegates to FileWatcher)
      * @param {string} filePath - Path to the externally created file
      */
+    // Boundary: Called from external file system events
     handleExternallyCreatedFile(filePath) {
+        // Validate parameter at boundary
+        if (!filePath || typeof filePath !== 'string') {
+            throw new Error('handleExternallyCreatedFile() called with invalid filePath');
+        }
+        
         if (this.fileWatcher) {
             this.fileWatcher.handleExternallyCreatedFile(filePath);
         }

@@ -1,8 +1,8 @@
 /**
- * Mode Watching - Monitors file system for .cursorrules changes
+ * Mode Watching - Monitors file system for .cursor/rules.md changes
  * 
  * Provides file system watching to detect external changes to mode files:
- * - Watches .cursorrules, .cursorrules.dev, .cursorrules.vibe
+ * - Watches .cursor/rules.md, .cursor/rules.dev.md, .cursor/rules.vibe.md
  * - Debounces rapid changes to prevent excessive triggers
  * - Calls callback when mode files are modified/created/deleted
  * - Useful for detecting manual edits, git branch switches, etc.
@@ -12,7 +12,7 @@ const vscode = require('vscode');
 const path = require('path');
 
 /**
- * Watches for changes to .cursorrules files and triggers callback
+ * Watches for changes to .cursor/rules*.md files and triggers callback
  * @param {Function} callback - Callback to call when mode files change
  * @returns {vscode.FileSystemWatcher|null} The file system watcher instance, or null if no workspace
  */
@@ -23,12 +23,13 @@ function watchForModeChanges(callback) {
     }
 
     const workspaceRoot = workspaceFolders[0].uri.fsPath;
-    const rulesFile = path.join(workspaceRoot, '.cursorrules');
-    const devFile = path.join(workspaceRoot, '.cursorrules.dev');
-    const vibeFile = path.join(workspaceRoot, '.cursorrules.vibe');
+    const cursorDir = path.join(workspaceRoot, '.cursor');
+    const rulesFile = path.join(cursorDir, 'rules.md');
+    const devFile = path.join(cursorDir, 'rules.dev.md');
+    const vibeFile = path.join(cursorDir, 'rules.vibe.md');
 
-    // Watch for changes to any .cursorrules files
-    const pattern = new vscode.RelativePattern(workspaceRoot, '.cursorrules*');
+    // Watch for changes to any .cursor/rules*.md files
+    const pattern = new vscode.RelativePattern(cursorDir, 'rules*.md');
     const watcher = vscode.workspace.createFileSystemWatcher(pattern);
 
     // Debounce configuration
@@ -56,7 +57,7 @@ function watchForModeChanges(callback) {
     watcher.onDidCreate(handleChange);
     watcher.onDidDelete(handleChange);
 
-    console.log('VibeSwitch: Watching for .cursorrules file changes');
+    console.log('VibeSwitch: Watching for .cursor/rules*.md file changes');
     return watcher;
 }
 
