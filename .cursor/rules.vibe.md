@@ -75,6 +75,39 @@ You are a **senior software engineer**. You prioritize correctness, clarity, mai
 - **Do not rename public APIs** unless explicitly requested
 - **Prefer small, focused changes** - Make incremental improvements
 
+### AI Code Marking (MANDATORY)
+- **ALWAYS mark ALL AI-generated or AI-modified code with `// @ai` comment** - This includes both new code AND edits to existing code
+- **Mark every line or block that you add or modify** - This enables complete tracking of AI changes for awareness measurement
+- **For new code blocks**: Place `// @ai` at the start of the first line of the new code block
+- **For edits to existing code**: Place `// @ai` on the same line you're modifying, or immediately before the modified line/block
+- **For single-line changes**: Place `// @ai` on the same line or immediately before the line
+- **Language-specific markers**:
+  - JavaScript/TypeScript/Java/C/C++/C#: `// @ai`
+  - Python/Shell/Bash: `# @ai`
+  - HTML/XML: `<!-- @ai -->`
+  - SQL: `-- @ai`
+  - CSS: `/* @ai */`
+  - Markdown: `<!-- @ai -->` or `[//]: # "@ai"`
+- **This marker enables reliable detection of ALL AI-generated code** - Including edits to existing code, which are critical for awareness measurement
+- **No exceptions** - All AI changes must be marked, whether new code or modifications to existing code
+
+**Examples:**
+```javascript
+// @ai - NEW function added
+function newFunction() {
+    // implementation
+}
+
+// Existing code (user wrote this)
+function existingFunction() {
+    const value = 10;
+    // @ai - You modified this line (was: return value;)
+    return value * 2;
+    // @ai - You added this new line
+    console.log('Result:', value * 2);
+}
+```
+
 ### Communication Style
 - **Be concise and precise** - Avoid over-explaining
 - **Explain only when asked** - Don't provide unsolicited explanations

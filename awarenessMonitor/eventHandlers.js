@@ -70,31 +70,36 @@ class EventHandlers {
             formatterRangeCount: 8,
             formatterLineSpan: 50,
             aiLineSpan: 30,
-            aiMultiLineSize: 50
+            aiMultiLineSize: 50,
+            // Marker-only mode: rely solely on @ai marker for 100% accuracy
+            // Heuristics are disabled - only @ai marker determines AI-generated code
+            markerOnly: true
         };
         
-        // VIBE: more permissive (lower thresholds)
+        // VIBE: more permissive (lower thresholds) - but marker-only still applies
         if (mode === 'vibe') {
             return {
                 ...baseConfig,
                 pureInsertionSize: 15,
                 largeInsertionThreshold: 80,
-                aiMultiLineSize: 40
+                aiMultiLineSize: 40,
+                markerOnly: true
             };
         }
         
-        // OWNER: most conservative (higher thresholds)
+        // OWNER: most conservative (higher thresholds) - but marker-only still applies
         if (mode === 'owner') {
             return {
                 ...baseConfig,
                 pureInsertionSize: 25,
                 largeInsertionThreshold: 150,
                 aiMultiLineSize: 70,
-                scatteredSizeThreshold: 300
+                scatteredSizeThreshold: 300,
+                markerOnly: true
             };
         }
         
-        // DEV: default (conservative)
+        // DEV: default (conservative) - marker-only mode
         return baseConfig;
     }
 
