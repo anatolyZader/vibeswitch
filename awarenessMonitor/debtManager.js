@@ -5,13 +5,14 @@
 
 const { getLogger } = require('../logger');
 const PersistInContext = require('./persistInContext');
+const { normalizeToUri } = require('./utils');
 
 class DebtManager {
     constructor(context, onScoreUpdate, updateFileColorsInExplorer = null) {
         this.context = context;
         this.onScoreUpdate = onScoreUpdate;
         this.updateFileColorsInExplorer = updateFileColorsInExplorer;
-        this.debt = new Map(); // filepath -> debt object
+        this.debt = new Map(); // URI string -> debt object (FIXED: use URI as canonical key)
         
         // Initialize persistence manager for workspace storage
         this.persistence = context ? new PersistInContext(context, 'workspace') : null;
@@ -58,12 +59,16 @@ class DebtManager {
 
     /**
      * Add file to debt
-     * @param {string} filePath - Path to the file
+     * FIXED: Accept URI string as canonical identifier (works with remote workspaces)
+     * @param {string} filePathOrUri - File path (fsPath) or URI string
      * @param {number} changeSize - Size of the change
      * @param {Function} updateScore - Callback to trigger score update
      */
-    addToDebt(filePath, changeSize, updateScore) {
-        const existing = this.debt.get(filePath);
+    addToDebt(filePathOrUri, changeSize, updateScore) {
+        const uri = normalizeToUri(filePathOrUri);
+        if (!uri) return;
+        
+        const existing = this.debt.get(uri);
         const now = Date.now();
         
         if (existing && !existing.reviewed) {
@@ -73,7 +78,7 @@ class DebtManager {
             existing.modificationCount++;
         } else if (existing && existing.reviewed) {
             // File was reviewed but new changes came in - create new entry
-            this.debt.set(filePath, {
+            this.debt.set(uri, {
                 modifiedAt: now,
                 lastModifiedAt: now,
                 totalChanges: changeSize,
@@ -86,7 +91,7 @@ class DebtManager {
             });
         } else {
             // New debt entry
-            this.debt.set(filePath, {
+            this.debt.set(uri, {
                 modifiedAt: now,
                 lastModifiedAt: now,
                 totalChanges: changeSize,
@@ -114,20 +119,26 @@ class DebtManager {
 
     /**
      * Get debt entry for a file
-     * @param {string} filePath - Path to the file
+     * FIXED: Accept URI string as canonical identifier
+     * @param {string} filePathOrUri - File path (fsPath) or URI string
      * @returns {Object|null} Debt object or null
      */
-    getDebt(filePath) {
-        return this.debt.get(filePath) || null;
+    getDebt(filePathOrUri) {
+        const uri = normalizeToUri(filePathOrUri);
+        if (!uri) return null;
+        return this.debt.get(uri) || null;
     }
 
     /**
      * Mark debt as reviewed
-     * @param {string} filePath - Path to the file
+     * FIXED: Accept URI string as canonical identifier
+     * @param {string} filePathOrUri - File path (fsPath) or URI string
      * @param {number} reviewTime - Time spent reviewing
      */
-    markAsReviewed(filePath, reviewTime) {
-        const debt = this.debt.get(filePath);
+    markAsReviewed(filePathOrUri, reviewTime) {
+        const uri = normalizeToUri(filePathOrUri);
+        if (!uri) return;
+        const debt = this.debt.get(uri);
         if (debt) {
             debt.reviewed = true;
             debt.reviewedAt = Date.now();
@@ -143,11 +154,14 @@ class DebtManager {
 
     /**
      * Update debt with session info
-     * @param {string} filePath - Path to the file
+     * FIXED: Accept URI string as canonical identifier
+     * @param {string} filePathOrUri - File path (fsPath) or URI string
      * @param {Object} sessionData - Session data
      */
-    updateSession(filePath, sessionData) {
-        const debt = this.debt.get(filePath);
+    updateSession(filePathOrUri, sessionData) {
+        const uri = normalizeToUri(filePathOrUri);
+        if (!uri) return;
+        const debt = this.debt.get(uri);
         if (debt) {
             if (!debt.firstOpenedAt) {
                 debt.firstOpenedAt = sessionData.sessionStart;
@@ -243,11 +257,14 @@ class DebtManager {
 
     /**
      * Check if file has unreviewed debt
-     * @param {string} filePath - Path to the file
+     * FIXED: Accept URI string as canonical identifier
+     * @param {string} filePathOrUri - File path (fsPath) or URI string
      * @returns {boolean} True if file has unreviewed debt
      */
-    hasUnreviewedDebt(filePath) {
-        const debt = this.debt.get(filePath);
+    hasUnreviewedDebt(filePathOrUri) {
+        const uri = normalizeToUri(filePathOrUri);
+        if (!uri) return false;
+        const debt = this.debt.get(uri);
         return debt && !debt.reviewed;
     }
 }

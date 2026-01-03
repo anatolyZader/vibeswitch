@@ -25,7 +25,7 @@ class EventHandlers {
      * @param {Object} sessionTracker - Session tracker
      * @param {Object} activeDocument - Active document reference
      * @param {Object} cursorPosition - Cursor position reference
-     * @param {string} mode - Current mode ('vibe', 'dev', 'owner') for classifier config
+     * @param {string} mode - Current mode ('vibe', 'dev') for classifier config
      */
     constructor(agentSuggestionHandler, debtManager, sessionTracker, activeDocument, cursorPosition, mode = 'dev') {
         this.agentSuggestionHandler = agentSuggestionHandler;
@@ -45,7 +45,8 @@ class EventHandlers {
         
         // Track active review suggestion per document (fixes cursor tracking bug)
         // FIXED: Store review state separately from suggestion objects (domain separation)
-        this.activeReviewSuggestion = new Map(); // document URI -> { suggestionId, reviewStarted, reviewTime }
+        // Fix: Track dwell timers to require minimum review time before marking as reviewed
+        this.activeReviewSuggestion = new Map(); // document URI -> { suggestionId, reviewStarted, reviewTime, dwellTimer }
         
         // Duplicate detection cache for file saves (primary key: uri + version)
         this.saveCache = new Map(); // `${uri}:${version}` -> { hash: string, timestamp: number }
@@ -71,35 +72,33 @@ class EventHandlers {
             formatterLineSpan: 50,
             aiLineSpan: 30,
             aiMultiLineSize: 50,
-            // Marker-only mode: rely solely on @ai marker for 100% accuracy
-            // Heuristics are disabled - only @ai marker determines AI-generated code
-            markerOnly: true
+            // Rapid scattered changes: AI agents often make many scattered edits quickly
+            rapidScatteredTimeWindow: 1000, // 1 second window
+            rapidScatteredEventCount: 8, // Minimum events in window (renamed from ChangeCount for clarity)
+            rapidScatteredRangeCount: 6, // Minimum distinct line ranges
+            rapidScatteredMinSize: 50, // Minimum total size
+            rapidBurstChangeCount: 10, // Minimum changes for rapid burst branch (separate from event count)
+            // Behavioral inference mode: use heuristics as primary, markers as strong signal when present
+            // This is the reliable method since markers cannot be guaranteed to survive edit pipeline
+            markerOnly: false
         };
         
-        // VIBE: more permissive (lower thresholds) - but marker-only still applies
+        // VIBE: more permissive (lower thresholds) - behavioral inference enabled
         if (mode === 'vibe') {
             return {
                 ...baseConfig,
                 pureInsertionSize: 15,
                 largeInsertionThreshold: 80,
                 aiMultiLineSize: 40,
-                markerOnly: true
+                rapidScatteredEventCount: 6, // Lower threshold for vibe mode (renamed from ChangeCount)
+                rapidScatteredRangeCount: 5,
+                rapidScatteredMinSize: 40,
+                rapidBurstChangeCount: 8, // Lower threshold for vibe mode
+                markerOnly: false
             };
         }
         
-        // OWNER: most conservative (higher thresholds) - but marker-only still applies
-        if (mode === 'owner') {
-            return {
-                ...baseConfig,
-                pureInsertionSize: 25,
-                largeInsertionThreshold: 150,
-                aiMultiLineSize: 70,
-                scatteredSizeThreshold: 300,
-                markerOnly: true
-            };
-        }
-        
-        // DEV: default (conservative) - marker-only mode
+        // DEV: default (conservative) - behavioral inference enabled
         return baseConfig;
     }
 
@@ -126,53 +125,45 @@ class EventHandlers {
             getLogger().log(`AwarenessMonitor: Text change detected - scheme: ${scheme}, file: ${fileName}, changes: ${event.contentChanges.length}`);
         }
         
-        // Separate deletions (always user) from insertions/replacements
-        const deletions = [];
-        const otherChanges = [];
-        
-        for (const change of event.contentChanges) {
-            if (change.text.length === 0) {
-                // Pure deletion - always user
-                deletions.push(change);
-            } else {
-                otherChanges.push(change);
-            }
-        }
-        
-        // Record deletions immediately (no classification needed)
-        for (const change of deletions) {
-            if (this.agentSuggestionHandler) {
-                this.agentSuggestionHandler.recordUserEdit(event.document, change);
-            }
-        }
-        
-        // FIXED: Process insertions/replacements through classifier - call once per event
+        // FIXED: Process ALL changes through classifier (including deletions)
+        // Agents absolutely delete code (refactors, "remove unused imports", etc.)
+        // Deletions are not always user - they need classification too
+        // Process all changes through classifier - call once per event
         // Callback is stored once per document in classifier (prevents double recording)
-        if (otherChanges.length > 0) {
-            // Create event with only non-deletion changes
-            const filteredEvent = {
-                document: event.document,
-                contentChanges: otherChanges
-            };
-            
+        if (event.contentChanges.length > 0) {
             // Store callback once per document (classifier handles this)
             this.changeClassifier.addEvent(
-                filteredEvent,
-                (document, isAI, aggregatedChanges) => {
+                event,
+                (document, classification, aggregatedChanges) => {
                     // Classification callback - called once per debounce window
+                    // DESIGN IMPROVEMENT: classification is now rich object with label, confidence, reasons
+                    const isAI = classification.label === 'ai';
+                    const isFormatter = classification.label === 'formatter';
+                    
                     if (isAI) {
                         if (this.logRateLimiter.shouldLog(`aiDetected:${uri}`)) {
                             const totalSize = aggregatedChanges.reduce((sum, c) => sum + c.text.length, 0);
+                            const reasonsStr = classification.reasons.join('; ');
                             getLogger().log(
-                                `AwarenessMonitor: ✅ AI-like change detected: size=${totalSize}, changes=${aggregatedChanges.length}, file=${document.fileName}`
+                                `AwarenessMonitor: ✅ AI change detected (confidence=${(classification.confidence * 100).toFixed(0)}%): size=${totalSize}, changes=${aggregatedChanges.length}, reasons=[${reasonsStr}], file=${document.fileName}`
                             );
                         }
-                        // Record all aggregated changes as AI suggestions (single batch)
-                        for (const change of aggregatedChanges) {
-                            if (this.agentSuggestionHandler) {
-                                this.agentSuggestionHandler.recordAISuggestion(document, change);
-                            }
+                        // Fix: Record as single batch suggestion (not per-change)
+                        // This prevents dozens of "pending suggestions" from a single AI refactor
+                        if (this.agentSuggestionHandler) {
+                            this.agentSuggestionHandler.recordAISuggestionBatch(document, aggregatedChanges);
                         }
+                        return;
+                    } else if (isFormatter) {
+                        // Fix: Formatters should not mark AI suggestions as adapted
+                        // Treat formatter detection as "neutral" - don't call recordUserEdit
+                        // This prevents auto-formatters from accidentally marking AI suggestions as adapted
+                        if (this.logRateLimiter.shouldLog(`formatterDetected:${uri}`)) {
+                            getLogger().log(
+                                `AwarenessMonitor: 🔧 Formatter detected: ${classification.reasons.join('; ')}`
+                            );
+                        }
+                        // Don't record formatter edits - they're not user edits and shouldn't affect suggestion status
                     } else {
                         // Record as user edits (single batch)
                         for (const change of aggregatedChanges) {
@@ -250,14 +241,9 @@ class EventHandlers {
                 return; // Already processed
             }
             
-            // Check if we already tracked this file recently
-            const recentSuggestion = this.agentSuggestionHandler ? 
-                this.agentSuggestionHandler.getSuggestions().find(s => 
-                    s.document === uri && 
-                    s.size === content.length
-                ) : null;
-            
-            if (!recentSuggestion && this.agentSuggestionHandler) {
+            // Fix: Remove size-based scan - rely only on saveCache (uri+version)
+            // Size-based scan is O(n) and can skip legit distinct suggestions with same size
+            if (this.agentSuggestionHandler) {
                 if (this.logRateLimiter.shouldLog(`fileSaved:${uri}`)) {
                     getLogger().log(`AwarenessMonitor: Large file saved - ${content.length} chars in ${document.fileName}`);
                 }
@@ -275,10 +261,8 @@ class EventHandlers {
                     isFileWrite: true
                 });
                 
-                // FIXED: Use URI string, derive fsPath only when needed (for display/debt keys)
-                // Debt system should use URI as key, but we pass fsPath for backward compatibility
-                const filePath = document.uri.fsPath || uri; // Fallback to URI if fsPath unavailable
-                this.agentSuggestionHandler.addSuggestionAndTrack(suggestion, filePath, content.length);
+                // FIXED: Use URI as canonical identifier (works with remote workspaces)
+                this.agentSuggestionHandler.addSuggestionAndTrack(suggestion, content.length);
                 
                 // Update cache (primary key: version)
                 this.saveCache.set(cacheKey, {
@@ -322,17 +306,18 @@ class EventHandlers {
             return;
         }
         
-        const filePath = document.uri.fsPath;
-        const hasUnreviewedDebt = this.debtManager && this.debtManager.hasUnreviewedDebt(filePath);
+        // FIXED: Use URI as canonical identifier (works with remote workspaces)
+        const uri = document.uri.toString();
+        const hasUnreviewedDebt = this.debtManager && this.debtManager.hasUnreviewedDebt(uri);
         
         // Check if file has unreviewed debt or pending suggestions
         const hasPendingSuggestions = this.agentSuggestionHandler ? 
-            this.agentSuggestionHandler.hasPendingSuggestions(document.uri.toString()) : false;
+            this.agentSuggestionHandler.hasPendingSuggestions(uri) : false;
         
         if (hasUnreviewedDebt || hasPendingSuggestions) {
             // Initialize review session tracking
             if (this.sessionTracker) {
-                this.sessionTracker.initializeSession(filePath);
+                this.sessionTracker.initializeSession(uri);
             }
         }
     }
@@ -347,8 +332,9 @@ class EventHandlers {
         
         const uri = document.uri.toString();
         
-        // Flush classifier for this document (prevent memory leaks)
-        this.changeClassifier.flush(document, null);
+        // Fix: Silent flush on document close (cleanup without recording)
+        // This prevents emission during cleanup when document is closing
+        this.changeClassifier.flush(document, { emit: false });
         
         // Close any active review for this document
         this._closeActiveReview(uri);
@@ -363,6 +349,11 @@ class EventHandlers {
         const activeReview = this.activeReviewSuggestion.get(uri);
         if (!activeReview) return;
         
+        // Fix: Clear dwell timer if it exists
+        if (activeReview.dwellTimer) {
+            clearTimeout(activeReview.dwellTimer);
+        }
+        
         if (this.agentSuggestionHandler && activeReview.reviewStarted) {
             const suggestions = this.agentSuggestionHandler.getSuggestions();
             const suggestion = suggestions.find(s => s.id === activeReview.suggestionId);
@@ -372,7 +363,8 @@ class EventHandlers {
                 // FIXED: Update review time in suggestion (for score calculation)
                 // But review state is stored separately (domain separation)
                 suggestion.reviewTime = (suggestion.reviewTime || 0) + reviewDuration;
-                suggestion.reviewed = true; // Mark as reviewed
+                // Fix: Only mark as reviewed if dwell time was met (handled by timer)
+                // Don't mark here - let the timer do it
             }
         }
         
@@ -389,7 +381,7 @@ class EventHandlers {
         
         const editor = event.textEditor;
         const position = event.selections[0].active;
-        const filePath = editor.document.uri.fsPath;
+        // FIXED: Use URI as canonical identifier (works with remote workspaces)
         const uri = editor.document.uri.toString();
         
         // Update cursor position reference
@@ -399,7 +391,7 @@ class EventHandlers {
         
         // Update review tracking if this file has debt
         if (this.sessionTracker) {
-            this.sessionTracker.updateCursorActivity(filePath);
+            this.sessionTracker.updateCursorActivity(uri);
         }
         
         // FIXED: Only track one suggestion at a time per document
@@ -436,13 +428,35 @@ class EventHandlers {
                         suggestion.reviewTime = 0;
                     }
                     
+                    // Fix: Require dwell time (1000ms) before marking as reviewed
+                    // This avoids marking accidental cursor touches as "reviewed"
+                    const reviewStarted = Date.now();
+                    const dwellTimer = setTimeout(() => {
+                        // Only mark as reviewed after dwell time
+                        const currentReview = this.activeReviewSuggestion.get(uri);
+                        if (currentReview && currentReview.suggestionId === suggestion.id) {
+                            suggestion.reviewed = true;
+                            // Fix: Trigger status check and updates immediately after marking as reviewed
+                            // This prevents UX feeling delayed/stuck until next scheduled status check
+                            if (this.agentSuggestionHandler) {
+                                this.agentSuggestionHandler.checkSuggestionStatus(suggestion.id);
+                                if (this.agentSuggestionHandler.updateFileColorsInExplorer) {
+                                    this.agentSuggestionHandler.updateFileColorsInExplorer();
+                                }
+                                if (this.agentSuggestionHandler.updateScore) {
+                                    this.agentSuggestionHandler.updateScore();
+                                }
+                            }
+                        }
+                    }, 1000); // 1000ms dwell time
+                    
                     // FIXED: Store review state separately (domain separation)
                     this.activeReviewSuggestion.set(uri, {
                         suggestionId: suggestion.id,
-                        reviewStarted: Date.now(),
-                        reviewTime: 0 // Track separately
+                        reviewStarted: reviewStarted,
+                        reviewTime: 0, // Track separately
+                        dwellTimer: dwellTimer // Store timer for cleanup
                     });
-                    suggestion.reviewed = true; // Mark as reviewed
                     return; // Only track one suggestion at a time
                 }
             }
@@ -456,11 +470,12 @@ class EventHandlers {
     onScroll(event) {
         if (!event.textEditor) return;
         
-        const filePath = event.textEditor.document.uri.fsPath;
+        // FIXED: Use URI as canonical identifier (works with remote workspaces)
+        const uri = event.textEditor.document.uri.toString();
         
         // Update review tracking if this file has debt
         if (this.sessionTracker) {
-            this.sessionTracker.updateScrollActivity(filePath);
+            this.sessionTracker.updateScrollActivity(uri);
         }
     }
 
@@ -506,15 +521,22 @@ class EventHandlers {
      */
     dispose() {
         // FIXED: Flush all pending classifier changes with callbacks before clearing
-        this.changeClassifier.flushAll((document, isAI, changes) => {
+        this.changeClassifier.flushAll((document, classification, changes) => {
             // Process any remaining pending changes
+            const isAI = classification.label === 'ai';
+            const isFormatter = classification.label === 'formatter';
+            
+            // Fix: Use batch recording for AI to avoid per-change explosion during disposal
+            // Fix: Mirror runtime behavior - formatters are neutral and don't mark adaptations
             if (isAI) {
-                for (const change of changes) {
-                    if (this.agentSuggestionHandler) {
-                        this.agentSuggestionHandler.recordAISuggestion(document, change);
-                    }
+                if (this.agentSuggestionHandler) {
+                    this.agentSuggestionHandler.recordAISuggestionBatch(document, changes);
                 }
+            } else if (isFormatter) {
+                // Formatters are neutral - do nothing (don't record as user edits)
+                // This prevents formatters from marking AI suggestions as adapted during disposal
             } else {
+                // Only record actual user edits
                 for (const change of changes) {
                     if (this.agentSuggestionHandler) {
                         this.agentSuggestionHandler.recordUserEdit(document, change);
@@ -523,7 +545,7 @@ class EventHandlers {
             }
         });
         
-        // Close all active reviews
+        // Close all active reviews (cleans up dwell timers)
         for (const uri of this.activeReviewSuggestion.keys()) {
             this._closeActiveReview(uri);
         }

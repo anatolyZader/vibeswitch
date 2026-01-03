@@ -75,25 +75,35 @@ You are a **senior software engineer**. You prioritize correctness, clarity, mai
 - **Do not rename public APIs** unless explicitly requested
 - **Prefer small, focused changes** - Make incremental improvements
 
-### AI Code Marking (MANDATORY)
-- **ALWAYS mark ALL AI-generated or AI-modified code with `// @ai` comment** - This includes both new code AND edits to existing code
-- **Mark every line or block that you add or modify** - This enables complete tracking of AI changes for awareness measurement
-- **For new code blocks**: Place `// @ai` at the start of the first line of the new code block
-- **For edits to existing code**: Place `// @ai` on the same line you're modifying, or immediately before the modified line/block
-- **For single-line changes**: Place `// @ai` on the same line or immediately before the line
-- **Language-specific markers**:
+### AI Code Marking (Best-Effort Hint)
+
+**Important Context:**
+- Cursor agents apply edits via semantic diffs and patch operations, not literal text generation
+- The patch application layer may strip comments during optimization
+- Markers cannot be guaranteed to survive the edit pipeline
+- **AI-origin detection must rely on behavioral inference, not annotation**
+
+**Marker Policy (Soft Signal, Not Guarantee):**
+- **Attempt to mark AI-generated or AI-modified code with `// @ai` comment** when possible
+- **Treat markers as best-effort hints**, not mandatory requirements
+- **Never assume marker absence means human origin** - unmarked code may still be AI-generated
+- **Language-specific markers** (use when possible):
   - JavaScript/TypeScript/Java/C/C++/C#: `// @ai`
   - Python/Shell/Bash: `# @ai`
   - HTML/XML: `<!-- @ai -->`
   - SQL: `-- @ai`
   - CSS: `/* @ai */`
   - Markdown: `<!-- @ai -->` or `[//]: # "@ai"`
-- **This marker enables reliable detection of ALL AI-generated code** - Including edits to existing code, which are critical for awareness measurement
-- **No exceptions** - All AI changes must be marked, whether new code or modifications to existing code
 
-**Examples:**
+**Why This Approach:**
+- VibeSwitch's ChangeClassifier and behavioral analysis are the correct solution
+- AI-origin must be inferred from editor behavior (cursor movement, scroll, review actions, edit patterns)
+- Markers are useful as soft signals when present, but cannot be the sole source of truth
+- The system observes developer review behavior (file opens, scrolling, pausing, editing, time spent) as the true signal
+
+**Examples (when markers survive):**
 ```javascript
-// @ai - NEW function added
+// @ai - NEW function added (if marker survives)
 function newFunction() {
     // implementation
 }
@@ -101,10 +111,8 @@ function newFunction() {
 // Existing code (user wrote this)
 function existingFunction() {
     const value = 10;
-    // @ai - You modified this line (was: return value;)
+    // @ai - You modified this line (if marker survives)
     return value * 2;
-    // @ai - You added this new line
-    console.log('Result:', value * 2);
 }
 ```
 

@@ -295,6 +295,52 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state 
                     log(`Error opening file ${selected.filePath}: ${error.message}`);
                 }
             }
+        },
+
+        // @ai
+        'vibeswitch.testAddAICode': async () => {
+            // @ai
+            const editor = window.activeTextEditor;
+            // @ai
+            if (!editor) {
+                window.showWarningMessage('No active editor. Please open a file first.');
+                return;
+            }
+
+            // @ai
+            const testCode = `// @ai
+// This is a test function added by VibeSwitch
+function testAICodeMarker() {
+    const message = 'This code was added with the // @ai marker';
+    console.log(message);
+    return message;
+}
+
+// @ai
+// Another test block
+const testVariable = 'AI-generated code test';
+`;
+
+            // @ai
+            try {
+                // @ai
+                const position = editor.selection.active;
+                // @ai
+                await editor.edit(editBuilder => {
+                    editBuilder.insert(position, testCode);
+                });
+                
+                // @ai
+                log(`Test AI code inserted at line ${position.line + 1}, column ${position.character + 1}`);
+                // @ai
+                window.showInformationMessage('✅ Test AI code inserted with // @ai markers!');
+            // @ai
+            } catch (error) {
+                // @ai
+                log(`ERROR inserting test code: ${error.message}`, true, true);
+                // @ai
+                window.showErrorMessage(`Failed to insert test code: ${error.message}`);
+            }
         }
     };
 }

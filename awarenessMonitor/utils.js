@@ -8,7 +8,8 @@ const path = require('path');
 
 // Constants for file filtering
 const NON_CODE_SCHEMES = ['output', 'vscode', 'vscode-notebook', 'debug', 'vscode-userdata', 'git'];
-const CODE_EXTENSIONS = ['.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.cpp', '.c', '.h', '.cs', '.go', '.rs', '.rb', '.php', '.swift', '.kt', '.scala', '.clj', '.sh', '.bash', '.zsh', '.fish'];
+// Fix: Store extensions in lowercase for consistent comparison
+const CODE_EXTENSIONS = ['.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.cpp', '.c', '.h', '.cs', '.go', '.rs', '.rb', '.php', '.swift', '.kt', '.scala', '.clj', '.sh', '.bash', '.zsh', '.fish'].map(ext => ext.toLowerCase());
 
 /**
  * Check if a document should be skipped (non-code documents)
@@ -26,8 +27,19 @@ function isNonCodeDocument(document) {
         return true;
     }
     
+    // Fix: Filter by file extension (only process code files)
+    // Fix: Handle remote/virtual docs properly - prefer uri.path, strip query/fragment
+    const p = (document.uri?.path || document.fileName || '');
+    const clean = p.split('?')[0].split('#')[0]; // Strip query and fragment
+    const ext = path.extname(clean).toLowerCase();
+    
+    // If we have an extension and it's not in the code extensions list, skip it
+    if (ext && !CODE_EXTENSIONS.includes(ext)) {
+        return true;
+    }
+    
     // Handle untitled documents (user-controlled)
-    // untitled can be code, so we don't skip it by default
+    // untitled can be code, so we don't skip it by default if no extension
     
     return false;
 }
@@ -46,6 +58,39 @@ function isSkippableUri(uriOrScheme) {
     }
     
     return NON_CODE_SCHEMES.includes(scheme);
+}
+
+/**
+ * Normalize file path or URI to canonical URI string
+ * FIXED: Use URI as canonical identifier for remote workspace compatibility
+ * @param {string|vscode.Uri} filePathOrUri - File path (fsPath) or URI
+ * @returns {string} Canonical URI string
+ */
+function normalizeToUri(filePathOrUri) {
+    if (!filePathOrUri) return null;
+    
+    // If already a URI string (starts with scheme), return as-is
+    if (typeof filePathOrUri === 'string' && filePathOrUri.includes('://')) {
+        return filePathOrUri;
+    }
+    
+    // If it's a vscode.Uri object, convert to string
+    if (filePathOrUri && typeof filePathOrUri === 'object' && filePathOrUri.toString) {
+        return filePathOrUri.toString();
+    }
+    
+    // If it's a file path (fsPath), convert to file:// URI
+    if (typeof filePathOrUri === 'string') {
+        try {
+            const uri = vscode.Uri.file(filePathOrUri);
+            return uri.toString();
+        } catch (err) {
+            // Fallback: treat as relative path or return as-is
+            return filePathOrUri;
+        }
+    }
+    
+    return filePathOrUri;
 }
 
 /**
@@ -93,13 +138,15 @@ function isPositionInRange(position, range) {
 
 /**
  * Check if two ranges overlap
+ * Fix: Use VS Code's built-in range intersection for accurate overlap detection
  * @param {vscode.Range} range1 - First range
  * @param {vscode.Range} range2 - Second range
  * @returns {boolean} True if ranges overlap
  */
 function rangesOverlap(range1, range2) {
-    // Check if ranges are on same lines or overlapping lines
-    return !(range1.end.line < range2.start.line || range1.start.line > range2.end.line);
+    // Fix: Use VS Code's built-in intersection method for accurate overlap detection
+    // This properly handles character positions on the same line
+    return range1.intersection(range2) !== undefined;
 }
 
 module.exports = {
@@ -107,6 +154,7 @@ module.exports = {
     CODE_EXTENSIONS,
     isNonCodeDocument,
     isSkippableUri,
+    normalizeToUri,
     getRelativePath,
     isPositionInRange,
     rangesOverlap

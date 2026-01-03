@@ -3,6 +3,8 @@
  * Tracks active sessions for files with debt or pending suggestions
  */
 
+const { normalizeToUri } = require('./utils');
+
 class SessionTracker {
     constructor(debtManager, agentSuggestionHandler, usageStats, updateScore, updateFileColorsInExplorer = null) {
         this.debtManager = debtManager;
@@ -11,17 +13,21 @@ class SessionTracker {
         this.updateScore = updateScore;
         this.updateFileColorsInExplorer = updateFileColorsInExplorer;
         
-        // Active sessions: filepath -> session data
+        // Active sessions: URI string -> session data (FIXED: use URI as canonical key)
         this.fileTracking = new Map();
     }
 
     /**
      * Initialize session tracking for a file
      * Handles both debt and pending suggestions
-     * @param {string} filePath - Path to the file
+     * FIXED: Accept URI string as canonical identifier
+     * @param {string} filePathOrUri - File path (fsPath) or URI string
      */
-    initializeSession(filePath) {
-        if (this.fileTracking.has(filePath)) {
+    initializeSession(filePathOrUri) {
+        const uri = normalizeToUri(filePathOrUri);
+        if (!uri) return;
+        
+        if (this.fileTracking.has(uri)) {
             return; // Already tracking
         }
 
@@ -33,11 +39,11 @@ class SessionTracker {
             scrollEvents: 0
         };
         
-        this.fileTracking.set(filePath, tracking);
+        this.fileTracking.set(uri, tracking);
         
         // Update debt if file has debt
         if (this.debtManager) {
-            this.debtManager.updateSession(filePath, {
+            this.debtManager.updateSession(uri, {
                 sessionStart: now
             });
         }
@@ -45,10 +51,13 @@ class SessionTracker {
 
     /**
      * Update cursor activity for a file being reviewed
-     * @param {string} filePath - Path to the file
+     * FIXED: Accept URI string as canonical identifier
+     * @param {string} filePathOrUri - File path (fsPath) or URI string
      */
-    updateCursorActivity(filePath) {
-        const tracking = this.fileTracking.get(filePath);
+    updateCursorActivity(filePathOrUri) {
+        const uri = normalizeToUri(filePathOrUri);
+        if (!uri) return;
+        const tracking = this.fileTracking.get(uri);
         if (tracking) {
             tracking.lastActivity = Date.now();
             tracking.cursorMovements++;
@@ -57,10 +66,13 @@ class SessionTracker {
 
     /**
      * Update scroll activity for a file being reviewed
-     * @param {string} filePath - Path to the file
+     * FIXED: Accept URI string as canonical identifier
+     * @param {string} filePathOrUri - File path (fsPath) or URI string
      */
-    updateScrollActivity(filePath) {
-        const tracking = this.fileTracking.get(filePath);
+    updateScrollActivity(filePathOrUri) {
+        const uri = normalizeToUri(filePathOrUri);
+        if (!uri) return;
+        const tracking = this.fileTracking.get(uri);
         if (tracking) {
             tracking.lastActivity = Date.now();
             tracking.scrollEvents++;
@@ -83,14 +95,15 @@ class SessionTracker {
             return; // No active sessions
         }
         
-        for (const [filePath, tracking] of this.fileTracking.entries()) {
-            const hasUnreviewedDebt = this.debtManager && this.debtManager.hasUnreviewedDebt(filePath);
+        for (const [uri, tracking] of this.fileTracking.entries()) {
+            // FIXED: Use URI as canonical identifier throughout
+            const hasUnreviewedDebt = this.debtManager && this.debtManager.hasUnreviewedDebt(uri);
             const hasPendingSuggestions = this.agentSuggestionHandler ? 
-                this.agentSuggestionHandler.getPendingSuggestionsForFile(filePath).length > 0 : false;
+                this.agentSuggestionHandler.getPendingSuggestionsForFile(uri).length > 0 : false;
             
             // If no debt and no pending suggestions, remove tracking
             if (!hasUnreviewedDebt && !hasPendingSuggestions) {
-                this.fileTracking.delete(filePath);
+                this.fileTracking.delete(uri);
                 continue;
             }
             
@@ -100,12 +113,12 @@ class SessionTracker {
             // Check if session ended due to inactivity
             if (timeSinceActivity > ACTIVITY_TIMEOUT) {
                 if (this.debtManager && hasUnreviewedDebt) {
-                    const debt = this.debtManager.getDebt(filePath);
+                    const debt = this.debtManager.getDebt(uri);
                     if (debt) {
-                        this.debtManager.markAsReviewed(filePath, sessionDuration);
+                        this.debtManager.markAsReviewed(uri, sessionDuration);
                     }
                 }
-                this.fileTracking.delete(filePath);
+                this.fileTracking.delete(uri);
                 continue;
             }
             
@@ -115,14 +128,14 @@ class SessionTracker {
                 
                 // Mark debt as paid
                 if (this.debtManager && hasUnreviewedDebt) {
-                    const debt = this.debtManager.getDebt(filePath);
+                    const debt = this.debtManager.getDebt(uri);
                     if (debt) {
-                        this.debtManager.markAsReviewed(filePath, sessionDuration);
+                        this.debtManager.markAsReviewed(uri, sessionDuration);
                         
                         // EMIT DEBT CLEARED TO USAGE STATISTICS
                         if (this.usageStats) {
                             this.usageStats.trackAIDebtCleared({
-                                filePath,
+                                filePath: uri, // Keep filePath key for backward compatibility with usageStats
                                 totalChanges: debt.totalChanges,
                                 totalReviewTime: debt.totalReviewTime + sessionDuration,
                                 modificationCount: debt.modificationCount
@@ -135,7 +148,7 @@ class SessionTracker {
                 
                 // Mark all pending suggestions in this file as reviewed
                 if (hasPendingSuggestions && this.agentSuggestionHandler) {
-                    const pendingSuggestions = this.agentSuggestionHandler.getPendingSuggestionsForFile(filePath);
+                    const pendingSuggestions = this.agentSuggestionHandler.getPendingSuggestionsForFile(uri);
                     for (const suggestion of pendingSuggestions) {
                         suggestion.reviewed = true;
                         suggestion.reviewStarted = tracking.sessionStart;
@@ -144,7 +157,7 @@ class SessionTracker {
                     }
                 }
                 
-                this.fileTracking.delete(filePath);
+                this.fileTracking.delete(uri);
                 
                 // Update file colors immediately when suggestions are reviewed
                 if (needsScoreUpdate && this.updateFileColorsInExplorer) {
@@ -160,20 +173,26 @@ class SessionTracker {
 
     /**
      * Get tracking data for a file
-     * @param {string} filePath - Path to the file
+     * FIXED: Accept URI string as canonical identifier
+     * @param {string} filePathOrUri - File path (fsPath) or URI string
      * @returns {Object|null} Tracking data or null
      */
-    getTracking(filePath) {
-        return this.fileTracking.get(filePath) || null;
+    getTracking(filePathOrUri) {
+        const uri = normalizeToUri(filePathOrUri);
+        if (!uri) return null;
+        return this.fileTracking.get(uri) || null;
     }
 
     /**
      * Check if a file is being tracked
-     * @param {string} filePath - Path to the file
+     * FIXED: Accept URI string as canonical identifier
+     * @param {string} filePathOrUri - File path (fsPath) or URI string
      * @returns {boolean} True if file is being tracked
      */
-    isTracking(filePath) {
-        return this.fileTracking.has(filePath);
+    isTracking(filePathOrUri) {
+        const uri = normalizeToUri(filePathOrUri);
+        if (!uri) return false;
+        return this.fileTracking.has(uri);
     }
 
     /**

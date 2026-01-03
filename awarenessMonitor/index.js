@@ -13,4 +13,17 @@
  * ============================================================================
  */
 
+// @ai
+const MODULE_VERSION = '1.0.0';
+const MODULE_NAME = 'AwarenessMonitor';
+
+// @ai
+function getModuleInfo() {
+    return {
+        name: MODULE_NAME,
+        version: MODULE_VERSION,
+        timestamp: Date.now()
+    };
+}
+
 module.exports = require('./awarenessMonitor');

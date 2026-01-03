@@ -279,7 +279,7 @@ class AwarenessMonitor {
      * Start monitoring (called when switching to DEV mode)
      * @param {vscode.ExtensionContext} context - VS Code extension context
      * @param {Function} updateFileColorsInExplorer - Callback to update file colors in Explorer
-     * @param {string} mode - Current mode ('vibe', 'dev', 'owner') for classifier config
+     * @param {string} mode - Current mode ('vibe', 'dev') for classifier config
      */
     // Boundary: Called from mode switching (command handler boundary)
     start(context, updateFileColorsInExplorer = null, mode = 'dev') {
@@ -290,6 +290,10 @@ class AwarenessMonitor {
         
         getLogger().log('AwarenessMonitor: Starting real-time monitoring');
         getLogger().log(`AwarenessMonitor: onScoreUpdate Callback registered: ${this.onScoreUpdate ? 'YES' : 'NO'}`);
+        
+        // CRITICAL FIX: Stop any existing monitoring BEFORE creating new modules
+        // This prevents disposing the modules we just created
+        this.stop();
         
         // Store context for workspace storage
         this.context = context;
@@ -334,9 +338,6 @@ class AwarenessMonitor {
             this.cursorPosition,
             mode
         );
-        
-        // Clear any existing subscriptions
-        this.stop();
         
         // Register all event handlers - use safe() wrapper for boundaries
         if (this.eventHandlers) {
@@ -470,6 +471,13 @@ class AwarenessMonitor {
         if (this.eventHandlers) {
             safe('disposeEventHandlers', () => {
                 this.eventHandlers.dispose();
+            });
+        }
+        
+        // FIXED: Dispose agent suggestion handler to clear timers
+        if (this.agentSuggestionHandler) {
+            safe('disposeAgentSuggestionHandler', () => {
+                this.agentSuggestionHandler.dispose();
             });
         }
         

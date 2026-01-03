@@ -4,7 +4,7 @@
   "description": "Stop working on autopilot with AI. Live awareness monitoring helps you stay conscious and intentional.",
   "version": "1.0.0",
   "publisher": "your-publisher-name",
-  "icon": "logo-steering-stick.png",
+  "icon": "ui/images/logo-steering-stick.png",
   "engines": {
     "vscode": "^1.80.0"
   },
@@ -87,6 +87,11 @@
       {
         "command": "vibeswitch.showUnreviewedFiles",
         "title": "Show Unreviewed Files",
+        "category": "VibeSwitch"
+      },
+      {
+        "command": "vibeswitch.testAddAICode",
+        "title": "Test: Add AI Code with Marker",
         "category": "VibeSwitch"
       }
     ],
