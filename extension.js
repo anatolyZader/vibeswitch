@@ -105,8 +105,32 @@ function activate(context) {
         // Initialize managers
         state.usageStats = new UsageStatsManager(context);
         
-        // Initialize awareness monitor
-        state.awarenessMonitor = new AwarenessMonitor(state.usageStats);
+        // Initialize awareness monitor with optional callbacks for UsageStats
+        // Simple callback approach - no event emitter needed!
+        state.awarenessMonitor = new AwarenessMonitor(null, {
+            onAISuggestion: (data) => {
+                safe('trackAISuggestion', () => {
+                    state.usageStats?.trackAISuggestion(data);
+                });
+            },
+            onAISuggestionOutcome: (data) => {
+                safe('trackAISuggestionOutcome', () => {
+                    state.usageStats?.trackAISuggestionOutcome(data);
+                });
+            },
+            onKeepAll: (data) => {
+                safe('trackKeepAll', () => {
+                    if (state.usageStats?.trackKeepAll) {
+                        state.usageStats.trackKeepAll(data);
+                    }
+                });
+            },
+            onDebtCleared: (data) => {
+                safe('trackAIDebtCleared', () => {
+                    state.usageStats?.trackAIDebtCleared(data);
+                });
+            }
+        });
         
         // Initialize helpers with state
         const helpers = initializeHelpers(state, DISABLE_LOGGING);

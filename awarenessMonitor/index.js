@@ -8,7 +8,12 @@
  * 
  * Usage:
  *   const AwarenessMonitor = require('./awarenessMonitor');
- *   const monitor = new AwarenessMonitor(usageStats, onScoreUpdate);
+ *   const monitor = new AwarenessMonitor(onScoreUpdate, {
+ *       onAISuggestion: (data) => { ... },
+ *       onAISuggestionOutcome: (data) => { ... },
+ *       onKeepAll: (data) => { ... },
+ *       onDebtCleared: (data) => { ... }
+ *   });
  * 
  * ============================================================================
  */

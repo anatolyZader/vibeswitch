@@ -15,8 +15,8 @@
 const vscode = require('vscode');
 const { getLogger } = require('../logger');
 const { isNonCodeDocument, isSkippableUri, isPositionInRange } = require('./utils');
-const LogRateLimiter = require('./logRateLimiter');
 const ChangeClassifier = require('./changeClassifier');
+const { buildDiffBullets } = require('./diffBulletBuilder');
 
 class EventHandlers {
     /**
@@ -26,16 +26,22 @@ class EventHandlers {
      * @param {Object} activeDocument - Active document reference
      * @param {Object} cursorPosition - Cursor position reference
      * @param {string} mode - Current mode ('vibe', 'dev') for classifier config
+     * @param {Object} changeLedger - Change ledger for DIFF bullet tracking (optional)
      */
-    constructor(agentSuggestionHandler, debtManager, sessionTracker, activeDocument, cursorPosition, mode = 'dev') {
+    constructor(agentSuggestionHandler, debtManager, sessionTracker, activeDocument, cursorPosition, mode = 'dev', changeLedger = null, options = {}) {
         this.agentSuggestionHandler = agentSuggestionHandler;
         this.debtManager = debtManager;
         this.sessionTracker = sessionTracker;
         this.activeDocument = activeDocument;
         this.cursorPosition = cursorPosition;
+        this.changeLedger = changeLedger; // DIFF bullet tracking
         
-        // Log rate limiter (replaces random logging)
-        this.logRateLimiter = new LogRateLimiter(5000, 500); // 5 second window, max 500 keys
+        // Production: Operational toggles
+        this.options = {
+            enableLedger: options.enableLedger !== false, // Default: enabled
+            enableDiffBullets: options.enableDiffBullets !== false, // Default: enabled
+            logLevel: options.logLevel || 'info' // 'debug', 'info', 'warn', 'error'
+        };
         
         // Mode-specific classifier config
         const classifierConfig = this._getClassifierConfig(mode);
@@ -119,11 +125,9 @@ class EventHandlers {
             return;
         }
 
-        // Rate-limited logging (replaces random logging)
+        // Rate-limited logging via logger's built-in rate limiter
         const logKey = `onTextChange:${uri}`;
-        if (this.logRateLimiter.shouldLog(logKey)) {
-            getLogger().log(`AwarenessMonitor: Text change detected - scheme: ${scheme}, file: ${fileName}, changes: ${event.contentChanges.length}`);
-        }
+        getLogger().log(`AwarenessMonitor: Text change detected - scheme: ${scheme}, file: ${fileName}, changes: ${event.contentChanges.length}`, false, false, logKey);
         
         // FIXED: Process ALL changes through classifier (including deletions)
         // Agents absolutely delete code (refactors, "remove unused imports", etc.)
@@ -140,14 +144,64 @@ class EventHandlers {
                     const isAI = classification.label === 'ai';
                     const isFormatter = classification.label === 'formatter';
                     
-                    if (isAI) {
-                        if (this.logRateLimiter.shouldLog(`aiDetected:${uri}`)) {
-                            const totalSize = aggregatedChanges.reduce((sum, c) => sum + c.text.length, 0);
-                            const reasonsStr = classification.reasons.join('; ');
-                            getLogger().log(
-                                `AwarenessMonitor: ✅ AI change detected (confidence=${(classification.confidence * 100).toFixed(0)}%): size=${totalSize}, changes=${aggregatedChanges.length}, reasons=[${reasonsStr}], file=${document.fileName}`
-                            );
+                    // DIFF bullet tracking: record batch event and generate bullets
+                    if (this.changeLedger) {
+                        const uri = document.uri.toString();
+                        const file = vscode.workspace.asRelativePath(document.uri);
+                        const inserted = aggregatedChanges.reduce((sum, c) => sum + (c.text?.length || 0), 0);
+                        // Fix: Use rangeLength property (handles multi-line deletions correctly)
+                        const deleted = aggregatedChanges.reduce((sum, c) => sum + (c.rangeLength || 0), 0);
+                        
+                        // Calculate line span and distinct range count
+                        const startLines = aggregatedChanges.map(c => c.range.start.line);
+                        const endLines = aggregatedChanges.map(c => c.range.end.line);
+                        const minLine = Math.min(...startLines, ...endLines);
+                        const maxLine = Math.max(...startLines, ...endLines);
+                        const lineSpan = maxLine - minLine;
+                        
+                        // Count distinct ranges (by start line for simplicity)
+                        const distinctRanges = new Set(aggregatedChanges.map(c => c.range.start.line));
+                        const distinctRangeCount = distinctRanges.size;
+                        
+                        // Fix: Capture batchId from append() return value for explicit linking
+                        const batchId = this.changeLedger.append({
+                            ts: Date.now(),
+                            uri,
+                            file,
+                            label: classification.label,
+                            confidence: classification.confidence,
+                            reasons: classification.reasons,
+                            changeCount: aggregatedChanges.length,
+                            inserted,
+                            deleted,
+                            lineSpan,
+                            distinctRangeCount,
+                            kind: 'batch'
+                        });
+                        
+                        // Generate and record DIFF bullet skeletons (explicitly linked via batchId)
+                        const bullets = buildDiffBullets(document, aggregatedChanges, classification);
+                        if (bullets.length > 0) {
+                            this.changeLedger.append({
+                                ts: Date.now(),
+                                uri,
+                                file,
+                                kind: 'diff_bullets',
+                                batchId, // Fix: Explicit link to batch entry
+                                bullets
+                            });
                         }
+                    }
+                    
+                    if (isAI) {
+                        const totalSize = aggregatedChanges.reduce((sum, c) => sum + c.text.length, 0);
+                        const reasonsStr = classification.reasons.join('; ');
+                        getLogger().log(
+                            `AwarenessMonitor: ✅ AI change detected (confidence=${(classification.confidence * 100).toFixed(0)}%): size=${totalSize}, changes=${aggregatedChanges.length}, reasons=[${reasonsStr}], file=${document.fileName}`,
+                            false,
+                            false,
+                            `aiDetected:${uri}`
+                        );
                         // Fix: Record as single batch suggestion (not per-change)
                         // This prevents dozens of "pending suggestions" from a single AI refactor
                         if (this.agentSuggestionHandler) {
@@ -158,19 +212,22 @@ class EventHandlers {
                         // Fix: Formatters should not mark AI suggestions as adapted
                         // Treat formatter detection as "neutral" - don't call recordUserEdit
                         // This prevents auto-formatters from accidentally marking AI suggestions as adapted
-                        if (this.logRateLimiter.shouldLog(`formatterDetected:${uri}`)) {
-                            getLogger().log(
-                                `AwarenessMonitor: 🔧 Formatter detected: ${classification.reasons.join('; ')}`
-                            );
-                        }
+                        getLogger().log(
+                            `AwarenessMonitor: 🔧 Formatter detected: ${classification.reasons.join('; ')}`,
+                            false,
+                            false,
+                            `formatterDetected:${uri}`
+                        );
                         // Don't record formatter edits - they're not user edits and shouldn't affect suggestion status
-                    } else {
-                        // Record as user edits (single batch)
-                        for (const change of aggregatedChanges) {
-                            if (this.agentSuggestionHandler) {
-                                this.agentSuggestionHandler.recordUserEdit(document, change);
-                            }
+                    } else if (classification.label === 'user') {
+                        // Fix: Only record user edits for explicit 'user' label, not 'unknown'
+                        // Unknown means we couldn't determine origin - don't assume it's user
+                        if (this.agentSuggestionHandler) {
+                            this.agentSuggestionHandler.recordUserEditBatch(document, aggregatedChanges);
                         }
+                    } else {
+                        // Unknown label - don't record as user edits (could be AI we missed, or ambiguous)
+                        // Ledger will still capture it for audit trail, but don't mark suggestions as adapted
                     }
                 }
             );
@@ -183,10 +240,7 @@ class EventHandlers {
      * @param {vscode.FileCreateEvent} event - File create event
      */
     onFilesCreated(event) {
-        const logKey = 'onFilesCreated';
-        if (this.logRateLimiter.shouldLog(logKey)) {
-            getLogger().log(`AwarenessMonitor: onFilesCreated called with ${event.files.length} files`);
-        }
+        getLogger().log(`AwarenessMonitor: onFilesCreated called with ${event.files.length} files`, false, false, 'onFilesCreated');
         
         for (const fileUri of event.files) {
             // FIXED: Use isSkippableUri for URI-only checks
@@ -194,9 +248,7 @@ class EventHandlers {
                 continue;
             }
             
-            if (this.logRateLimiter.shouldLog(`fileCreated:${fileUri.toString()}`)) {
-                getLogger().log(`AwarenessMonitor: Processing file creation - ${fileUri.toString()}`);
-            }
+            getLogger().log(`AwarenessMonitor: Processing file creation - ${fileUri.toString()}`, false, false, `fileCreated:${fileUri.toString()}`);
             
             // Process file as suggestion
             // FIXED: Pass URI directly, not fsPath (works with remote schemes)
@@ -206,9 +258,7 @@ class EventHandlers {
                     filePath: null // Let processFileAsSuggestion handle path extraction from URI
                 }).then(suggestion => {
                     if (suggestion) {
-                        if (this.logRateLimiter.shouldLog(`fileCreatedSuccess:${fileUri.toString()}`)) {
-                            getLogger().log(`AwarenessMonitor: Detected AI file creation - ${suggestion.size} chars`);
-                        }
+                        getLogger().log(`AwarenessMonitor: Detected AI file creation - ${suggestion.size} chars`, false, false, `fileCreatedSuccess:${fileUri.toString()}`);
                     }
                 }).catch(err => {
                     getLogger().log(`AwarenessMonitor: Error reading created file: ${err.message}`, true);
@@ -244,9 +294,7 @@ class EventHandlers {
             // Fix: Remove size-based scan - rely only on saveCache (uri+version)
             // Size-based scan is O(n) and can skip legit distinct suggestions with same size
             if (this.agentSuggestionHandler) {
-                if (this.logRateLimiter.shouldLog(`fileSaved:${uri}`)) {
-                    getLogger().log(`AwarenessMonitor: Large file saved - ${content.length} chars in ${document.fileName}`);
-                }
+                getLogger().log(`AwarenessMonitor: Large file saved - ${content.length} chars in ${document.fileName}`, false, false, `fileSaved:${uri}`);
                 
                 // Fixed: Range math bug - lineCount is 1-based count, but line indices are 0-based
                 const lastLine = Math.max(0, document.lineCount - 1);
@@ -332,9 +380,10 @@ class EventHandlers {
         
         const uri = document.uri.toString();
         
-        // Fix: Silent flush on document close (cleanup without recording)
-        // This prevents emission during cleanup when document is closing
-        this.changeClassifier.flush(document, { emit: false });
+        // Fix: Emit with source meta instead of silent flush to preserve evidence
+        // Silent flush drops potentially important data (user closed file quickly)
+        // Emit with source='close' so downstream can filter if needed
+        this.changeClassifier.flush(document, { source: 'close' });
         
         // Close any active review for this document
         this._closeActiveReview(uri);
@@ -491,8 +540,11 @@ class EventHandlers {
             const previousDoc = vscode.workspace.textDocuments.find(
                 d => d.uri.toString() === this.previousActiveDocumentUri
             );
+            // Fix: Emit with source meta instead of silent flush to preserve evidence
+            // Silent flush drops potentially important data (user moved away quickly)
+            // Emit with source='switch' so downstream can filter if needed
             if (previousDoc) {
-                this.changeClassifier.flush(previousDoc, null);
+                this.changeClassifier.flush(previousDoc, { source: 'switch' });
             }
         }
         
@@ -535,13 +587,15 @@ class EventHandlers {
             } else if (isFormatter) {
                 // Formatters are neutral - do nothing (don't record as user edits)
                 // This prevents formatters from marking AI suggestions as adapted during disposal
-            } else {
-                // Only record actual user edits
-                for (const change of changes) {
-                    if (this.agentSuggestionHandler) {
-                        this.agentSuggestionHandler.recordUserEdit(document, change);
-                    }
+            } else if (classification.label === 'user') {
+                // Fix: Only record user edits for explicit 'user' label, not 'unknown'
+                // Unknown means we couldn't determine origin - don't assume it's user
+                if (this.agentSuggestionHandler) {
+                    this.agentSuggestionHandler.recordUserEditBatch(document, changes);
                 }
+            } else {
+                // Unknown label - don't record as user edits (could be AI we missed, or ambiguous)
+                // Ledger will still capture it for audit trail, but don't mark suggestions as adapted
             }
         });
         
@@ -552,7 +606,6 @@ class EventHandlers {
         this.activeReviewSuggestion.clear();
         
         // Clear caches
-        this.logRateLimiter.clear();
         this.saveCache.clear();
     }
 }

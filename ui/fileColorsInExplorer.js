@@ -81,43 +81,35 @@ class UnreviewedFileDecor {
         this.debugCallCount++;
         const fileName = require('path').basename(uri.fsPath);
         
-        // Throttle logging to avoid spam (log every 50th call)
-        if (this.debugCallCount % 50 === 0) {
-            this.log(`[FileDecorations] provideFileDecoration called ${this.debugCallCount} times`);
-        }
+        // Rate-limited logging via logger's built-in rate limiter
+        const logKey = `fileDecorations:provideFileDecoration:${fileName}`;
+        this.logger?.log(`[FileDecorations] provideFileDecoration called ${this.debugCallCount} times`, false, false, logKey);
 
         try {
             // Only decorate in DEV mode
             const currentMode = this.getCurrentMode ? this.getCurrentMode() : null;
             if (currentMode !== 'dev') {
-                if (this.debugCallCount <= 5) {
-                    this.log(`[FileDecorations] Skipping decoration for ${fileName} (mode=${currentMode}, not dev)`);
-                }
+                this.logger?.debug(`Skipping decoration for ${fileName} (mode=${currentMode}, not dev)`, false, `fileDecorations:skip:${fileName}`);
                 return null;
             }
 
             if (!this.awarenessMonitor) {
-                if (this.debugCallCount <= 5) {
-                    this.log(`[FileDecorations] No awareness monitor available for ${fileName}`);
-                }
+                this.logger?.debug(`No awareness monitor available for ${fileName}`, false, `fileDecorations:noMonitor:${fileName}`);
                 return null;
             }
 
             // Get current score data
             const scoreData = this.awarenessMonitor.getScore();
             if (!scoreData) {
-                if (this.debugCallCount <= 5) {
-                    this.log(`[FileDecorations] No score data available for ${fileName}`);
-                }
+                this.logger?.debug(`No score data available for ${fileName}`, false, `fileDecorations:noScore:${fileName}`);
                 return null;
             }
 
             const filePath = uri.fsPath;
             const normalizedPath = this.normalizePath(filePath);
             
-            // Log when checking specific files that might have debt (first 20 calls or when we have debt files)
+            // Check if we have debt files (for conditional logging)
             const hasDebtFiles = scoreData.debt && scoreData.debt.files && scoreData.debt.files.length > 0;
-            const shouldLog = this.debugCallCount <= 20 || hasDebtFiles;
 
             // Check if file is in review debt
             if (scoreData.debt && scoreData.debt.files) {
@@ -125,10 +117,9 @@ class UnreviewedFileDecor {
                     const normalizedDebtPath = this.normalizePath(debtFile.fullPath);
                     const matches = normalizedPath === normalizedDebtPath;
                     
-                    // Log matches for debugging (especially for files we're looking for)
-                    if (shouldLog || matches) {
-                        this.log(`[FileDecorations] Checking debt for ${fileName}: "${normalizedPath}" vs "${normalizedDebtPath}" -> ${matches}`);
-                    }
+                    // Rate-limited debug logging
+                    const checkKey = `fileDecorations:checkDebt:${fileName}`;
+                    this.logger?.debug(`Checking debt for ${fileName}: "${normalizedPath}" vs "${normalizedDebtPath}" -> ${matches}`, false, checkKey);
                     
                     if (matches) {
                         this.log(`[FileDecorations] ✅ RETURNING VIOLET DECORATION for ${fileName} (${debtFile.modifications} modifications, ${debtFile.ageMinutes}m ago)`);
@@ -147,10 +138,9 @@ class UnreviewedFileDecor {
                     const normalizedPendingPath = this.normalizePath(pendingFile.fullPath);
                     const matches = normalizedPath === normalizedPendingPath;
                     
-                    // Log matches for debugging
-                    if (shouldLog || matches) {
-                        this.log(`[FileDecorations] Checking pending for ${fileName}: "${normalizedPath}" vs "${normalizedPendingPath}" -> ${matches}`);
-                    }
+                    // Rate-limited debug logging
+                    const checkKey = `fileDecorations:checkPending:${fileName}`;
+                    this.logger?.debug(`Checking pending for ${fileName}: "${normalizedPath}" vs "${normalizedPendingPath}" -> ${matches}`, false, checkKey);
                     
                     if (matches) {
                         const isNewFile = pendingFile.type === 'file creation' || pendingFile.type === 'external file';
@@ -169,9 +159,10 @@ class UnreviewedFileDecor {
                 }
             }
 
-            // No decoration needed - log occasionally for debugging
-            if (shouldLog && hasDebtFiles) {
-                this.log(`[FileDecorations] No decoration for ${fileName} (checked ${scoreData.debt.files.length} debt files, ${scoreData.suggestions?.pendingFiles?.length || 0} pending files)`);
+            // Rate-limited debug logging when we have debt files
+            if (hasDebtFiles) {
+                const noDecoKey = `fileDecorations:noDecoration:${fileName}`;
+                this.logger?.debug(`No decoration for ${fileName} (checked ${scoreData.debt.files.length} debt files, ${scoreData.suggestions?.pendingFiles?.length || 0} pending files)`, false, noDecoKey);
             }
             return null;
 

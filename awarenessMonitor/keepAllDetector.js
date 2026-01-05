@@ -6,8 +6,8 @@
 const { getLogger } = require('../logger');
 
 class KeepAllDetector {
-    constructor(usageStats) {
-        this.usageStats = usageStats;
+    constructor(onKeepAll) {
+        this.onKeepAll = onKeepAll;
         
         // "Keep All" detection - track rapid acceptances
         this.recentAcceptances = [];
@@ -63,9 +63,9 @@ class KeepAllDetector {
             
             getLogger().log(`AwarenessMonitor: "Keep All" detected - ${recent.length} suggestions accepted across ${uniqueFiles.size} files`);
             
-            // Emit to usage statistics
-            if (this.usageStats && this.usageStats.trackKeepAll) {
-                this.usageStats.trackKeepAll({
+            // Call optional callback (e.g., for UsageStats)
+            if (this.onKeepAll) {
+                this.onKeepAll({
                     count: recent.length,
                     fileCount: uniqueFiles.size,
                     totalSize: totalSize,

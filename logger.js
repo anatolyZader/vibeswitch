@@ -3,6 +3,84 @@
  * Prevents excessive logging that can cause performance issues
  */
 
+/**
+ * Log Rate Limiter (internal class)
+ * Prevents log spam from high-frequency events by limiting logs to once per time window
+ * Includes LRU cache to prevent memory leaks
+ */
+class LogRateLimiter {
+    constructor(windowMs = 5000, maxSize = 500) {
+        this.windowMs = windowMs;
+        this.maxSize = maxSize;
+        this.lastLogTime = new Map(); // key -> last log timestamp
+    }
+
+    /**
+     * Normalize key to prevent memory leaks from full file paths
+     * Uses basename or URI hash for consistency
+     * @param {string} key - Original key
+     * @returns {string} Normalized key
+     * @private
+     */
+    _normalizeKey(key) {
+        // If key contains full path, extract basename or use hash
+        if (key.includes('/') || key.includes('\\')) {
+            // Try to extract basename from common patterns
+            const basenameMatch = key.match(/([^/\\]+)$/);
+            if (basenameMatch) {
+                return basenameMatch[1];
+            }
+        }
+        return key;
+    }
+
+    /**
+     * Check if logging is allowed for a given key
+     * @param {string} key - Unique key for this log source (e.g., 'onTextChange:file.js')
+     * @returns {boolean} True if logging is allowed
+     */
+    shouldLog(key) {
+        // Normalize key to prevent memory leaks
+        const normalizedKey = this._normalizeKey(key);
+        
+        // Enforce max size (LRU-like behavior)
+        if (this.lastLogTime.size >= this.maxSize) {
+            // Remove oldest entries (simple approach: remove first 10%)
+            const entries = Array.from(this.lastLogTime.entries());
+            const toRemove = Math.floor(this.maxSize * 0.1);
+            for (let i = 0; i < toRemove; i++) {
+                this.lastLogTime.delete(entries[i][0]);
+            }
+        }
+        
+        const now = Date.now();
+        const lastTime = this.lastLogTime.get(normalizedKey) || 0;
+        
+        if (now - lastTime >= this.windowMs) {
+            this.lastLogTime.set(normalizedKey, now);
+            return true;
+        }
+        
+        return false;
+    }
+
+    /**
+     * Reset rate limiter for a key (for testing)
+     * @param {string} key - Key to reset
+     */
+    reset(key) {
+        const normalizedKey = this._normalizeKey(key);
+        this.lastLogTime.delete(normalizedKey);
+    }
+
+    /**
+     * Clear all rate limit state
+     */
+    clear() {
+        this.lastLogTime.clear();
+    }
+}
+
 class ThrottledLogger {
     constructor(outputChannel = null) {
         this.outputChannel = outputChannel;
@@ -11,6 +89,10 @@ class ThrottledLogger {
         this.maxCacheSize = 100;
         this.enableThrottling = true;
         this.debugMode = false; // Set to true for verbose debugging
+        
+        // Rate limiter for source-based throttling (e.g., "onTextChange:file.js")
+        // Prevents spam from high-frequency events before message throttling
+        this.rateLimiter = new LogRateLimiter(5000, 500);
     }
 
     /**
@@ -18,8 +100,16 @@ class ThrottledLogger {
      * @param {string} message - The message to log
      * @param {boolean} force - Force log even if throttled (for important messages)
      * @param {boolean} show - Show output channel
+     * @param {string} sourceKey - Optional source key for rate limiting (e.g., "onTextChange:file.js")
      */
-    log(message, force = false, show = false) {
+    log(message, force = false, show = false, sourceKey = null) {
+        // Apply source-based rate limiting if sourceKey provided
+        // This prevents spam from high-frequency events (e.g., text changes)
+        if (sourceKey && !force) {
+            if (!this.rateLimiter.shouldLog(sourceKey)) {
+                return; // Rate limited by source
+            }
+        }
         // Always log important messages (errors, warnings, critical info)
         if (force || message.includes('ERROR') || message.includes('❌') || message.includes('⚠️')) {
             this._writeLog(message, show);
@@ -94,9 +184,16 @@ class ThrottledLogger {
 
     /**
      * Log debug message (only if debug mode enabled)
+     * @param {string} message - The debug message
+     * @param {boolean} show - Show output channel
+     * @param {string} sourceKey - Optional source key for rate limiting
      */
-    debug(message, show = false) {
+    debug(message, show = false, sourceKey = null) {
         if (this.debugMode) {
+            // Apply source-based rate limiting if sourceKey provided
+            if (sourceKey && !this.rateLimiter.shouldLog(sourceKey)) {
+                return; // Rate limited by source
+            }
             this._writeLog(`[DEBUG] ${message}`, show);
         }
     }
@@ -120,6 +217,7 @@ class ThrottledLogger {
      */
     clearCache() {
         this.logCache.clear();
+        this.rateLimiter.clear();
     }
 
     /**

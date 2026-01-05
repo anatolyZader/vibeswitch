@@ -5,22 +5,29 @@
 
 const vscode = require('vscode');
 const path = require('path');
+const crypto = require('crypto'); // Fix: Move to module scope to avoid require() in hot paths
 const { getLogger } = require('../logger');
 const { rangesOverlap } = require('./utils');
 
 class AgentSuggestionHandler {
-    constructor(debtManager, updateScore, usageStats, trackAcceptance, updateFileColorsInExplorer = null) {
+    constructor(debtManager, updateScore, callbacks, trackAcceptance, updateFileColorsInExplorer = null) {
         this.debtManager = debtManager;
         this.updateScore = updateScore;
-        this.usageStats = usageStats;
+        this.onAISuggestion = callbacks?.onAISuggestion || null;
+        this.onAISuggestionOutcome = callbacks?.onAISuggestionOutcome || null;
         this.trackAcceptance = trackAcceptance;
         this.updateFileColorsInExplorer = updateFileColorsInExplorer;
         
         // Fix: Split storage - durable Map for all suggestions, capped array for UI
         // This prevents losing pending debt when rolling window drops old suggestions
-        this.suggestionsById = new Map(); // Authoritative storage (unbounded for pending items)
+        this.suggestionsById = new Map(); // Authoritative storage (capped with eviction)
         this.recentIds = []; // Capped to 10 for UI/quick feedback
         this.maxRecentSuggestions = 10;
+        
+        // Production: Cap total suggestions to prevent unbounded growth
+        // Eviction policy: non-pending first, then oldest pending as last resort
+        this.MAX_TOTAL_SUGGESTIONS = 5000; // Global cap
+        this._evictionThreshold = 0.9; // Evict when 90% full (4500)
         
         // Legacy: aiSuggestions array for backward compatibility (derived from Map)
         // Will be populated from suggestionsById for existing code
@@ -36,10 +43,6 @@ class AgentSuggestionHandler {
         
         // Fix: Monotonic counter for stable ID generation (avoids collisions in fast bursts)
         this._idSeq = 0;
-        
-        // Fix: Add log rate limiter for deterministic logging (replaces Math.random())
-        const LogRateLimiter = require('./logRateLimiter');
-        this.logRateLimiter = new LogRateLimiter(5000, 500); // 5 second window, max 500 keys
         
         // Fix: Per-document index for O(1) lookup in recordUserEdit (optimization)
         // Maps document URI to Set of pending suggestion IDs
@@ -64,10 +67,10 @@ class AgentSuggestionHandler {
 
         // Fix: Use monotonic counter for stable ID generation (avoids collisions in fast bursts)
         // Prefer crypto.randomUUID() if available, otherwise use timestamp + counter
+        // Fix: crypto is now at module scope (no require() in hot path)
         this._idSeq = (this._idSeq || 0) + 1;
         let id;
         try {
-            const crypto = require('crypto');
             if (crypto.randomUUID) {
                 id = crypto.randomUUID();
             } else {
@@ -113,7 +116,12 @@ class AgentSuggestionHandler {
         // This prevents losing pending debt when suggestions are dropped
         const id = suggestion.id;
         
-        // Store in authoritative Map (unbounded for pending items)
+        // Production: Enforce global cap with eviction policy
+        if (this.suggestionsById.size >= this.MAX_TOTAL_SUGGESTIONS * this._evictionThreshold) {
+            this._evictSuggestions();
+        }
+        
+        // Store in authoritative Map (capped with eviction)
         this.suggestionsById.set(id, suggestion);
         
         // Fix: Update per-document index for O(1) lookup in recordUserEdit
@@ -245,10 +253,10 @@ class AgentSuggestionHandler {
         // FIXED: Pass URI instead of fsPath
         this.addSuggestionAndTrack(suggestion, changeSize);
         
-        // EMIT AI EVENT TO USAGE STATISTICS
-        if (this.usageStats) {
-            this.usageStats.trackAISuggestion({
-                filePath: uri, // Keep filePath key for backward compatibility
+        // Call optional callback (e.g., for UsageStats)
+        if (this.onAISuggestion) {
+            this.onAISuggestion({
+                filePath: uri,
                 size: suggestion.size,
                 timestamp: suggestion.timestamp,
                 isFileCreation: false
@@ -281,10 +289,33 @@ class AgentSuggestionHandler {
             aggregatedChanges[0].range.end
         );
         const mergedRange = new vscode.Range(start, end);
+        
+        // Fix: Cap merged range span for debt sizing if huge but inserted tiny
+        // This prevents enormous suggestion sizes/debt for scattered tiny edits
+        const lineSpan = end.line - start.line;
+        const totalInserted = aggregatedChanges.reduce((sum, c) => sum + (c.text?.length || 0), 0);
+        const avgInsertedPerLine = lineSpan > 0 ? totalInserted / lineSpan : totalInserted;
+        
+        // If line span is huge but average inserted per line is tiny, cap the range for sizing
+        // Threshold: > 100 lines but < 5 chars per line average
+        let effectiveRange = mergedRange;
+        let effectiveRangeCapped = false;
+        if (lineSpan > 100 && avgInsertedPerLine < 5) {
+            // Use a smaller window around the first change for sizing (but keep full range for tracking)
+            const firstChange = aggregatedChanges[0];
+            const windowSize = Math.min(50, lineSpan); // Cap at 50 lines
+            const cappedEnd = new vscode.Position(
+                Math.min(firstChange.range.start.line + windowSize, end.line),
+                end.character
+            );
+            effectiveRange = new vscode.Range(firstChange.range.start, cappedEnd);
+            effectiveRangeCapped = true; // Production: Flag for UI/debugging
+        }
 
         // Safer than concatenating change.text: take current doc snapshot
         // This handles overlapping changes correctly
-        const mergedText = document.getText(mergedRange);
+        // Use effectiveRange for sizing (may be capped for scattered edits)
+        const mergedText = document.getText(effectiveRange);
         const mergedSize = mergedText.length;
 
         // Derive fileName from URI for display purposes only
@@ -302,9 +333,9 @@ class AgentSuggestionHandler {
         // Add to tracking (includes adding to array, debt, status check, score update)
         this.addSuggestionAndTrack(suggestion, mergedSize);
 
-        // EMIT AI EVENT TO USAGE STATISTICS
-        if (this.usageStats) {
-            this.usageStats.trackAISuggestion({
+        // Call optional callback (e.g., for UsageStats)
+        if (this.onAISuggestion) {
+            this.onAISuggestion({
                 filePath: uri,
                 size: mergedSize,
                 timestamp: suggestion.timestamp,
@@ -314,7 +345,99 @@ class AgentSuggestionHandler {
     }
 
     /**
+     * Record a batch of user edits (fixes per-change explosion)
+     * Fix: Batch version to match recordAISuggestionBatch pattern
+     * @param {vscode.TextDocument} document - The document
+     * @param {Array<vscode.TextDocumentContentChangeEvent>} aggregatedChanges - Batch of changes
+     */
+    recordUserEditBatch(document, aggregatedChanges) {
+        if (!aggregatedChanges || aggregatedChanges.length === 0) {
+            return;
+        }
+        
+        const uri = document.uri.toString();
+        const fileName = uri.split('/').pop().split('?')[0];
+        
+        // Fix: Use per-document index for O(1) lookup
+        const pendingIds = this.pendingByDocUri.get(uri);
+        if (!pendingIds || pendingIds.size === 0) {
+            return; // No pending suggestions for this document
+        }
+        
+        // Fix: Optimize range merging from O(n²) to O(n log n)
+        // Sort ranges by start position, then merge in one pass
+        const sortedRanges = [...aggregatedChanges]
+            .map(c => c.range)
+            .sort((a, b) => {
+                const lineDiff = a.start.line - b.start.line;
+                if (lineDiff !== 0) return lineDiff;
+                return a.start.character - b.start.character;
+            });
+        
+        const mergedRanges = [];
+        for (const range of sortedRanges) {
+            if (mergedRanges.length === 0) {
+                mergedRanges.push(range);
+                continue;
+            }
+            
+            const lastMerged = mergedRanges[mergedRanges.length - 1];
+            // Fix: Use VS Code position comparisons for reliable adjacency detection
+            // Adjacent means: range starts at or before last end (touching or overlapping)
+            const isTouching = range.start.isEqual(lastMerged.end) || 
+                range.start.isBefore(lastMerged.end) ||
+                (range.start.line === lastMerged.end.line && range.start.character <= lastMerged.end.character);
+            const isOverlapping = rangesOverlap(range, lastMerged);
+            
+            if (isOverlapping || isTouching) {
+                // Merge: union of ranges
+                const start = range.start.isBefore(lastMerged.start) 
+                    ? range.start 
+                    : lastMerged.start;
+                const end = range.end.isAfter(lastMerged.end)
+                    ? range.end
+                    : lastMerged.end;
+                mergedRanges[mergedRanges.length - 1] = new vscode.Range(start, end);
+            } else {
+                mergedRanges.push(range);
+            }
+        }
+        
+        // Check overlap against pending suggestions using merged ranges
+        const staleIds = [];
+        for (const id of pendingIds) {
+            const suggestion = this.suggestionsById.get(id);
+            if (!suggestion || suggestion.status !== 'pending') {
+                staleIds.push(id);
+                continue;
+            }
+            
+            // Check if any merged range overlaps with suggestion
+            for (const mergedRange of mergedRanges) {
+                if (rangesOverlap(mergedRange, suggestion.range)) {
+                    suggestion.userEdited = true;
+                    suggestion.editCount = (suggestion.editCount || 0) + 1;
+                    
+                    // Rate-limited debug logging via logger's built-in rate limiter
+                    const logKey = `userEditOverlap:${uri}:${suggestion.id}`;
+                    getLogger().debug(`✏️  User edit batch overlaps AI suggestion in ${fileName}`, false, logKey);
+                    break; // One overlap per suggestion is enough
+                }
+            }
+        }
+        
+        // Clean up stale index entries
+        for (const id of staleIds) {
+            pendingIds.delete(id);
+        }
+        if (pendingIds.size === 0) {
+            this.pendingByDocUri.delete(uri);
+        }
+    }
+
+    /**
      * Record user edits (might be adapting AI suggestions)
+     * @deprecated Use recordUserEditBatch for batch processing
      * @param {vscode.TextDocument} document - The document
      * @param {vscode.TextDocumentContentChangeEvent} change - The change event
      */
@@ -349,11 +472,9 @@ class AgentSuggestionHandler {
                 suggestion.userEdited = true;
                 suggestion.editCount = (suggestion.editCount || 0) + 1;
                 
-                // Fix: Use rate limiter instead of Math.random() for deterministic, testable logging
+                // Rate-limited debug logging via logger's built-in rate limiter
                 const logKey = `userEditOverlap:${uri}:${suggestion.id}`;
-                if (this.logRateLimiter.shouldLog(logKey)) {
-                    getLogger().debug(`[DEBUG] ✏️  User edit overlaps AI suggestion in ${fileName}`);
-                }
+                getLogger().debug(`✏️  User edit overlaps AI suggestion in ${fileName}`, false, logKey);
                 break; // Usually enough - user edit typically overlaps one suggestion
             }
         }
@@ -467,9 +588,9 @@ class AgentSuggestionHandler {
                 }
             }
             
-            // Emit outcome to usage statistics
-            if (this.usageStats) {
-                this.usageStats.trackAISuggestionOutcome({
+            // Call optional callback (e.g., for UsageStats)
+            if (this.onAISuggestionOutcome) {
+                this.onAISuggestionOutcome({
                     filePath: suggestion.document,
                     status: suggestion.status,
                     size: suggestion.size,
@@ -487,7 +608,8 @@ class AgentSuggestionHandler {
             }
         } catch (err) {
             getLogger().log(`AwarenessMonitor: Error checking suggestion status: ${err.message}`);
-            console.error('AwarenessMonitor: Error checking suggestion status', err);
+            // Production: Use logger instead of console.error
+            getLogger().log(`[AgentSuggestionHandler] Error checking suggestion status: ${err.message}`, true);
         }
     }
 
@@ -517,6 +639,87 @@ class AgentSuggestionHandler {
     findSuggestion(id) {
         // Fix: Use Map lookup instead of array find (O(1) vs O(n))
         return this.suggestionsById.get(id) || null;
+    }
+    
+    /**
+     * Evict suggestions when approaching capacity limit
+     * Eviction policy: non-pending first, then oldest pending as last resort
+     * Production: Evicts to 0.8 threshold (not 0.9) to avoid constant churn
+     * Ensures index consistency: always removes from pendingByDocUri and recentIds when evicting
+     * @private
+     */
+    _evictSuggestions() {
+        // Production: Evict to 0.8 (not 0.9) to avoid thrashing on every insert near threshold
+        const targetSize = Math.floor(this.MAX_TOTAL_SUGGESTIONS * 0.8);
+        const currentSize = this.suggestionsById.size;
+        
+        if (currentSize < targetSize) {
+            return; // Not at threshold yet
+        }
+        
+        // Collect non-pending suggestions first (safe to evict)
+        const nonPending = [];
+        const pending = [];
+        
+        for (const [id, suggestion] of this.suggestionsById.entries()) {
+            if (suggestion.status === 'pending') {
+                pending.push({ id, suggestion, timestamp: suggestion.timestamp || 0 });
+            } else {
+                nonPending.push({ id, suggestion, timestamp: suggestion.statusTimestamp || suggestion.timestamp || 0 });
+            }
+        }
+        
+        // Sort by timestamp (oldest first)
+        nonPending.sort((a, b) => a.timestamp - b.timestamp);
+        pending.sort((a, b) => a.timestamp - b.timestamp);
+        
+        // Evict non-pending first
+        let evicted = 0;
+        for (const { id } of nonPending) {
+            if (this.suggestionsById.size <= targetSize) break;
+            this.suggestionsById.delete(id);
+            // Remove from recentIds if present
+            const recentIndex = this.recentIds.indexOf(id);
+            if (recentIndex >= 0) {
+                this.recentIds.splice(recentIndex, 1);
+            }
+            evicted++;
+        }
+        
+        // If still over limit, evict oldest pending (last resort)
+        // Production: Always maintain index consistency - remove from pendingByDocUri
+        for (const { id, suggestion } of pending) {
+            if (this.suggestionsById.size <= targetSize) break;
+            
+            // Remove from authoritative Map
+            this.suggestionsById.delete(id);
+            
+            // Production: Always remove from index to maintain consistency
+            const docUri = suggestion.document;
+            if (docUri) {
+                const pendingIds = this.pendingByDocUri.get(docUri);
+                if (pendingIds) {
+                    pendingIds.delete(id);
+                    if (pendingIds.size === 0) {
+                        this.pendingByDocUri.delete(docUri);
+                    }
+                }
+            }
+            
+            // Also remove from recentIds if present (UI window)
+            const recentIndex = this.recentIds.indexOf(id);
+            if (recentIndex >= 0) {
+                this.recentIds.splice(recentIndex, 1);
+            }
+            
+            evicted++;
+        }
+        
+        // Log eviction for monitoring
+        if (evicted > 0) {
+            const { total, pending: pendingCount } = this.getSuggestionMetrics();
+            getLogger().log(`[AgentSuggestionHandler] Evicted ${evicted} suggestions (total: ${total}, pending: ${pendingCount})`, true);
+        }
     }
     
     /**
@@ -555,9 +758,10 @@ class AgentSuggestionHandler {
      * @returns {boolean} True if file has pending suggestions
      */
     hasPendingSuggestions(documentUri) {
-        return this.aiSuggestions.some(s => 
-            s.status === 'pending' && s.document === documentUri
-        );
+        // Production: Use index for O(1) lookup instead of O(n) scan
+        // Also avoids edge cases where suggestion was evicted but stale state lingers
+        const pendingIds = this.pendingByDocUri.get(documentUri);
+        return !!pendingIds && pendingIds.size > 0;
     }
 
     /**

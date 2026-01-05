@@ -40,10 +40,8 @@ class ScoreCalculator {
         const debtScore = getDebtScore();
         const hasDebt = debtScore > 0;
         
-        // Fix: Use deterministic logging instead of Math.random()
-        // Note: ScoreCalculator doesn't have direct access to LogRateLimiter
-        // For now, just log always (it's debug level) - can be improved later with rate limiter injection
-        getLogger().debug(`[DEBUG] Updating score: ${recentSuggestions.length} recent, ${aiSuggestions.length} total, debt: ${debtScore}`);
+        // Rate-limited debug logging via logger's built-in rate limiter
+        getLogger().debug(`Updating score: ${recentSuggestions.length} recent, ${aiSuggestions.length} total, debt: ${debtScore}`, false, 'scoreCalculator:updateScore');
         
         // Only calculate if we have suggestions in the last 10 seconds
         if (recentSuggestions.length === 0) {

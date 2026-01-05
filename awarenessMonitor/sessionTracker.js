@@ -6,10 +6,10 @@
 const { normalizeToUri } = require('./utils');
 
 class SessionTracker {
-    constructor(debtManager, agentSuggestionHandler, usageStats, updateScore, updateFileColorsInExplorer = null) {
+    constructor(debtManager, agentSuggestionHandler, onDebtCleared, updateScore, updateFileColorsInExplorer = null) {
         this.debtManager = debtManager;
         this.agentSuggestionHandler = agentSuggestionHandler;
-        this.usageStats = usageStats;
+        this.onDebtCleared = onDebtCleared;
         this.updateScore = updateScore;
         this.updateFileColorsInExplorer = updateFileColorsInExplorer;
         
@@ -132,10 +132,10 @@ class SessionTracker {
                     if (debt) {
                         this.debtManager.markAsReviewed(uri, sessionDuration);
                         
-                        // EMIT DEBT CLEARED TO USAGE STATISTICS
-                        if (this.usageStats) {
-                            this.usageStats.trackAIDebtCleared({
-                                filePath: uri, // Keep filePath key for backward compatibility with usageStats
+                        // Call optional callback (e.g., for UsageStats)
+                        if (this.onDebtCleared) {
+                            this.onDebtCleared({
+                                filePath: uri,
                                 totalChanges: debt.totalChanges,
                                 totalReviewTime: debt.totalReviewTime + sessionDuration,
                                 modificationCount: debt.modificationCount
