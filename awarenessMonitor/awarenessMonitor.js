@@ -16,7 +16,7 @@ const FileWatcher = require('./fileWatcher');
 const EventHandlers = require('./eventHandlers');
 const KeepAllDetector = require('./keepAllDetector');
 class AwarenessMonitor {
-    constructor(onScoreUpdate = null, callbacks = {}) {
+    constructor(onScoreUpdate = null, callbacks = {}, vscodeAdapter = null) {
         // Optional callbacks for external tracking (e.g., UsageStats)
         // These are optional - AwarenessMonitor works fine without them
         this.onAISuggestion = callbacks.onAISuggestion || null;
@@ -27,6 +27,13 @@ class AwarenessMonitor {
         // callback function used to update the awareness meter UI when the score changes.
         this.onScoreUpdate = onScoreUpdate;
         
+        // VS Code adapter (Ports and Adapters pattern) - optional for backward compatibility
+        this.vscodeAdapter = vscodeAdapter;
+        
+        // Persistence adapter (Ports and Adapters pattern) - optional for backward compatibility
+        // Will be set via property assignment or passed in start() method
+        this.persistenceAdapter = null;
+        
         // Agent suggestion handler - will be initialized in start()
         this.agentSuggestionHandler = null;
         
@@ -35,7 +42,7 @@ class AwarenessMonitor {
         this.sessionTracker = null; // Will be initialized in start()
         
         // Score calculator
-        this.scoreCalculator = new ScoreCalculator();
+        this.scoreCalculator = new ScoreCalculator(this.vscodeAdapter); // Pass VS Code adapter (Ports and Adapters pattern)
         
         // Update timer
         this.updateTimer = null;
@@ -92,7 +99,9 @@ class AwarenessMonitor {
         this.updateFileColorsInExplorer = updateFileColorsInExplorer;
         
         // Initialize required modules - fail fast if any fail
-        this.debtManager = new DebtManager(context, this.onScoreUpdate, updateFileColorsInExplorer);
+        // Get persistence adapter from DI container if available (Ports and Adapters pattern)
+        const persistenceAdapter = this.persistenceAdapter || null;
+        this.debtManager = new DebtManager(context, this.onScoreUpdate, updateFileColorsInExplorer, persistenceAdapter);
         this.debtManager.loadDebt();
         
         this.keepAllDetector = new KeepAllDetector(this.onKeepAll);
@@ -105,7 +114,8 @@ class AwarenessMonitor {
                 onAISuggestionOutcome: this.onAISuggestionOutcome
             },
             (suggestion) => this.keepAllDetector ? this.keepAllDetector.trackAcceptance(suggestion) : null,
-            updateFileColorsInExplorer
+            updateFileColorsInExplorer,
+            this.vscodeAdapter // Pass VS Code adapter (Ports and Adapters pattern)
         );
         
         this.sessionTracker = new SessionTracker(
@@ -120,12 +130,15 @@ class AwarenessMonitor {
             this.agentSuggestionHandler,
             this.debtManager,
             () => this.updateScore(),
-            this.onScoreUpdate
+            this.onScoreUpdate,
+            this.vscodeAdapter // Pass VS Code adapter (Ports and Adapters pattern)
         );
         
         // Initialize change ledger for DIFF bullet tracking
         const ChangeLedger = require('./changeLedger');
-        this.changeLedger = new ChangeLedger(context);
+        // Get persistence adapter from DI container if available (Ports and Adapters pattern)
+        const ledgerPersistenceAdapter = this.persistenceAdapter || null;
+        this.changeLedger = new ChangeLedger(context, 2000, 1000, ledgerPersistenceAdapter);
         
         this.eventHandlers = new EventHandlers(
             this.agentSuggestionHandler,
@@ -134,14 +147,17 @@ class AwarenessMonitor {
             this.activeDocument,
             this.cursorPosition,
             mode,
-            this.changeLedger // Pass ledger to event handlers
+            this.changeLedger, // Pass ledger to event handlers
+            {}, // options
+            this.vscodeAdapter // Pass VS Code adapter (Ports and Adapters pattern)
         );
         
         // Register all event handlers - use safe() wrapper for boundaries
+        // Use vscodeAdapter if available (Ports and Adapters pattern), otherwise fallback to direct vscode
         if (this.eventHandlers) {
             // Track text changes (potential AI edits)
             this.disposables.push(
-                vscode.workspace.onDidChangeTextDocument((event) => {
+                (this.vscodeAdapter ? this.vscodeAdapter.onDidChangeTextDocument : vscode.workspace.onDidChangeTextDocument)((event) => {
                     safe('onTextChange', () => this.eventHandlers.onTextChange(event));
                 })
             );
@@ -149,49 +165,49 @@ class AwarenessMonitor {
             
             // Track file creation (AI creating new files)
             this.disposables.push(
-                vscode.workspace.onDidCreateFiles((event) => {
+                (this.vscodeAdapter ? this.vscodeAdapter.onDidCreateFiles : vscode.workspace.onDidCreateFiles)((event) => {
                     safe('onFilesCreated', () => this.eventHandlers.onFilesCreated(event));
                 })
             );
             
             // Track file saves (AI writing entire files)
             this.disposables.push(
-                vscode.workspace.onDidSaveTextDocument((document) => {
+                (this.vscodeAdapter ? this.vscodeAdapter.onDidSaveTextDocument : vscode.workspace.onDidSaveTextDocument)((document) => {
                     safe('onFileSaved', () => this.eventHandlers.onFileSaved(document));
                 })
             );
             
             // Track file opens (user reviewing files)
             this.disposables.push(
-                vscode.workspace.onDidOpenTextDocument((document) => {
+                (this.vscodeAdapter ? this.vscodeAdapter.onDidOpenTextDocument : vscode.workspace.onDidOpenTextDocument)((document) => {
                     safe('onFileOpened', () => this.eventHandlers.onFileOpened(document));
                 })
             );
             
             // Track document close (flush classifier, close reviews)
             this.disposables.push(
-                vscode.workspace.onDidCloseTextDocument((document) => {
+                (this.vscodeAdapter ? this.vscodeAdapter.onDidCloseTextDocument : vscode.workspace.onDidCloseTextDocument)((document) => {
                     safe('onDocumentClose', () => this.eventHandlers.onDocumentClose(document));
                 })
             );
             
             // Track cursor position (user reviewing code)
             this.disposables.push(
-                vscode.window.onDidChangeTextEditorSelection((event) => {
+                (this.vscodeAdapter ? this.vscodeAdapter.onDidChangeTextEditorSelection : vscode.window.onDidChangeTextEditorSelection)((event) => {
                     safe('onCursorMove', () => this.eventHandlers.onCursorMove(event));
                 })
             );
             
             // Track scroll events (user reviewing code by scrolling)
             this.disposables.push(
-                vscode.window.onDidChangeTextEditorVisibleRanges((event) => {
+                (this.vscodeAdapter ? this.vscodeAdapter.onDidChangeTextEditorVisibleRanges : vscode.window.onDidChangeTextEditorVisibleRanges)((event) => {
                     safe('onScroll', () => this.eventHandlers.onScroll(event));
                 })
             );
             
             // Track active editor (user switching to review)
             this.disposables.push(
-                vscode.window.onDidChangeActiveTextEditor((editor) => {
+                (this.vscodeAdapter ? this.vscodeAdapter.onDidChangeActiveTextEditor : vscode.window.onDidChangeActiveTextEditor)((editor) => {
                     safe('onEditorChange', () => this.eventHandlers.onEditorChange(editor));
                 })
             );
@@ -320,7 +336,9 @@ class AwarenessMonitor {
      */
     // Internal method - errors propagate to caller (boundary)
     getStatus() {
-        const workspaceFolders = vscode.workspace.workspaceFolders;
+        const workspaceFolders = this.vscodeAdapter 
+            ? this.vscodeAdapter.workspaceFolders 
+            : vscode.workspace.workspaceFolders;
         return {
             isActive: this.disposables.length > 0,
             hasContext: !!this.context,

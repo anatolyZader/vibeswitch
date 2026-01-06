@@ -3,11 +3,16 @@
  * Calculates the awareness score based on user review behavior and AI suggestions
  */
 
+// Keep minimal vscode import for types only
+// All API calls should go through vscodeAdapter
+const vscode = require('vscode');
 const { getLogger } = require('../logger');
 const { getRelativePath } = require('./utils');
 
 class ScoreCalculator {
-    constructor() {
+    constructor(vscodeAdapter = null) {
+        // VS Code adapter (Ports and Adapters pattern) - optional for backward compatibility
+        this.vscodeAdapter = vscodeAdapter;
         this.currentScore = 0;
         this.scores = {
             review: 0,      // 0-40 points
@@ -235,8 +240,9 @@ class ScoreCalculator {
                 let filePath = null;
                 if (s.document) {
                     try {
-                        const vscode = require('vscode');
-                        const uri = vscode.Uri.parse(s.document);
+                        // Use vscodeAdapter.Uri if available (Ports and Adapters pattern), otherwise fallback to vscode.Uri
+                        const Uri = this.vscodeAdapter ? this.vscodeAdapter.Uri : vscode.Uri;
+                        const uri = Uri.parse(s.document);
                         if (uri.scheme === 'file') {
                             filePath = uri.fsPath;
                         }

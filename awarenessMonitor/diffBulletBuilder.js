@@ -5,16 +5,23 @@
  * Format: - <path> :: <anchor> :: <action> (origin=<ai|human|tool|mixed>, impact=<functional|non-functional|refactor>)
  */
 
+// Keep minimal vscode import for types only
+// All API calls should go through vscodeAdapter
 const vscode = require('vscode');
 
 /**
  * Get workspace-relative path from document
  * @param {vscode.TextDocument} document - Document
+ * @param {Object} vscodeAdapter - VS Code adapter (optional, for Ports and Adapters pattern)
  * @returns {string} Relative path or URI string
  */
-function relativePathFromDoc(document) {
+function relativePathFromDoc(document, vscodeAdapter = null) {
     try {
-        return vscode.workspace.asRelativePath(document.uri);
+        // Use vscodeAdapter if available (Ports and Adapters pattern), otherwise fallback to direct vscode
+        const asRelativePath = vscodeAdapter 
+            ? (uri) => vscodeAdapter.asRelativePath(uri)
+            : (uri) => vscode.workspace.asRelativePath(uri);
+        return asRelativePath(document.uri);
     } catch {
         return document.uri.toString();
     }
@@ -135,10 +142,11 @@ const MAX_ANCHOR_CACHE_SIZE = 100; // Cap at 100 files (LRU-ish)
  * @param {vscode.TextDocument} document - Document
  * @param {Array<vscode.TextDocumentContentChangeEvent>} aggregatedChanges - Aggregated changes
  * @param {Object} classification - Classification result (optional, for origin hint)
+ * @param {Object} vscodeAdapter - VS Code adapter (optional, for Ports and Adapters pattern)
  * @returns {Array<string>} Array of DIFF bullet strings
  */
-function buildDiffBullets(document, aggregatedChanges, classification = null) {
-    const path = relativePathFromDoc(document);
+function buildDiffBullets(document, aggregatedChanges, classification = null, vscodeAdapter = null) {
+    const path = relativePathFromDoc(document, vscodeAdapter);
     const docText = document.getText();
     
     if (!aggregatedChanges || aggregatedChanges.length === 0) {

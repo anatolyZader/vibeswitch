@@ -8,25 +8,49 @@ const PersistInContext = require('./persistInContext');
 const { normalizeToUri } = require('./utils');
 
 class DebtManager {
-    constructor(context, onScoreUpdate, updateFileColorsInExplorer = null) {
-        this.context = context;
+    /**
+     * @param {Object} context - VS Code extension context (for backward compatibility)
+     * @param {Function} onScoreUpdate - Callback for score updates
+     * @param {Function} updateFileColorsInExplorer - Callback to update file colors
+     * @param {Object} persistenceAdapter - Persistence adapter implementing IPersistencePort (optional)
+     */
+    constructor(context, onScoreUpdate, updateFileColorsInExplorer = null, persistenceAdapter = null) {
+        this.context = context; // Keep for backward compatibility
         this.onScoreUpdate = onScoreUpdate;
         this.updateFileColorsInExplorer = updateFileColorsInExplorer;
         this.debt = new Map(); // URI string -> debt object (FIXED: use URI as canonical key)
         
-        // Initialize persistence manager for workspace storage
-        this.persistence = context ? new PersistInContext(context, 'workspace') : null;
+        // Use persistence adapter if provided (Ports and Adapters pattern), otherwise fallback to PersistInContext
+        this.persistenceAdapter = persistenceAdapter;
+        this.persistence = context && !persistenceAdapter ? new PersistInContext(context, 'workspace') : null;
     }
 
     /**
      * Load debt from workspace storage
      */
     loadDebt() {
-        if (!this.persistence) return;
+        if (!this.persistenceAdapter && !this.persistence) return;
         
         try {
-            // Load debt data as Map using persistence manager
-            this.debt = this.persistence.loadAsMap('debt', new Map());
+            let debtData;
+            
+            // Use persistence adapter if available (Ports and Adapters pattern)
+            if (this.persistenceAdapter) {
+                const stored = this.persistenceAdapter.loadSync('debt');
+                // Convert object to Map (workspaceState stores as object)
+                if (stored instanceof Map) {
+                    debtData = stored;
+                } else if (stored && typeof stored === 'object') {
+                    debtData = new Map(Object.entries(stored));
+                } else {
+                    debtData = new Map();
+                }
+            } else {
+                // Fallback to PersistInContext (backward compatibility)
+                debtData = this.persistence.loadAsMap('debt', new Map());
+            }
+            
+            this.debt = debtData;
             
             getLogger().log(`AwarenessMonitor: Loaded ${this.debt.size} files with debt`);
             
@@ -51,10 +75,17 @@ class DebtManager {
      * Save debt to workspace storage
      */
     saveDebt() {
-        if (!this.persistence) return;
+        if (!this.persistenceAdapter && !this.persistence) return;
         
-        // Use persistence manager to save debt data
-        this.persistence.saveSync('debt', this.debt);
+        // Use persistence adapter if available (Ports and Adapters pattern)
+        if (this.persistenceAdapter) {
+            // Convert Map to object for storage (workspaceState stores as object)
+            const debtObject = this.debt instanceof Map ? Object.fromEntries(this.debt) : this.debt;
+            this.persistenceAdapter.saveSync('debt', debtObject);
+        } else {
+            // Fallback to PersistInContext (backward compatibility)
+            this.persistence.saveSync('debt', this.debt);
+        }
     }
 
     /**

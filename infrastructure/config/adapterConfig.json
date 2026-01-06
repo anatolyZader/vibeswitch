@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Adapter configuration for Ports and Adapters (Hexagonal Architecture) pattern",
+  "version": "1.0.0",
+  "business_modules": {
+    "awareness": {
+      "description": "Core awareness monitoring module - tracks AI-generated code changes and user review activity",
+      "adapters": {
+        "vscodeAdapter": {
+          "adapterClass": "vscodeAdapter",
+          "factory": "VSCodeAdapter",
+          "dependencies": {
+            "vscode": "require('vscode')"
+          },
+          "description": "VS Code API abstraction for workspace and window operations"
+        },
+        "persistenceAdapter": {
+          "adapterClass": "workspaceStateAdapter",
+          "factory": "WorkspaceStateAdapter",
+          "dependencies": {
+            "context": "extensionContext"
+          },
+          "description": "Persistence abstraction for workspace-scoped storage"
+        }
+      }
+    },
+    "usage-stats": {
+      "description": "Long-term user behavior analytics and statistics tracking",
+      "adapters": {
+        "persistenceAdapter": {
+          "adapterClass": "workspaceStateAdapter",
+          "factory": "WorkspaceStateAdapter",
+          "dependencies": {
+            "context": "extensionContext"
+          },
+          "description": "Persistence abstraction for workspace-scoped storage"
+        }
+      }
+    }
+  },
+  "adapter_factories": {
+    "vscodeAdapter": {
+      "module": "./infrastructure/adapters/vscodeAdapter",
+      "constructor": "VSCodeAdapter",
+      "requires": ["vscode"]
+    },
+    "workspaceStateAdapter": {
+      "module": "./infrastructure/adapters/workspaceStateAdapter",
+      "constructor": "WorkspaceStateAdapter",
+      "requires": ["context"]
+    }
+  },
+  "default_adapters": {
+    "vscodeAdapter": "vscodeAdapter",
+    "persistenceAdapter": "workspaceStateAdapter"
+  }
+}
+
+

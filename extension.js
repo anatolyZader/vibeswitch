@@ -105,8 +105,19 @@ function activate(context) {
         // Initialize managers
         state.usageStats = new UsageStatsManager(context);
         
+        // Create adapters for Ports and Adapters pattern
+        const VSCodeAdapter = require('./infrastructure/adapters/vscodeAdapter');
+        const WorkspaceStateAdapter = require('./infrastructure/adapters/workspaceStateAdapter');
+        const vscodeAdapter = new VSCodeAdapter(vscode);
+        const persistenceAdapter = new WorkspaceStateAdapter(context);
+        
+        // Store adapters in DI container
+        state.setAdapter('awareness', 'vscodeAdapter', vscodeAdapter);
+        state.setAdapter('awareness', 'persistenceAdapter', persistenceAdapter);
+        
         // Initialize awareness monitor with optional callbacks for UsageStats
         // Simple callback approach - no event emitter needed!
+        // Pass adapters for Ports and Adapters pattern
         state.awarenessMonitor = new AwarenessMonitor(null, {
             onAISuggestion: (data) => {
                 safe('trackAISuggestion', () => {
@@ -130,7 +141,10 @@ function activate(context) {
                     state.usageStats?.trackAIDebtCleared(data);
                 });
             }
-        });
+        }, vscodeAdapter); // Pass VS Code adapter
+        
+        // Set persistence adapter on awareness monitor
+        state.awarenessMonitor.persistenceAdapter = persistenceAdapter;
         
         // Initialize helpers with state
         const helpers = initializeHelpers(state, DISABLE_LOGGING);

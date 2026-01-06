@@ -3,6 +3,8 @@
  * Monitors file system for externally created files and scans existing files
  */
 
+// Keep minimal vscode import for types only
+// All API calls should go through vscodeAdapter
 const vscode = require('vscode');
 const fs = require('fs');
 const path = require('path');
@@ -10,11 +12,13 @@ const { getLogger } = require('../logger');
 const { CODE_EXTENSIONS, isNonCodeDocument } = require('./utils');
 
 class FileWatcher {
-    constructor(agentSuggestionHandler, debtManager, updateScore, onScoreUpdate) {
+    constructor(agentSuggestionHandler, debtManager, updateScore, onScoreUpdate, vscodeAdapter = null) {
         this.agentSuggestionHandler = agentSuggestionHandler;
         this.debtManager = debtManager;
         this.updateScore = updateScore;
         this.onScoreUpdate = onScoreUpdate;
+        // VS Code adapter (Ports and Adapters pattern) - optional for backward compatibility
+        this.vscodeAdapter = vscodeAdapter;
         
         // File system watcher for externally created files
         this.fileSystemWatcher = null;
@@ -26,7 +30,10 @@ class FileWatcher {
      * Set up file system watcher to detect externally created files (terminal, etc.)
      */
     setupFileSystemWatcher() {
-        const workspaceFolders = vscode.workspace.workspaceFolders;
+        // Use vscodeAdapter if available (Ports and Adapters pattern), otherwise fallback to direct vscode
+        const workspaceFolders = this.vscodeAdapter 
+            ? this.vscodeAdapter.workspaceFolders 
+            : vscode.workspace.workspaceFolders;
         if (!workspaceFolders || workspaceFolders.length === 0) {
             getLogger().log('AwarenessMonitor: No workspace folders, skipping file system watcher');
             return;
@@ -107,7 +114,9 @@ class FileWatcher {
         }
 
         // Create a URI for the file
-        const fileUri = vscode.Uri.file(filePath);
+        // Use vscodeAdapter.Uri if available (Ports and Adapters pattern), otherwise fallback to vscode.Uri
+        const Uri = this.vscodeAdapter ? this.vscodeAdapter.Uri : vscode.Uri;
+        const fileUri = Uri.file(filePath);
         
         // Check scheme (skip virtual documents)
         if (isNonCodeDocument(fileUri.scheme)) {
@@ -137,7 +146,10 @@ class FileWatcher {
      * Called on startup to catch files that were created before the extension was active
      */
     scanExistingFiles() {
-        const workspaceFolders = vscode.workspace.workspaceFolders;
+        // Use vscodeAdapter if available (Ports and Adapters pattern), otherwise fallback to direct vscode
+        const workspaceFolders = this.vscodeAdapter 
+            ? this.vscodeAdapter.workspaceFolders 
+            : vscode.workspace.workspaceFolders;
         if (!workspaceFolders || workspaceFolders.length === 0) {
             getLogger().log('AwarenessMonitor: No workspace folders found, skipping file scan');
             return;

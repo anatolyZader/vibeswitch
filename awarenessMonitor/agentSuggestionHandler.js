@@ -3,6 +3,8 @@
  * Manages AI suggestion lifecycle: creation, tracking, status detection, and user interaction
  */
 
+// Keep minimal vscode import for types only (Range, Position, Uri, etc.)
+// All API calls should go through vscodeAdapter
 const vscode = require('vscode');
 const path = require('path');
 const crypto = require('crypto'); // Fix: Move to module scope to avoid require() in hot paths
@@ -10,13 +12,15 @@ const { getLogger } = require('../logger');
 const { rangesOverlap } = require('./utils');
 
 class AgentSuggestionHandler {
-    constructor(debtManager, updateScore, callbacks, trackAcceptance, updateFileColorsInExplorer = null) {
+    constructor(debtManager, updateScore, callbacks, trackAcceptance, updateFileColorsInExplorer = null, vscodeAdapter = null) {
         this.debtManager = debtManager;
         this.updateScore = updateScore;
         this.onAISuggestion = callbacks?.onAISuggestion || null;
         this.onAISuggestionOutcome = callbacks?.onAISuggestionOutcome || null;
         this.trackAcceptance = trackAcceptance;
         this.updateFileColorsInExplorer = updateFileColorsInExplorer;
+        // VS Code adapter (Ports and Adapters pattern) - optional for backward compatibility
+        this.vscodeAdapter = vscodeAdapter;
         
         // Fix: Split storage - durable Map for all suggestions, capped array for UI
         // This prevents losing pending debt when rolling window drops old suggestions
@@ -192,7 +196,11 @@ class AgentSuggestionHandler {
         } = options;
 
         try {
-            const doc = await vscode.workspace.openTextDocument(fileUri);
+            // Use vscodeAdapter if available (Ports and Adapters pattern), otherwise fallback to direct vscode
+            const openDoc = this.vscodeAdapter 
+                ? (uri) => this.vscodeAdapter.openTextDocument(uri)
+                : (uri) => vscode.workspace.openTextDocument(uri);
+            const doc = await openDoc(fileUri);
             const content = doc.getText();
             
             // Treat any non-empty file as potentially AI-generated
@@ -202,9 +210,11 @@ class AgentSuggestionHandler {
                 const lastLineText = doc.lineAt(lastLine).text;
                 const lastChar = lastLineText.length;
                 
+                // Use vscodeAdapter.Range if available (Ports and Adapters pattern), otherwise fallback to vscode.Range
+                const Range = this.vscodeAdapter ? this.vscodeAdapter.Range : vscode.Range;
                 const suggestion = this.createSuggestionObject({
                     document: doc.uri.toString(),
-                    range: new vscode.Range(0, 0, lastLine, lastChar),
+                    range: new Range(0, 0, lastLine, lastChar),
                     text: content,
                     size: content.length,
                     isFileCreation: isFileCreation,
@@ -288,7 +298,9 @@ class AgentSuggestionHandler {
             c.range.end.isAfter(max) ? c.range.end : max, 
             aggregatedChanges[0].range.end
         );
-        const mergedRange = new vscode.Range(start, end);
+        // Use vscodeAdapter.Range if available (Ports and Adapters pattern), otherwise fallback to vscode.Range
+        const Range = this.vscodeAdapter ? this.vscodeAdapter.Range : vscode.Range;
+        const mergedRange = new Range(start, end);
         
         // Fix: Cap merged range span for debt sizing if huge but inserted tiny
         // This prevents enormous suggestion sizes/debt for scattered tiny edits
@@ -304,11 +316,14 @@ class AgentSuggestionHandler {
             // Use a smaller window around the first change for sizing (but keep full range for tracking)
             const firstChange = aggregatedChanges[0];
             const windowSize = Math.min(50, lineSpan); // Cap at 50 lines
-            const cappedEnd = new vscode.Position(
+            // Use vscodeAdapter types if available (Ports and Adapters pattern), otherwise fallback to vscode
+            const Position = this.vscodeAdapter ? this.vscodeAdapter.Position : vscode.Position;
+            const Range = this.vscodeAdapter ? this.vscodeAdapter.Range : vscode.Range;
+            const cappedEnd = new Position(
                 Math.min(firstChange.range.start.line + windowSize, end.line),
                 end.character
             );
-            effectiveRange = new vscode.Range(firstChange.range.start, cappedEnd);
+            effectiveRange = new Range(firstChange.range.start, cappedEnd);
             effectiveRangeCapped = true; // Production: Flag for UI/debugging
         }
 
@@ -397,7 +412,9 @@ class AgentSuggestionHandler {
                 const end = range.end.isAfter(lastMerged.end)
                     ? range.end
                     : lastMerged.end;
-                mergedRanges[mergedRanges.length - 1] = new vscode.Range(start, end);
+                // Use vscodeAdapter.Range if available (Ports and Adapters pattern), otherwise fallback to vscode.Range
+                const Range = this.vscodeAdapter ? this.vscodeAdapter.Range : vscode.Range;
+                mergedRanges[mergedRanges.length - 1] = new Range(start, end);
             } else {
                 mergedRanges.push(range);
             }
@@ -508,7 +525,12 @@ class AgentSuggestionHandler {
         
         // Try to open the document to check if code still exists
         try {
-            const doc = await vscode.workspace.openTextDocument(vscode.Uri.parse(suggestion.document));
+            // Use vscodeAdapter if available (Ports and Adapters pattern), otherwise fallback to direct vscode
+            const openDoc = this.vscodeAdapter 
+                ? (uri) => this.vscodeAdapter.openTextDocument(uri)
+                : (uri) => vscode.workspace.openTextDocument(uri);
+            const Uri = this.vscodeAdapter ? this.vscodeAdapter.Uri : vscode.Uri;
+            const doc = await openDoc(Uri.parse(suggestion.document));
             // FIXED: Validate range before using it - ranges drift as document changes
             // This prevents errors and incorrect status detection
             const safeRange = doc.validateRange(suggestion.range);
@@ -776,7 +798,9 @@ class AgentSuggestionHandler {
         if (filePathOrUri && !filePathOrUri.includes('://')) {
             // It's a file path, try to convert to URI
             try {
-                const uri = vscode.Uri.file(filePathOrUri);
+                // Use vscodeAdapter.Uri if available (Ports and Adapters pattern), otherwise fallback to vscode.Uri
+                const Uri = this.vscodeAdapter ? this.vscodeAdapter.Uri : vscode.Uri;
+                const uri = Uri.file(filePathOrUri);
                 targetUri = uri.toString();
             } catch {
                 // If conversion fails, use as-is (might already be URI)

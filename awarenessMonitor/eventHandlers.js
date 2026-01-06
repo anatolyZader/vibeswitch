@@ -12,11 +12,13 @@
  * - Mode-configurable classifier thresholds
  */
 
-const vscode = require('vscode');
 const { getLogger } = require('../logger');
 const { isNonCodeDocument, isSkippableUri, isPositionInRange } = require('./utils');
 const ChangeClassifier = require('./changeClassifier');
 const { buildDiffBullets } = require('./diffBulletBuilder');
+// Keep minimal vscode import for types only (Range, Position, etc.)
+// All API calls should go through vscodeAdapter
+const vscode = require('vscode');
 
 class EventHandlers {
     /**
@@ -27,14 +29,16 @@ class EventHandlers {
      * @param {Object} cursorPosition - Cursor position reference
      * @param {string} mode - Current mode ('vibe', 'dev') for classifier config
      * @param {Object} changeLedger - Change ledger for DIFF bullet tracking (optional)
+     * @param {Object} vscodeAdapter - VS Code adapter implementing IVSCodePort (optional for backward compatibility)
      */
-    constructor(agentSuggestionHandler, debtManager, sessionTracker, activeDocument, cursorPosition, mode = 'dev', changeLedger = null, options = {}) {
+    constructor(agentSuggestionHandler, debtManager, sessionTracker, activeDocument, cursorPosition, mode = 'dev', changeLedger = null, options = {}, vscodeAdapter = null) {
         this.agentSuggestionHandler = agentSuggestionHandler;
         this.debtManager = debtManager;
         this.sessionTracker = sessionTracker;
         this.activeDocument = activeDocument;
         this.cursorPosition = cursorPosition;
         this.changeLedger = changeLedger; // DIFF bullet tracking
+        this.vscodeAdapter = vscodeAdapter; // VS Code adapter (Ports and Adapters pattern)
         
         // Production: Operational toggles
         this.options = {
@@ -147,7 +151,15 @@ class EventHandlers {
                     // DIFF bullet tracking: record batch event and generate bullets
                     if (this.changeLedger) {
                         const uri = document.uri.toString();
-                        const file = vscode.workspace.asRelativePath(document.uri);
+                        // Use adapter if available, otherwise fallback to direct VS Code API (backward compatibility)
+                        const file = this.vscodeAdapter 
+                            ? this.vscodeAdapter.asRelativePath(document.uri)
+                            : (() => {
+                                const vscode = require('vscode');
+                                return this.vscodeAdapter 
+                                    ? this.vscodeAdapter.asRelativePath(document.uri)
+                                    : vscode.workspace.asRelativePath(document.uri);
+                            })();
                         const inserted = aggregatedChanges.reduce((sum, c) => sum + (c.text?.length || 0), 0);
                         // Fix: Use rangeLength property (handles multi-line deletions correctly)
                         const deleted = aggregatedChanges.reduce((sum, c) => sum + (c.rangeLength || 0), 0);
@@ -180,7 +192,7 @@ class EventHandlers {
                         });
                         
                         // Generate and record DIFF bullet skeletons (explicitly linked via batchId)
-                        const bullets = buildDiffBullets(document, aggregatedChanges, classification);
+                        const bullets = buildDiffBullets(document, aggregatedChanges, classification, this.vscodeAdapter);
                         if (bullets.length > 0) {
                             this.changeLedger.append({
                                 ts: Date.now(),
@@ -301,9 +313,11 @@ class EventHandlers {
                 const lastLineText = document.lineAt(lastLine).text;
                 const lastChar = lastLineText.length;
                 
+                // Use vscodeAdapter.Range if available (Ports and Adapters pattern), otherwise fallback to vscode.Range
+                const Range = this.vscodeAdapter ? this.vscodeAdapter.Range : vscode.Range;
                 const suggestion = this.agentSuggestionHandler.createSuggestionObject({
                     document: uri, // FIXED: Use URI string
-                    range: new vscode.Range(0, 0, lastLine, lastChar),
+                    range: new Range(0, 0, lastLine, lastChar),
                     text: content,
                     size: content.length,
                     isFileWrite: true
@@ -537,7 +551,11 @@ class EventHandlers {
         // FIXED: Flush classifier for previous document (prevent memory leaks)
         if (this.previousActiveDocumentUri) {
             // Try to get document from workspace
-            const previousDoc = vscode.workspace.textDocuments.find(
+            // Use adapter if available, otherwise fallback to direct VS Code API (backward compatibility)
+            const textDocuments = this.vscodeAdapter 
+                ? this.vscodeAdapter.textDocuments
+                : (this.vscodeAdapter ? this.vscodeAdapter.textDocuments : vscode.workspace.textDocuments);
+            const previousDoc = textDocuments.find(
                 d => d.uri.toString() === this.previousActiveDocumentUri
             );
             // Fix: Emit with source meta instead of silent flush to preserve evidence

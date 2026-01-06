@@ -10,17 +10,18 @@
  * Fix: Buffered writes to prevent write amplification and race conditions
  */
 
-const vscode = require('vscode');
 const crypto = require('crypto');
 
 class ChangeLedger {
     /**
-     * @param {vscode.ExtensionContext} context - VS Code extension context
+     * @param {Object} context - VS Code extension context (for backward compatibility)
      * @param {number} maxEntries - Maximum entries to keep (default: 2000)
      * @param {number} flushIntervalMs - Flush interval in milliseconds (default: 1000)
+     * @param {Object} persistenceAdapter - Persistence adapter implementing IPersistencePort (optional)
      */
-    constructor(context, maxEntries = 2000, flushIntervalMs = 1000) {
-        this.context = context;
+    constructor(context, maxEntries = 2000, flushIntervalMs = 1000, persistenceAdapter = null) {
+        this.context = context; // Keep for backward compatibility
+        this.persistenceAdapter = persistenceAdapter; // Ports and Adapters pattern
         this.maxEntries = maxEntries;
         this.key = 'vibeswitch.changeLedger.v1';
         this.ckKey = 'vibeswitch.changeLedger.checkpoint.v1';
@@ -44,7 +45,15 @@ class ChangeLedger {
      */
     _load() {
         if (this._memEntries === null) {
-            this._memEntries = this.context.workspaceState.get(this.key, []);
+            // Use persistence adapter if available (Ports and Adapters pattern)
+            if (this.persistenceAdapter) {
+                this._memEntries = this.persistenceAdapter.loadSync(this.key) || [];
+            } else if (this.context && this.context.workspaceState) {
+                // Fallback to direct context access (backward compatibility)
+                this._memEntries = this.context.workspaceState.get(this.key, []);
+            } else {
+                this._memEntries = [];
+            }
         }
         return this._memEntries;
     }
@@ -74,7 +83,13 @@ class ChangeLedger {
             }
             
             // Fix: Await the async update
-            await this.context.workspaceState.update(this.key, this._memEntries);
+            // Use persistence adapter if available (Ports and Adapters pattern)
+            if (this.persistenceAdapter) {
+                await this.persistenceAdapter.save(this.key, this._memEntries);
+            } else if (this.context && this.context.workspaceState) {
+                // Fallback to direct context access (backward compatibility)
+                await this.context.workspaceState.update(this.key, this._memEntries);
+            }
             this._dirty = false;
         } finally {
             this._flushPending = false;
@@ -235,7 +250,13 @@ class ChangeLedger {
             workspaceFolder: options.workspaceFolder || null
         };
         
-        await this.context.workspaceState.update(this.ckKey, checkpoint);
+        // Use persistence adapter if available (Ports and Adapters pattern)
+        if (this.persistenceAdapter) {
+            await this.persistenceAdapter.save(this.ckKey, checkpoint);
+        } else if (this.context && this.context.workspaceState) {
+            // Fallback to direct context access (backward compatibility)
+            await this.context.workspaceState.update(this.ckKey, checkpoint);
+        }
     }
 
     /**
@@ -243,7 +264,16 @@ class ChangeLedger {
      * @returns {Object|null} Checkpoint object or null
      */
     getCheckpoint() {
-        const checkpoint = this.context.workspaceState.get(this.ckKey, null);
+        // Use persistence adapter if available (Ports and Adapters pattern)
+        let checkpoint;
+        if (this.persistenceAdapter) {
+            checkpoint = this.persistenceAdapter.loadSync(this.ckKey) || null;
+        } else if (this.context && this.context.workspaceState) {
+            // Fallback to direct context access (backward compatibility)
+            checkpoint = this.context.workspaceState.get(this.ckKey, null);
+        } else {
+            checkpoint = null;
+        }
         
         // Fix: If checkpoint is 0 or missing, use activation time
         if (!checkpoint) {
@@ -284,7 +314,13 @@ class ChangeLedger {
         this._memEntries = [];
         this._dirty = true;
         await this.flush();
-        await this.context.workspaceState.update(this.ckKey, null);
+        // Use persistence adapter if available (Ports and Adapters pattern)
+        if (this.persistenceAdapter) {
+            await this.persistenceAdapter.save(this.ckKey, null);
+        } else if (this.context && this.context.workspaceState) {
+            // Fallback to direct context access (backward compatibility)
+            await this.context.workspaceState.update(this.ckKey, null);
+        }
     }
 
     /**
