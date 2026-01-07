@@ -12,10 +12,10 @@
  * - Mode-configurable classifier thresholds
  */
 
-const { getLogger } = require('../logger');
-const { isNonCodeDocument, isSkippableUri, isPositionInRange } = require('./utils');
-const ChangeClassifier = require('./changeClassifier');
-const { buildDiffBullets } = require('./diffBulletBuilder');
+const { getLogger } = require('../../../../logger');
+const { isNonCodeDocument, isSkippableUri, isPositionInRange } = require('../utils/utils');
+const ChangeClassifier = require('../utils/changeClassifier');
+const { buildDiffBullets } = require('../utils/diffBulletBuilder');
 // Keep minimal vscode import for types only (Range, Position, etc.)
 // All API calls should go through vscodeAdapter
 const vscode = require('vscode');

@@ -5,7 +5,7 @@
  * This enables testability and clear separation of concerns.
  */
 
-const IVSCodePort = require('../ports/IVSCodePort');
+const IVSCodePort = require('../../domain/ports/IVSCodePort');
 
 class VSCodeAdapter extends IVSCodePort {
     /**

@@ -28,6 +28,7 @@ const detectCurrentMode = require('./detectCurrentMode');
  * @param {Function} options.onMonitorStart - Callback to start awareness monitor
  * @param {Function} options.onMonitorStop - Callback to stop awareness monitor
  * @param {Object} options.usageStats - Usage statistics manager instance
+ * @param {Object} options.vscodeAdapter - VS Code adapter (Ports and Adapters pattern) - optional for backward compatibility
  */
 async function switchToMode(mode, options = {}) {
     const {
@@ -35,7 +36,8 @@ async function switchToMode(mode, options = {}) {
         onModeSwitched,
         onMonitorStart,
         onMonitorStop,
-        usageStats
+        usageStats,
+        vscodeAdapter = null
     } = options;
 
     // Validate mode input
@@ -44,10 +46,11 @@ async function switchToMode(mode, options = {}) {
         return;
     }
 
-    // Ensure workspace exists
-    const workspaceFolders = vscode.workspace.workspaceFolders;
+    // Ensure workspace exists - use adapter if available, fallback to direct vscode
+    const workspaceFolders = vscodeAdapter ? vscodeAdapter.workspaceFolders : vscode.workspace.workspaceFolders;
     if (!workspaceFolders || workspaceFolders.length === 0) {
-        vscode.window.showErrorMessage('No workspace folder found. Please open a folder first.');
+        const showError = vscodeAdapter ? vscodeAdapter.showErrorMessage.bind(vscodeAdapter) : vscode.window.showErrorMessage;
+        showError('No workspace folder found. Please open a folder first.');
         return;
     }
 
@@ -117,7 +120,8 @@ async function switchToMode(mode, options = {}) {
         console.log(`VibeSwitch: Successfully switched to ${mode.toUpperCase()} mode`);
     } catch (error) {
         console.error(`VibeSwitch: Error switching to ${mode} mode:`, error);
-        vscode.window.showErrorMessage(`Failed to switch to ${mode.toUpperCase()} mode: ${error.message}`);
+        const showError = vscodeAdapter ? vscodeAdapter.showErrorMessage.bind(vscodeAdapter) : vscode.window.showErrorMessage;
+        showError(`Failed to switch to ${mode.toUpperCase()} mode: ${error.message}`);
     }
 }
 

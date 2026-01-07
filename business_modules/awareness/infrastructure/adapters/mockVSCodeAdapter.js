@@ -5,7 +5,7 @@
  * without requiring the VS Code extension host.
  */
 
-const IVSCodePort = require('../ports/IVSCodePort');
+const IVSCodePort = require('../../domain/ports/IVSCodePort');
 
 class MockVSCodeAdapter extends IVSCodePort {
     constructor() {

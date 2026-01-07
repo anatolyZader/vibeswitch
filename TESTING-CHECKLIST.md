@@ -170,3 +170,4 @@ All tests pass and:
 - Integration tests require VS Code extension host
 - Manual testing is required for UI components
 
+

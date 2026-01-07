@@ -4,6 +4,8 @@
  */
 
 const assert = require('assert');
+// Note: Old AwarenessMonitor is deprecated, tests should be updated to test AwarenessService
+// For now, keeping old import for backward compatibility
 const AwarenessMonitor = require('../../awarenessMonitor/awarenessMonitor');
 const MockVSCodeAdapter = require('../../infrastructure/adapters/mockVSCodeAdapter');
 const MockPersistenceAdapter = require('../../infrastructure/adapters/mockPersistenceAdapter');
@@ -112,7 +114,7 @@ suite('EventHandlers with Adapters', () => {
     });
     
     test('should create EventHandlers with adapter', () => {
-        const EventHandlers = require('../../awarenessMonitor/eventHandlers');
+        const EventHandlers = require('../../business_modules/awareness/domain/entities/eventHandlers');
         const mockAgentHandler = {};
         const mockDebtManager = {};
         const mockSessionTracker = {};
@@ -134,7 +136,7 @@ suite('EventHandlers with Adapters', () => {
     });
     
     test('should use adapter for asRelativePath', () => {
-        const EventHandlers = require('../../awarenessMonitor/eventHandlers');
+        const EventHandlers = require('../../business_modules/awareness/domain/entities/eventHandlers');
         eventHandlers = new EventHandlers(
             {}, {}, {}, { value: null }, { value: null }, 'dev', null, {}, mockVSCodeAdapter
         );
@@ -158,7 +160,7 @@ suite('AgentSuggestionHandler with Adapters', () => {
     });
     
     test('should create AgentSuggestionHandler with adapter', () => {
-        const AgentSuggestionHandler = require('../../awarenessMonitor/agentSuggestionHandler');
+        const AgentSuggestionHandler = require('../../business_modules/awareness/domain/entities/agentSuggestionHandler');
         handler = new AgentSuggestionHandler(
             {}, // debtManager
             () => {}, // updateScore
@@ -173,7 +175,7 @@ suite('AgentSuggestionHandler with Adapters', () => {
     });
     
     test('should use adapter for Range creation', () => {
-        const AgentSuggestionHandler = require('../../awarenessMonitor/agentSuggestionHandler');
+        const AgentSuggestionHandler = require('../../business_modules/awareness/domain/entities/agentSuggestionHandler');
         handler = new AgentSuggestionHandler({}, () => {}, {}, () => {}, null, mockVSCodeAdapter);
         
         const Range = mockVSCodeAdapter.Range;
@@ -183,7 +185,7 @@ suite('AgentSuggestionHandler with Adapters', () => {
     });
     
     test('should use adapter for openTextDocument', async () => {
-        const AgentSuggestionHandler = require('../../awarenessMonitor/agentSuggestionHandler');
+        const AgentSuggestionHandler = require('../../business_modules/awareness/domain/entities/agentSuggestionHandler');
         handler = new AgentSuggestionHandler({}, () => {}, {}, () => {}, null, mockVSCodeAdapter);
         
         const uri = mockVSCodeAdapter.Uri.file('/test.js');
@@ -192,4 +194,5 @@ suite('AgentSuggestionHandler with Adapters', () => {
         assert.ok(doc.uri);
     });
 });
+
 

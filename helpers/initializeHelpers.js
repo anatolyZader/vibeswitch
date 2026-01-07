@@ -22,7 +22,6 @@
  */
 
 const vscode = require('vscode');
-const { window } = vscode;
 
 // Import modules
 const { getLogger } = require('../logger');
@@ -220,7 +219,8 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
                 },
                 onMonitorStart: startAwarenessMonitor,
                 onMonitorStop: stopAwarenessMonitor,
-                usageStats: state.usageStats
+                usageStats: state.usageStats,
+                vscodeAdapter: state.vscodeAdapter // Pass adapter for Ports and Adapters pattern
             });
             
             // Verify file was written correctly, but DON'T detect mode from file
@@ -234,7 +234,9 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
         } catch (error) {
             // Boundary: Command handler - show user-facing error
             log(`ERROR in switchToMode: ${error.message}`, true, true);
-            window.showErrorMessage(`Failed to switch mode: ${error.message}`);
+            // Use adapter if available, fallback to direct vscode
+            const showError = state.vscodeAdapter ? state.vscodeAdapter.showErrorMessage.bind(state.vscodeAdapter) : vscode.window.showErrorMessage;
+            showError(`Failed to switch mode: ${error.message}`);
             throw error; // Re-throw so caller knows it failed
         }
     };

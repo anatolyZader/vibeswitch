@@ -101,13 +101,13 @@ class ChangeLedger {
                 // queueMicrotask is available in Node.js and VS Code extension host
                 if (typeof queueMicrotask === 'function') {
                     queueMicrotask(() => this._flush().catch(err => {
-                        const { getLogger } = require('../logger');
+                        const { getLogger } = require('../../../../logger');
                         getLogger().log(`ChangeLedger: Queued flush error: ${err.message}`, true);
                     }));
                 } else {
                     // Fallback for older Node versions
                     Promise.resolve().then(() => this._flush().catch(err => {
-                        const { getLogger } = require('../logger');
+                        const { getLogger } = require('../../../../logger');
                         getLogger().log(`ChangeLedger: Queued flush error: ${err.message}`, true);
                     }));
                 }

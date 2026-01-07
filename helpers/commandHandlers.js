@@ -4,7 +4,6 @@
  */
 
 const vscode = require('vscode');
-const { window, workspace } = vscode;
 const path = require('path');
 const fs = require('fs');
 const ui = require('../ui/ui');
@@ -20,6 +19,18 @@ const userStatsUI = require('../ui/userStatsUI');
  * @returns {Object} Command handlers map
  */
 function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state }) {
+    // Get vscodeAdapter from state for Ports and Adapters pattern
+    const vscodeAdapter = state.vscodeAdapter;
+    
+    // Helper functions to use adapter if available, fallback to direct vscode
+    const showErrorMessage = vscodeAdapter ? vscodeAdapter.showErrorMessage.bind(vscodeAdapter) : vscode.window.showErrorMessage;
+    const showInformationMessage = vscodeAdapter ? vscodeAdapter.showInformationMessage.bind(vscodeAdapter) : vscode.window.showInformationMessage;
+    const showWarningMessage = vscodeAdapter ? vscodeAdapter.showWarningMessage.bind(vscodeAdapter) : vscode.window.showWarningMessage;
+    const showQuickPick = vscodeAdapter ? vscodeAdapter.showQuickPick.bind(vscodeAdapter) : vscode.window.showQuickPick;
+    const showTextDocument = vscodeAdapter ? vscodeAdapter.showTextDocument.bind(vscodeAdapter) : vscode.window.showTextDocument;
+    const activeTextEditor = vscodeAdapter ? vscodeAdapter.activeTextEditor : vscode.window.activeTextEditor;
+    const workspaceFolders = vscodeAdapter ? vscodeAdapter.workspaceFolders : vscode.workspace.workspaceFolders;
+    const openTextDocument = vscodeAdapter ? vscodeAdapter.openTextDocument.bind(vscodeAdapter) : vscode.workspace.openTextDocument;
     return {
         'vibeswitch.switchMode': async () => {
             try {
@@ -36,7 +47,7 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state 
             } catch (error) {
                 log(`ERROR in switchMode command: ${error.message}`, true, true);
                 console.error('VibeSwitch: Error in switchMode command:', error);
-                window.showErrorMessage(`Failed to show mode picker: ${error.message}`);
+                showErrorMessage(`Failed to show mode picker: ${error.message}`);
             }
         },
 
@@ -50,26 +61,26 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state 
         'vibeswitch.showLogs': () => {
             if (state.outputChannel) {
                 state.outputChannel.show(true);
-                window.showInformationMessage('VibeSwitch logs opened in Output panel');
+                showInformationMessage('VibeSwitch logs opened in Output panel');
             }
         },
 
         'vibeswitch.showStatusBar': () => {
             if (!state.statusBarItem) {
-                window.showErrorMessage('Status bar items not initialized. Please reload the window.');
+                showErrorMessage('Status bar items not initialized. Please reload the window.');
                 return;
             }
             state.statusBarItem.show();
             if (state.currentMode === 'dev' && state.awarenessBarItem) {
                 state.awarenessBarItem.show();
             }
-            window.showInformationMessage('VibeSwitch status bar items shown');
+            showInformationMessage('VibeSwitch status bar items shown');
             log('Status bar items manually shown via command');
         },
 
         'vibeswitch.diagnoseDecorations': () => {
             if (!state.fileDecorationProvider) {
-                window.showWarningMessage('File Decoration Provider: Not initialized');
+                showWarningMessage('File Decoration Provider: Not initialized');
                 log(`Current mode: ${state.currentMode}`);
                 log(`Awareness monitor exists: ${state.awarenessMonitor ? 'YES' : 'NO'}`);
                 state.outputChannel?.show(true);
@@ -100,24 +111,24 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state 
             } else {
                 state.fileDecorationProvider?.refresh();
             }
-            window.showInformationMessage('File decoration refresh triggered. Check Output panel for details.');
+            showInformationMessage('File decoration refresh triggered. Check Output panel for details.');
         },
 
         'vibeswitch.detectTestingFiles': async () => {
             if (!state.awarenessMonitor) {
-                window.showWarningMessage('Awareness Monitor: Not initialized');
+                showWarningMessage('Awareness Monitor: Not initialized');
                 return;
             }
             
-            const workspaceFolders = workspace.workspaceFolders;
+            const wsFolders = workspaceFolders;
             if (!workspaceFolders?.length) {
-                window.showWarningMessage('No workspace folder found');
+                showWarningMessage('No workspace folder found');
                 return;
             }
             
             const testingPath = path.join(workspaceFolders[0].uri.fsPath, 'testing');
             if (!fs.existsSync(testingPath)) {
-                window.showWarningMessage('Testing folder not found');
+                showWarningMessage('Testing folder not found');
                 return;
             }
             
@@ -134,20 +145,20 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state 
             }
             
             if (detected > 0) {
-                window.showInformationMessage(`Detected ${detected} file(s) in testing folder. Check decorations!`);
+                showInformationMessage(`Detected ${detected} file(s) in testing folder. Check decorations!`);
                 if (updateFileColorsInExplorer) {
                     updateFileColorsInExplorer();
                 } else if (state.fileDecorationProvider && state.currentMode === 'dev') {
                     state.fileDecorationProvider.refresh();
                 }
             } else {
-                window.showInformationMessage('No files detected in testing folder');
+                showInformationMessage('No files detected in testing folder');
             }
         },
 
         'vibeswitch.diagnoseMonitor': () => {
             if (!state.awarenessMonitor) {
-                window.showWarningMessage('Awareness Monitor: Not initialized');
+                showWarningMessage('Awareness Monitor: Not initialized');
                 state.outputChannel?.appendLine('Awareness Monitor: Not initialized');
                 state.outputChannel?.show(true);
                 return;
@@ -191,9 +202,9 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state 
             }
             
             // Testing folder files check
-            const workspaceFolders = workspace.workspaceFolders;
-            if (workspaceFolders?.length) {
-                const testingPath = path.join(workspaceFolders[0].uri.fsPath, 'testing');
+            const wsFolders = workspaceFolders;
+            if (wsFolders?.length) {
+                const testingPath = path.join(wsFolders[0].uri.fsPath, 'testing');
                 if (fs.existsSync(testingPath)) {
                     message += '\n=== Testing Folder Files ===\n';
                     const files = fs.readdirSync(testingPath)
@@ -201,7 +212,7 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state 
                         .map(f => path.join(testingPath, f));
                     
                     files.forEach(filePath => {
-                        const relativePath = path.relative(workspaceFolders[0].uri.fsPath, filePath);
+                        const relativePath = path.relative(wsFolders[0].uri.fsPath, filePath);
                         const inDebt = scoreData?.debt?.files?.some(f => 
                             path.resolve(f.fullPath).toLowerCase() === path.resolve(filePath).toLowerCase()
                         );
@@ -235,17 +246,17 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state 
             state.outputChannel?.appendLine(message);
             state.outputChannel?.show(true);
             const summary = `Monitor: ${status.isActive ? 'ACTIVE' : 'INACTIVE'} | Mode: ${mode || 'null'} | Suggestions: ${status.aiSuggestionsCount} | Score: ${status.currentScore}`;
-            window.showInformationMessage(summary);
+            showInformationMessage(summary);
         },
 
         'vibeswitch.showUnreviewedFiles': async () => {
             if (!state.awarenessMonitor) {
-                window.showWarningMessage('Awareness Monitor: Not initialized');
+                showWarningMessage('Awareness Monitor: Not initialized');
                 return;
             }
             
             if (state.currentMode !== 'dev') {
-                window.showInformationMessage('Unreviewed files are only tracked in DEV mode');
+                showInformationMessage('Unreviewed files are only tracked in DEV mode');
                 return;
             }
             
@@ -275,11 +286,11 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state 
             });
             
             if (allItems.length === 0) {
-                window.showInformationMessage('✅ No unreviewed files - great job!');
+                showInformationMessage('✅ No unreviewed files - great job!');
                 return;
             }
             
-            const selected = await window.showQuickPick(allItems, {
+            const selected = await showQuickPick(allItems, {
                 placeHolder: `Select a file to open and review (${allItems.length} unreviewed items)`,
                 matchOnDescription: true,
                 matchOnDetail: true
@@ -287,11 +298,11 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state 
             
             if (selected?.filePath) {
                 try {
-                    const document = await workspace.openTextDocument(selected.filePath);
-                    await window.showTextDocument(document);
+                    const document = await openTextDocument(selected.filePath);
+                    await showTextDocument(document);
                     log(`Opened unreviewed file: ${selected.filePath}`);
                 } catch (error) {
-                    window.showErrorMessage(`Failed to open file: ${error.message}`);
+                    showErrorMessage(`Failed to open file: ${error.message}`);
                     log(`Error opening file ${selected.filePath}: ${error.message}`);
                 }
             }
@@ -300,10 +311,10 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state 
         // @ai
         'vibeswitch.testAddAICode': async () => {
             // @ai
-            const editor = window.activeTextEditor;
+            const editor = activeTextEditor;
             // @ai
             if (!editor) {
-                window.showWarningMessage('No active editor. Please open a file first.');
+                showWarningMessage('No active editor. Please open a file first.');
                 return;
             }
 
@@ -333,13 +344,13 @@ const testVariable = 'AI-generated code test';
                 // @ai
                 log(`Test AI code inserted at line ${position.line + 1}, column ${position.character + 1}`);
                 // @ai
-                window.showInformationMessage('✅ Test AI code inserted with // @ai markers!');
+                showInformationMessage('✅ Test AI code inserted with // @ai markers!');
             // @ai
             } catch (error) {
                 // @ai
                 log(`ERROR inserting test code: ${error.message}`, true, true);
                 // @ai
-                window.showErrorMessage(`Failed to insert test code: ${error.message}`);
+                showErrorMessage(`Failed to insert test code: ${error.message}`);
             }
         }
     };

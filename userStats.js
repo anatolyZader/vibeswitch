@@ -4,7 +4,7 @@
  */
 
 const vscode = require('vscode');
-const PersistInSystem = require('./awarenessMonitor/persistInSystem');
+const PersistInSystem = require('./business_modules/awareness/infrastructure/persistInSystem');
 
 class UsageStatsManager {
     constructor(context) {
@@ -319,12 +319,21 @@ class UsageStatsManager {
     }
 
     // Track edit (awareness indicator)
-    trackEdit() {
+    // @param {Object} metadata - Optional metadata for future AI vs human inference
+    //                            { document, changeCount, timestamp, ... }
+    trackEdit(metadata = null) {
         const config = vscode.workspace.getConfiguration('vibeswitch');
         if (!config.get('enableTelemetry', true)) return;
 
         if (this.currentSession) {
             this.currentSession.editCount++;
+            // Store metadata for future analysis (AI vs human inference)
+            if (metadata && !this.currentSession.editMetadata) {
+                this.currentSession.editMetadata = [];
+            }
+            if (metadata && this.currentSession.editMetadata) {
+                this.currentSession.editMetadata.push(metadata);
+            }
         }
         
         const mode = this.currentSession?.mode;
@@ -635,6 +644,20 @@ class UsageStatsManager {
     // Export usage statistics data (privacy feature)
     exportData() {
         return JSON.parse(JSON.stringify(this.data));
+    }
+}
+
+    /**
+     * Dispose method for VS Code extension lifecycle
+     * Called when extension deactivates to clean up resources
+     */
+    dispose() {
+        try {
+            this.endSession();
+        } catch (error) {
+            // Log but don't throw - disposal should always succeed
+            console.error('UsageStatsManager: Error during disposal:', error);
+        }
     }
 }
 

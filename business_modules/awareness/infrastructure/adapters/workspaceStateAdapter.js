@@ -5,7 +5,7 @@
  * This enables testability and the ability to swap storage implementations.
  */
 
-const IPersistencePort = require('../ports/IPersistencePort');
+const IPersistencePort = require('../../domain/ports/IPersistencePort');
 
 class WorkspaceStateAdapter extends IPersistencePort {
     /**

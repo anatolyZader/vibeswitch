@@ -4,7 +4,7 @@
  * Provides in-memory storage for unit testing without requiring VS Code workspaceState.
  */
 
-const IPersistencePort = require('../ports/IPersistencePort');
+const IPersistencePort = require('../../domain/ports/IPersistencePort');
 
 class MockPersistenceAdapter extends IPersistencePort {
     constructor() {

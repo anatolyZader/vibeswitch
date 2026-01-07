@@ -3,9 +3,9 @@
  * Manages persistent tracking of unreviewed files and calculates debt scores
  */
 
-const { getLogger } = require('../logger');
-const PersistInContext = require('./persistInContext');
-const { normalizeToUri } = require('./utils');
+const { getLogger } = require('../../../../logger');
+const PersistInContext = require('../../infrastructure/persistInContext');
+const { normalizeToUri } = require('../utils/utils');
 
 class DebtManager {
     /**

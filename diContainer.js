@@ -28,6 +28,9 @@ class DIContainer {
         this.adapterConfig = null;
         this.adapters = {}; // Cache for adapter instances
         this._loadAdapterConfig();
+        
+        // Service registry for dependency injection
+        this.services = {}; // Service instances registered by name
     }
     
     /**
@@ -124,6 +127,47 @@ class DIContainer {
      */
     isInitialized() {
         return this.outputChannel !== null && this.extensionContext !== null;
+    }
+    
+    /**
+     * Register a service instance in the DI container
+     * @param {string} name - Service name (e.g., 'awarenessService', 'modeService')
+     * @param {Object} instance - Service instance
+     */
+    register(name, instance) {
+        if (!name || typeof name !== 'string') {
+            throw new Error('Service name must be a non-empty string');
+        }
+        if (!instance) {
+            throw new Error(`Service instance for '${name}' cannot be null or undefined`);
+        }
+        this.services[name] = instance;
+    }
+    
+    /**
+     * Resolve a service from the DI container (async for future factory support)
+     * @param {string} name - Service name
+     * @returns {Promise<Object>} Service instance
+     * @throws {Error} If service not found
+     */
+    async resolve(name) {
+        if (this.services[name]) {
+            return Promise.resolve(this.services[name]);
+        }
+        throw new Error(`Service '${name}' not found in DI container`);
+    }
+    
+    /**
+     * Resolve a service from the DI container (synchronous)
+     * @param {string} name - Service name
+     * @returns {Object} Service instance
+     * @throws {Error} If service not found
+     */
+    resolveSync(name) {
+        if (this.services[name]) {
+            return this.services[name];
+        }
+        throw new Error(`Service '${name}' not found in DI container`);
     }
 }
 
