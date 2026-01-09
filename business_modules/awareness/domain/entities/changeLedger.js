@@ -49,8 +49,8 @@ class ChangeLedger {
 
     _load() {
         if (this._memEntries === null) {
-            // Use persistence adapter for loading
-            this._memEntries = this.persistenceAdapter.loadSync(this.key) || [];
+            // Use persistence port for loading
+            this._memEntries = this.persistencePort.loadSync(this.key) || [];
         }
         return this._memEntries;
     }
@@ -73,8 +73,8 @@ class ChangeLedger {
                 this._memEntries.splice(0, this._memEntries.length - this.maxEntries);
             }
             
-            // Use persistence adapter for saving
-            await this.persistenceAdapter.save(this.key, this._memEntries);
+            // Use persistence port for saving
+            await this.persistencePort.save(this.key, this._memEntries);
             this._dirty = false;
         } finally {
             this._flushPending = false;
@@ -86,14 +86,14 @@ class ChangeLedger {
                 // queueMicrotask is available in Node.js and VS Code extension host
                 if (typeof queueMicrotask === 'function') {
                     queueMicrotask(() => this._flush().catch(err => {
-                        if (this.loggerAdapter) {
+                        if (this.loggerPort) {
                             this.loggerPort.error('ChangeLedger: Queued flush error', err);
                         }
                     }));
                 } else {
                     // Fallback for older Node versions
                     Promise.resolve().then(() => this._flush().catch(err => {
-                        if (this.loggerAdapter) {
+                        if (this.loggerPort) {
                             this.loggerPort.error('ChangeLedger: Queued flush error', err);
                         }
                     }));
@@ -113,8 +113,7 @@ class ChangeLedger {
             this._flushTimer = null; // Clear timer ref
             this._flush().catch(err => {
                 // Log but don't throw - ledger writes shouldn't crash the extension
-                const { getLogger } = require('../logger');
-                if (this.loggerAdapter) {
+                if (this.loggerPort) {
                     this.loggerPort.error('ChangeLedger: Flush error', err);
                 }
             });
@@ -122,13 +121,10 @@ class ChangeLedger {
     }
 
     _generateBatchId() {
-        // Use hash generator adapter for ID generation (use hash of timestamp + random)
-        // Note: This method should ideally use IIdGeneratorPort, but for now we use hashGenerator
+        // Use hash generator port for ID generation (use hash of timestamp + random)
         const random = Math.random().toString(36).substring(2, 15);
         const timestamp = Date.now().toString();
-        return this.hashGeneratorAdapter.createHash('md5', timestamp + random).substring(0, 36);
-        }
-        return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+        return this.hashGeneratorPort.createHash('md5', timestamp + random).substring(0, 36);
     }
 
     append(entry) {
@@ -163,7 +159,7 @@ class ChangeLedger {
             }
             
             // Fix: Invariant check in dev - log error if still no batchId found
-            if (!batchId && process.env.NODE_ENV !== 'production' && this.loggerAdapter) {
+            if (!batchId && process.env.NODE_ENV !== 'production' && this.loggerPort) {
                 const recentTail = entries.slice(-5).map(e => `${e.kind}:${e.uri || e.file || 'unknown'}`).join(', ');
                 this.loggerPort.log(`ChangeLedger: diff_bullets entry missing batchId for ${entry.uri || entry.file || 'unknown'}. Recent entries: ${recentTail}`);
             }
@@ -196,13 +192,13 @@ class ChangeLedger {
             workspaceFolder: options.workspaceFolder || null
         };
         
-        // Use persistence adapter for saving checkpoint
-        await this.persistenceAdapter.save(this.ckKey, checkpoint);
+        // Use persistence port for saving checkpoint
+        await this.persistencePort.save(this.ckKey, checkpoint);
     }
 
     getCheckpoint() {
-        // Use persistence adapter for loading checkpoint
-        const checkpoint = this.persistenceAdapter.loadSync(this.ckKey) || null;
+        // Use persistence port for loading checkpoint
+        const checkpoint = this.persistencePort.loadSync(this.ckKey) || null;
         
         // Fix: If checkpoint is 0 or missing, use activation time
         if (!checkpoint) {
@@ -223,33 +219,18 @@ class ChangeLedger {
         return this._load().filter(e => e.ts > since);
     }
 
-    /**
-     * Get all entries (for debugging/admin)
-     * @returns {Array} All entries
-     */
     getAll() {
         return this._load();
     }
 
-    /**
-     * Clear all entries (for testing/reset)
-     */
     async clear() {
         this._memEntries = [];
         this._dirty = true;
         await this.flush();
-        // Use persistence adapter if available (Ports and Adapters pattern)
-        if (this.persistenceAdapter) {
-            await this.persistenceAdapter.save(this.ckKey, null);
-        } else if (this.context && this.context.workspaceState) {
-            // Fallback to direct context access (backward compatibility)
-        await this.context.workspaceState.update(this.ckKey, null);
-        }
+        // Use persistence port for saving
+        await this.persistencePort.save(this.ckKey, null);
     }
 
-    /**
-     * Dispose and flush pending writes
-     */
     async dispose() {
         if (this._flushTimer) {
             clearTimeout(this._flushTimer);
