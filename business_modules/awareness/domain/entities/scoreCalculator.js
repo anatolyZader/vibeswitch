@@ -1,18 +1,20 @@
 /**
  * Awareness Score Calculator
  * Calculates the awareness score based on user review behavior and AI suggestions
+ * 
+ * Domain entity - uses ports for all infrastructure operations
  */
 
-// Keep minimal vscode import for types only
-// All API calls should go through vscodeAdapter
-const vscode = require('vscode');
-const { getLogger } = require('../../../../logger');
 const { getRelativePath } = require('../utils/utils');
 
 class ScoreCalculator {
-    constructor(vscodeAdapter = null) {
-        // VS Code adapter (Ports and Adapters pattern) - optional for backward compatibility
-        this.vscodeAdapter = vscodeAdapter;
+    /**
+     * @param {IAwarenessVSCodePort} vscodePort - VS Code port (interface, optional)
+     * @param {ILoggerPort} loggerPort - Logger port (interface, optional)
+     */
+    constructor(vscodePort = null, loggerPort = null) {
+        this.vscodePort = vscodePort;
+        this.loggerPort = loggerPort;
         this.currentScore = 0;
         this.scores = {
             review: 0,      // 0-40 points
@@ -45,8 +47,10 @@ class ScoreCalculator {
         const debtScore = getDebtScore();
         const hasDebt = debtScore > 0;
         
-        // Rate-limited debug logging via logger's built-in rate limiter
-        getLogger().debug(`Updating score: ${recentSuggestions.length} recent, ${aiSuggestions.length} total, debt: ${debtScore}`, false, 'scoreCalculator:updateScore');
+        // Rate-limited debug logging via logger adapter
+        if (this.loggerAdapter) {
+            this.loggerPort.debug(`Updating score: ${recentSuggestions.length} recent, ${aiSuggestions.length} total, debt: ${debtScore}`, 'scoreCalculator:updateScore');
+        }
         
         // Only calculate if we have suggestions in the last 10 seconds
         if (recentSuggestions.length === 0) {
@@ -240,14 +244,19 @@ class ScoreCalculator {
                 let filePath = null;
                 if (s.document) {
                     try {
-                        // Use vscodeAdapter.Uri if available (Ports and Adapters pattern), otherwise fallback to vscode.Uri
-                        const Uri = this.vscodeAdapter ? this.vscodeAdapter.Uri : vscode.Uri;
+                        // Use VS Code adapter for URI creation
+                        const Uri = this.vscodeAdapter ? this.vscodeAdapter.Uri : null;
+                        if (!Uri) {
+                            continue; // Skip if no adapter available
+                        }
                         const uri = Uri.parse(s.document);
                         if (uri.scheme === 'file') {
                             filePath = uri.fsPath;
                         }
                     } catch (err) {
-                        getLogger().log(`AwarenessMonitor: Error parsing document URI: ${err.message}`);
+                        if (this.loggerAdapter) {
+                            this.loggerPort.error('AwarenessMonitor: Error parsing document URI', err);
+                        }
                     }
                 }
                 return {

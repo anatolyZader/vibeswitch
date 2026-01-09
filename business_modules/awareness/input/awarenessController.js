@@ -2,19 +2,26 @@
  * AwarenessController - Input layer controller for awareness monitoring
  * 
  * Thin controller that handles VS Code commands and delegates to AwarenessService.
- * This follows the pattern from gitModuleExample.js where controllers resolve
- * services from DI container and call service methods.
+ * Uses explicit dependencies instead of whole DI container for better testability.
+ * 
+ * Design principles:
+ * - Controller throws errors; composition root handles UI
+ * - Logger interface is normalized (error/info methods)
+ * - Minimal try/catch boilerplate
  */
 
 class AwarenessController {
     /**
-     * @param {Object} diContainer - Dependency injection container
+     * @param {Object} dependencies - Explicit dependencies
+     * @param {AwarenessService} dependencies.awarenessService - Awareness service instance
+     * @param {Object} dependencies.logger - Logger instance (optional, expects { error(msg, err?), info(msg)? })
      */
-    constructor(diContainer) {
-        if (!diContainer) {
-            throw new Error('AwarenessController requires diContainer');
+    constructor({ awarenessService, logger = null }) {
+        if (!awarenessService) {
+            throw new Error('AwarenessController requires awarenessService');
         }
-        this.diContainer = diContainer;
+        this.awarenessService = awarenessService;
+        this.logger = logger;
     }
     
     /**
@@ -25,26 +32,11 @@ class AwarenessController {
      */
     async startMonitoring(context, updateFileColorsInExplorer = null, mode = 'dev') {
         try {
-            const awarenessService = await this.diContainer.resolve('awarenessService');
-            if (!awarenessService) {
-                throw new Error('AwarenessService not found in DI container');
-            }
-            await awarenessService.start(context, updateFileColorsInExplorer, mode);
+            await this.awarenessService.start(context, updateFileColorsInExplorer, mode);
         } catch (error) {
-            const { getLogger } = require('../../../logger');
-            getLogger().log(`AwarenessController: Error starting monitoring: ${error.message}`, false, true);
+            this.logger?.error('AwarenessController.startMonitoring failed', error);
             throw error;
         }
-    }
-    
-    /**
-     * Start monitoring (backward compatibility alias)
-     * @param {Object} context - VS Code extension context
-     * @param {Function} updateFileColorsInExplorer - Callback to update file colors
-     * @param {string} mode - Current mode ('vibe' or 'dev')
-     */
-    async start(context, updateFileColorsInExplorer = null, mode = 'dev') {
-        return this.startMonitoring(context, updateFileColorsInExplorer, mode);
     }
     
     /**
@@ -52,23 +44,11 @@ class AwarenessController {
      */
     async stopMonitoring() {
         try {
-            const awarenessService = await this.diContainer.resolve('awarenessService');
-            if (!awarenessService) {
-                throw new Error('AwarenessService not found in DI container');
-            }
-            await awarenessService.stop();
+            await this.awarenessService.stop();
         } catch (error) {
-            const { getLogger } = require('../../../logger');
-            getLogger().log(`AwarenessController: Error stopping monitoring: ${error.message}`, false, true);
+            this.logger?.error('AwarenessController.stopMonitoring failed', error);
             throw error;
         }
-    }
-    
-    /**
-     * Stop monitoring (backward compatibility alias)
-     */
-    async stop() {
-        return this.stopMonitoring();
     }
     
     /**
@@ -77,14 +57,9 @@ class AwarenessController {
      */
     getScore() {
         try {
-            const awarenessService = this.diContainer.resolveSync('awarenessService');
-            if (!awarenessService) {
-                throw new Error('AwarenessService not found in DI container');
-            }
-            return awarenessService.getScore();
+            return this.awarenessService.getScore();
         } catch (error) {
-            const { getLogger } = require('../../../logger');
-            getLogger().log(`AwarenessController: Error getting score: ${error.message}`, false, true);
+            this.logger?.error('AwarenessController.getScore failed', error);
             throw error;
         }
     }
@@ -95,14 +70,9 @@ class AwarenessController {
      */
     handleExternallyCreatedFile(filePath) {
         try {
-            const awarenessService = this.diContainer.resolveSync('awarenessService');
-            if (!awarenessService) {
-                throw new Error('AwarenessService not found in DI container');
-            }
-            awarenessService.handleExternallyCreatedFile(filePath);
+            this.awarenessService.handleExternallyCreatedFile(filePath);
         } catch (error) {
-            const { getLogger } = require('../../../logger');
-            getLogger().log(`AwarenessController: Error handling external file: ${error.message}`, false, true);
+            this.logger?.error('AwarenessController.handleExternallyCreatedFile failed', error);
             throw error;
         }
     }
@@ -113,18 +83,12 @@ class AwarenessController {
      */
     getStatus() {
         try {
-            const awarenessService = this.diContainer.resolveSync('awarenessService');
-            if (!awarenessService) {
-                throw new Error('AwarenessService not found in DI container');
-            }
-            return awarenessService.getStatus();
+            return this.awarenessService.getStatus();
         } catch (error) {
-            const { getLogger } = require('../../../logger');
-            getLogger().log(`AwarenessController: Error getting status: ${error.message}`, false, true);
+            this.logger?.error('AwarenessController.getStatus failed', error);
             throw error;
         }
     }
 }
 
 module.exports = AwarenessController;
-

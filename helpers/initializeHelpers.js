@@ -25,10 +25,11 @@ const vscode = require('vscode');
 
 // Import modules
 const { getLogger } = require('../logger');
-const statusBar = require('../ui/status-bar');
+const awarenessMeter = require('../ui/awareness-meter');
+const modeSwitcher = require('../ui/mode-switcher');
 const commandHandlersFactory = require('./commandHandlers');
-const switchToModeFunc = require('../mode/switchToMode');
-const UnreviewedFileDecor = require('../ui/fileColorsInExplorer');
+const modeService = require('../business_modules/mode/app/modeService');
+const UnreviewedFileDecor = require('../ui/file-coloring');
 const safe = require('./safe');
 
 /**
@@ -81,7 +82,7 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
     // Update awareness meter - called after score calculation
     // Internal helper - errors propagate to caller (boundary)
     const updateAwarenessMeter = () => {
-        statusBar.updateAwarenessMeter(
+        awarenessMeter.updateAwarenessMeter(
             state.awarenessBarItem, 
             state.awarenessMonitor, 
             state.currentMode, 
@@ -102,13 +103,13 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
         
         // If no mode set at all, show neutral state (don't detect)
         if (!currentMode) {
-            statusBar.updateStatusBar(state.statusBarItem, null, state.outputChannel);
+            modeSwitcher.updateStatusBar(state.statusBarItem, null, state.outputChannel);
             updateAwarenessMeter(); // This will hide the meter if no mode
             return;
         }
         
         // Update mode indicator in status bar
-        statusBar.updateStatusBar(state.statusBarItem, currentMode, state.outputChannel);
+        modeSwitcher.updateStatusBar(state.statusBarItem, currentMode, state.outputChannel);
         // Update awareness meter (will show in 'dev' mode, hide in 'vibe' mode)
         updateAwarenessMeter();
         // NOTE: File colors are updated separately - not mixed with status bar updates
@@ -153,7 +154,7 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
         
         // Pass current mode to classifier for mode-specific thresholds
         const currentMode = state.getMode() || 'dev';
-        state.awarenessMonitor.start(state.extensionContext, updateFileColorsInExplorer, currentMode);
+        state.awarenessMonitor.startMonitoring(state.extensionContext, updateFileColorsInExplorer, currentMode);
         log('VibeSwitch: Started real-time awareness monitoring');
         initFileDecorations();
         
@@ -179,7 +180,7 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
             return;
         }
         
-        state.awarenessMonitor.stop();
+        state.awarenessMonitor.stopMonitoring();
         log('VibeSwitch: Stopped awareness monitoring (VIBE mode)');
         
         if (state.fileDecorationProvider) {
@@ -211,7 +212,7 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
             // Update file colors separately based on mode change
             updateFileColorsForMode();
             
-            await switchToModeFunc(mode, {
+            await modeService(mode, {
                 currentMode: previousMode, // Pass previous mode for stats
                 onModeSwitched: (newMode) => {
                     // Don't change currentMode here - we already set it
@@ -220,7 +221,7 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
                 onMonitorStart: startAwarenessMonitor,
                 onMonitorStop: stopAwarenessMonitor,
                 usageStats: state.usageStats,
-                vscodeAdapter: state.vscodeAdapter // Pass adapter for Ports and Adapters pattern
+                vscodeAdapter: state.getAdapter('awareness', 'vscodeAdapter') // Pass adapter for Ports and Adapters pattern
             });
             
             // Verify file was written correctly, but DON'T detect mode from file
@@ -235,7 +236,8 @@ module.exports = function initializeHelpers(state, disableLogging = false) {
             // Boundary: Command handler - show user-facing error
             log(`ERROR in switchToMode: ${error.message}`, true, true);
             // Use adapter if available, fallback to direct vscode
-            const showError = state.vscodeAdapter ? state.vscodeAdapter.showErrorMessage.bind(state.vscodeAdapter) : vscode.window.showErrorMessage;
+            const vscodeAdapter = state.getAdapter('awareness', 'vscodeAdapter');
+            const showError = vscodeAdapter ? vscodeAdapter.showErrorMessage.bind(vscodeAdapter) : vscode.window.showErrorMessage;
             showError(`Failed to switch mode: ${error.message}`);
             throw error; // Re-throw so caller knows it failed
         }

@@ -1,0 +1,123 @@
+/**
+ * ReviewSession - Entity representing a user's review session for a file
+ * 
+ * Tracks detailed review engagement metrics for a single file review session.
+ * This is a domain entity with identity (filePath + sessionStart).
+ */
+
+const FilePath = require('../value_objects/filePath');
+
+class ReviewSession {
+    /**
+     * @param {string|FilePath} filePath - File being reviewed
+     * @param {number} sessionStart - Timestamp when session started
+     */
+    constructor(filePath, sessionStart = Date.now()) {
+        this.filePath = filePath instanceof FilePath ? filePath : new FilePath(filePath);
+        this.sessionStart = sessionStart;
+        this.lastActivity = sessionStart;
+        this.cursorMovements = 0;
+        this.scrollEvents = 0;
+        this.reviewTime = 0;
+        this.isActive = true;
+        this.completedAt = null;
+    }
+
+    /**
+     * Update cursor activity
+     */
+    recordCursorMovement() {
+        if (!this.isActive) return;
+        this.cursorMovements++;
+        this.lastActivity = Date.now();
+    }
+
+    /**
+     * Update scroll activity
+     */
+    recordScrollEvent() {
+        if (!this.isActive) return;
+        this.scrollEvents++;
+        this.lastActivity = Date.now();
+        // Count scrolling as cursor movement for review purposes
+        this.cursorMovements++;
+    }
+
+    /**
+     * Check if session has sufficient engagement
+     * @param {number} minimumReviewTime - Minimum review time in ms (default: 30000)
+     * @param {number} minimumMovements - Minimum cursor movements (default: 5)
+     * @param {number} minimumScrolls - Minimum scroll events (default: 3)
+     * @returns {boolean} True if session meets engagement criteria
+     */
+    hasSufficientEngagement(minimumReviewTime = 30000, minimumMovements = 5, minimumScrolls = 3) {
+        const duration = Date.now() - this.sessionStart;
+        return duration >= minimumReviewTime && 
+               (this.cursorMovements >= minimumMovements || this.scrollEvents >= minimumScrolls);
+    }
+
+    /**
+     * Check if session has timed out due to inactivity
+     * @param {number} timeoutMs - Inactivity timeout in ms (default: 60000)
+     * @returns {boolean} True if session has timed out
+     */
+    hasTimedOut(timeoutMs = 60000) {
+        const timeSinceActivity = Date.now() - this.lastActivity;
+        return timeSinceActivity > timeoutMs;
+    }
+
+    /**
+     * Complete the session
+     * @param {number} reviewTime - Total review time in ms
+     */
+    complete(reviewTime = null) {
+        this.isActive = false;
+        this.completedAt = Date.now();
+        this.reviewTime = reviewTime || (this.completedAt - this.sessionStart);
+    }
+
+    /**
+     * Get session duration
+     * @returns {number} Duration in milliseconds
+     */
+    getDuration() {
+        if (this.completedAt) {
+            return this.completedAt - this.sessionStart;
+        }
+        return Date.now() - this.sessionStart;
+    }
+
+    /**
+     * Get time since last activity
+     * @returns {number} Milliseconds since last activity
+     */
+    getTimeSinceActivity() {
+        return Date.now() - this.lastActivity;
+    }
+
+    /**
+     * Check if this session is for the given file
+     * @param {string|FilePath} filePath - File path to check
+     * @returns {boolean} True if session is for this file
+     */
+    isForFile(filePath) {
+        const comparePath = filePath instanceof FilePath ? filePath : new FilePath(filePath);
+        return this.filePath.equals(comparePath);
+    }
+
+    /**
+     * Get engagement score (0-100)
+     * Based on duration, movements, and scrolls
+     * @returns {number} Engagement score
+     */
+    getEngagementScore() {
+        const duration = this.getDuration();
+        const durationScore = Math.min((duration / 60000) * 40, 40); // Max 40 points for duration
+        const movementScore = Math.min((this.cursorMovements / 20) * 30, 30); // Max 30 points
+        const scrollScore = Math.min((this.scrollEvents / 10) * 30, 30); // Max 30 points
+        
+        return Math.min(durationScore + movementScore + scrollScore, 100);
+    }
+}
+
+module.exports = ReviewSession;

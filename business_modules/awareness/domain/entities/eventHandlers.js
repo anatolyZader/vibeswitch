@@ -2,6 +2,8 @@
  * Event Handlers
  * Handles all VS Code events for awareness monitoring
  * 
+ * Domain entity - uses ports for all infrastructure operations
+ * 
  * PRODUCTION-GRADE IMPROVEMENTS:
  * - Event batching: calls classifier once per event (not per change)
  * - Single callback per document: prevents double recording
@@ -12,33 +14,36 @@
  * - Mode-configurable classifier thresholds
  */
 
-const { getLogger } = require('../../../../logger');
 const { isNonCodeDocument, isSkippableUri, isPositionInRange } = require('../utils/utils');
 const ChangeClassifier = require('../utils/changeClassifier');
 const { buildDiffBullets } = require('../utils/diffBulletBuilder');
-// Keep minimal vscode import for types only (Range, Position, etc.)
-// All API calls should go through vscodeAdapter
-const vscode = require('vscode');
 
 class EventHandlers {
     /**
-     * @param {Object} agentSuggestionHandler - Agent suggestion handler
-     * @param {Object} debtManager - Debt manager
-     * @param {Object} sessionTracker - Session tracker
+     * @param {Object} agentSuggestionHandler - Agent suggestion handler (domain entity)
+     * @param {Object} debtManager - Debt manager (domain entity)
+     * @param {Object} sessionTracker - Session tracker (domain entity)
      * @param {Object} activeDocument - Active document reference
      * @param {Object} cursorPosition - Cursor position reference
      * @param {string} mode - Current mode ('vibe', 'dev') for classifier config
      * @param {Object} changeLedger - Change ledger for DIFF bullet tracking (optional)
-     * @param {Object} vscodeAdapter - VS Code adapter implementing IVSCodePort (optional for backward compatibility)
+     * @param {Object} options - Options object
+     * @param {IAwarenessVSCodePort} vscodePort - VS Code port (interface, required)
+     * @param {ILoggerPort} loggerPort - Logger port (interface, optional)
      */
-    constructor(agentSuggestionHandler, debtManager, sessionTracker, activeDocument, cursorPosition, mode = 'dev', changeLedger = null, options = {}, vscodeAdapter = null) {
+    constructor(agentSuggestionHandler, debtManager, sessionTracker, activeDocument, cursorPosition, mode = 'dev', changeLedger = null, options = {}, vscodePort, loggerPort = null) {
+        if (!vscodePort) {
+            throw new Error('EventHandlers requires vscodePort');
+        }
+        
         this.agentSuggestionHandler = agentSuggestionHandler;
         this.debtManager = debtManager;
         this.sessionTracker = sessionTracker;
         this.activeDocument = activeDocument;
         this.cursorPosition = cursorPosition;
         this.changeLedger = changeLedger; // DIFF bullet tracking
-        this.vscodeAdapter = vscodeAdapter; // VS Code adapter (Ports and Adapters pattern)
+        this.vscodePort = vscodePort; // VS Code port (interface)
+        this.loggerPort = loggerPort;
         
         // Production: Operational toggles
         this.options = {
@@ -131,7 +136,9 @@ class EventHandlers {
 
         // Rate-limited logging via logger's built-in rate limiter
         const logKey = `onTextChange:${uri}`;
-        getLogger().log(`AwarenessMonitor: Text change detected - scheme: ${scheme}, file: ${fileName}, changes: ${event.contentChanges.length}`, false, false, logKey);
+        if (this.loggerAdapter) {
+            this.loggerPort.log(`AwarenessMonitor: Text change detected - scheme: ${scheme}, file: ${fileName}, changes: ${event.contentChanges.length}`, false, false, logKey);
+        }
         
         // FIXED: Process ALL changes through classifier (including deletions)
         // Agents absolutely delete code (refactors, "remove unused imports", etc.)
@@ -151,15 +158,8 @@ class EventHandlers {
                     // DIFF bullet tracking: record batch event and generate bullets
                     if (this.changeLedger) {
                         const uri = document.uri.toString();
-                        // Use adapter if available, otherwise fallback to direct VS Code API (backward compatibility)
-                        const file = this.vscodeAdapter 
-                            ? this.vscodeAdapter.asRelativePath(document.uri)
-                            : (() => {
-                                const vscode = require('vscode');
-                                return this.vscodeAdapter 
-                                    ? this.vscodeAdapter.asRelativePath(document.uri)
-                                    : vscode.workspace.asRelativePath(document.uri);
-                            })();
+                        // Use VS Code adapter for relative path
+                        const file = this.vscodeAdapter.asRelativePath(document.uri);
                         const inserted = aggregatedChanges.reduce((sum, c) => sum + (c.text?.length || 0), 0);
                         // Fix: Use rangeLength property (handles multi-line deletions correctly)
                         const deleted = aggregatedChanges.reduce((sum, c) => sum + (c.rangeLength || 0), 0);
@@ -208,12 +208,14 @@ class EventHandlers {
                     if (isAI) {
                             const totalSize = aggregatedChanges.reduce((sum, c) => sum + c.text.length, 0);
                             const reasonsStr = classification.reasons.join('; ');
-                            getLogger().log(
-                            `AwarenessMonitor: ✅ AI change detected (confidence=${(classification.confidence * 100).toFixed(0)}%): size=${totalSize}, changes=${aggregatedChanges.length}, reasons=[${reasonsStr}], file=${document.fileName}`,
-                            false,
-                            false,
-                            `aiDetected:${uri}`
-                            );
+                            if (this.loggerAdapter) {
+                                this.loggerPort.log(
+                                    `AwarenessMonitor: ✅ AI change detected (confidence=${(classification.confidence * 100).toFixed(0)}%): size=${totalSize}, changes=${aggregatedChanges.length}, reasons=[${reasonsStr}], file=${document.fileName}`,
+                                    false,
+                                    false,
+                                    `aiDetected:${uri}`
+                                );
+                            }
                         // Fix: Record as single batch suggestion (not per-change)
                         // This prevents dozens of "pending suggestions" from a single AI refactor
                         if (this.agentSuggestionHandler) {
@@ -224,12 +226,14 @@ class EventHandlers {
                         // Fix: Formatters should not mark AI suggestions as adapted
                         // Treat formatter detection as "neutral" - don't call recordUserEdit
                         // This prevents auto-formatters from accidentally marking AI suggestions as adapted
-                            getLogger().log(
-                            `AwarenessMonitor: 🔧 Formatter detected: ${classification.reasons.join('; ')}`,
-                            false,
-                            false,
-                            `formatterDetected:${uri}`
+                        if (this.loggerAdapter) {
+                            this.loggerPort.log(
+                                `AwarenessMonitor: 🔧 Formatter detected: ${classification.reasons.join('; ')}`,
+                                false,
+                                false,
+                                `formatterDetected:${uri}`
                             );
+                        }
                         // Don't record formatter edits - they're not user edits and shouldn't affect suggestion status
                     } else if (classification.label === 'user') {
                         // Fix: Only record user edits for explicit 'user' label, not 'unknown'
@@ -252,7 +256,9 @@ class EventHandlers {
      * @param {vscode.FileCreateEvent} event - File create event
      */
     onFilesCreated(event) {
-        getLogger().log(`AwarenessMonitor: onFilesCreated called with ${event.files.length} files`, false, false, 'onFilesCreated');
+        if (this.loggerAdapter) {
+            this.loggerPort.log(`AwarenessMonitor: onFilesCreated called with ${event.files.length} files`, false, false, 'onFilesCreated');
+        }
         
         for (const fileUri of event.files) {
             // FIXED: Use isSkippableUri for URI-only checks
@@ -260,7 +266,9 @@ class EventHandlers {
                 continue;
             }
             
-            getLogger().log(`AwarenessMonitor: Processing file creation - ${fileUri.toString()}`, false, false, `fileCreated:${fileUri.toString()}`);
+            if (this.loggerAdapter) {
+                this.loggerPort.log(`AwarenessMonitor: Processing file creation - ${fileUri.toString()}`, false, false, `fileCreated:${fileUri.toString()}`);
+            }
             
             // Process file as suggestion
             // FIXED: Pass URI directly, not fsPath (works with remote schemes)
@@ -270,10 +278,14 @@ class EventHandlers {
                     filePath: null // Let processFileAsSuggestion handle path extraction from URI
                 }).then(suggestion => {
                     if (suggestion) {
-                        getLogger().log(`AwarenessMonitor: Detected AI file creation - ${suggestion.size} chars`, false, false, `fileCreatedSuccess:${fileUri.toString()}`);
+                        if (this.loggerAdapter) {
+                            this.loggerPort.log(`AwarenessMonitor: Detected AI file creation - ${suggestion.size} chars`, false, false, `fileCreatedSuccess:${fileUri.toString()}`);
+                        }
                     }
                 }).catch(err => {
-                    getLogger().log(`AwarenessMonitor: Error reading created file: ${err.message}`, true);
+                    if (this.loggerAdapter) {
+                        this.loggerPort.error('AwarenessMonitor: Error reading created file', err);
+                    }
                 });
             }
         }
@@ -306,25 +318,25 @@ class EventHandlers {
             // Fix: Remove size-based scan - rely only on saveCache (uri+version)
             // Size-based scan is O(n) and can skip legit distinct suggestions with same size
             if (this.agentSuggestionHandler) {
-                getLogger().log(`AwarenessMonitor: Large file saved - ${content.length} chars in ${document.fileName}`, false, false, `fileSaved:${uri}`);
+                if (this.loggerAdapter) {
+                    this.loggerPort.log(`AwarenessMonitor: Large file saved - ${content.length} chars in ${document.fileName}`, false, false, `fileSaved:${uri}`);
+                }
                 
                 // Fixed: Range math bug - lineCount is 1-based count, but line indices are 0-based
                 const lastLine = Math.max(0, document.lineCount - 1);
                 const lastLineText = document.lineAt(lastLine).text;
                 const lastChar = lastLineText.length;
                 
-                // Use vscodeAdapter.Range if available (Ports and Adapters pattern), otherwise fallback to vscode.Range
-                const Range = this.vscodeAdapter ? this.vscodeAdapter.Range : vscode.Range;
-                const suggestion = this.agentSuggestionHandler.createSuggestionObject({
+                // Use VS Code adapter for Range
+                const Range = this.vscodeAdapter.Range;
+                // Use service method to create and track suggestion
+                this.agentSuggestionHandler.createSuggestionAndTrack({
                     document: uri, // FIXED: Use URI string
                     range: new Range(0, 0, lastLine, lastChar),
                     text: content,
                     size: content.length,
                     isFileWrite: true
-                });
-                
-                // FIXED: Use URI as canonical identifier (works with remote workspaces)
-                this.agentSuggestionHandler.addSuggestionAndTrack(suggestion, content.length);
+                }, content.length);
                 
                 // Update cache (primary key: version)
                 this.saveCache.set(cacheKey, {
@@ -503,12 +515,7 @@ class EventHandlers {
                             // This prevents UX feeling delayed/stuck until next scheduled status check
                             if (this.agentSuggestionHandler) {
                                 this.agentSuggestionHandler.checkSuggestionStatus(suggestion.id);
-                                if (this.agentSuggestionHandler.updateFileColorsInExplorer) {
-                                    this.agentSuggestionHandler.updateFileColorsInExplorer();
-                                }
-                                if (this.agentSuggestionHandler.updateScore) {
-                                    this.agentSuggestionHandler.updateScore();
-                                }
+                                // updateFileColorsInExplorer and updateScore are handled by checkSuggestionStatus
                             }
                         }
                     }, 1000); // 1000ms dwell time
@@ -554,7 +561,7 @@ class EventHandlers {
             // Use adapter if available, otherwise fallback to direct VS Code API (backward compatibility)
             const textDocuments = this.vscodeAdapter 
                 ? this.vscodeAdapter.textDocuments
-                : (this.vscodeAdapter ? this.vscodeAdapter.textDocuments : vscode.workspace.textDocuments);
+                : this.vscodeAdapter.textDocuments;
             const previousDoc = textDocuments.find(
                 d => d.uri.toString() === this.previousActiveDocumentUri
             );

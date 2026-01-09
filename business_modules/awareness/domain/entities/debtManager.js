@@ -1,72 +1,72 @@
 /**
  * Debt Manager
  * Manages persistent tracking of unreviewed files and calculates debt scores
+ * 
+ * Domain entity - uses ports for all infrastructure operations
  */
 
-const { getLogger } = require('../../../../logger');
-const PersistInContext = require('../../infrastructure/persistInContext');
 const { normalizeToUri } = require('../utils/utils');
 
 class DebtManager {
     /**
-     * @param {Object} context - VS Code extension context (for backward compatibility)
      * @param {Function} onScoreUpdate - Callback for score updates
      * @param {Function} updateFileColorsInExplorer - Callback to update file colors
-     * @param {Object} persistenceAdapter - Persistence adapter implementing IPersistencePort (optional)
+     * @param {IAwarenessPersistencePort} persistencePort - Persistence port (interface)
+     * @param {ILoggerPort} loggerPort - Logger port (interface, optional)
      */
-    constructor(context, onScoreUpdate, updateFileColorsInExplorer = null, persistenceAdapter = null) {
-        this.context = context; // Keep for backward compatibility
+    constructor(onScoreUpdate, updateFileColorsInExplorer = null, persistencePort, loggerPort = null) {
+        if (!persistencePort) {
+            throw new Error('DebtManager requires persistencePort');
+        }
+        
         this.onScoreUpdate = onScoreUpdate;
         this.updateFileColorsInExplorer = updateFileColorsInExplorer;
+        this.persistencePort = persistencePort;
+        this.loggerPort = loggerPort;
         this.debt = new Map(); // URI string -> debt object (FIXED: use URI as canonical key)
-        
-        // Use persistence adapter if provided (Ports and Adapters pattern), otherwise fallback to PersistInContext
-        this.persistenceAdapter = persistenceAdapter;
-        this.persistence = context && !persistenceAdapter ? new PersistInContext(context, 'workspace') : null;
     }
 
     /**
      * Load debt from workspace storage
      */
     loadDebt() {
-        if (!this.persistenceAdapter && !this.persistence) return;
+        if (!this.persistencePort) return;
         
         try {
+            const stored = this.persistencePort.loadSync('debt');
+            // Convert object to Map (workspaceState stores as object)
             let debtData;
-            
-            // Use persistence adapter if available (Ports and Adapters pattern)
-            if (this.persistenceAdapter) {
-                const stored = this.persistenceAdapter.loadSync('debt');
-                // Convert object to Map (workspaceState stores as object)
-                if (stored instanceof Map) {
-                    debtData = stored;
-                } else if (stored && typeof stored === 'object') {
-                    debtData = new Map(Object.entries(stored));
-                } else {
-                    debtData = new Map();
-                }
+            if (stored instanceof Map) {
+                debtData = stored;
+            } else if (stored && typeof stored === 'object') {
+                debtData = new Map(Object.entries(stored));
             } else {
-                // Fallback to PersistInContext (backward compatibility)
-                debtData = this.persistence.loadAsMap('debt', new Map());
+                debtData = new Map();
             }
             
             this.debt = debtData;
             
-            getLogger().log(`AwarenessMonitor: Loaded ${this.debt.size} files with debt`);
+            if (this.loggerPort) {
+                this.loggerPort.log(`AwarenessMonitor: Loaded ${this.debt.size} files with debt`);
+            }
             
             // Clean up old debt (older than 7 days)
             const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
             for (const [path, debt] of this.debt.entries()) {
                 if (debt.modifiedAt < sevenDaysAgo) {
                     this.debt.delete(path);
-                    getLogger().log(`AwarenessMonitor: Removed stale debt for ${path}`);
+                    if (this.loggerPort) {
+                        this.loggerPort.log(`AwarenessMonitor: Removed stale debt for ${path}`);
+                    }
                 }
             }
             
             // Save cleaned up data
             this.saveDebt();
         } catch (error) {
-            console.error('AwarenessMonitor: Error loading debt', error);
+            if (this.loggerPort) {
+                this.loggerPort.error('AwarenessMonitor: Error loading debt', error);
+            }
             this.debt = new Map();
         }
     }
@@ -75,17 +75,11 @@ class DebtManager {
      * Save debt to workspace storage
      */
     saveDebt() {
-        if (!this.persistenceAdapter && !this.persistence) return;
+        if (!this.persistencePort) return;
         
-        // Use persistence adapter if available (Ports and Adapters pattern)
-        if (this.persistenceAdapter) {
-            // Convert Map to object for storage (workspaceState stores as object)
-            const debtObject = this.debt instanceof Map ? Object.fromEntries(this.debt) : this.debt;
-            this.persistenceAdapter.saveSync('debt', debtObject);
-        } else {
-            // Fallback to PersistInContext (backward compatibility)
-        this.persistence.saveSync('debt', this.debt);
-        }
+        // Convert Map to object for storage (workspaceState stores as object)
+        const debtObject = this.debt instanceof Map ? Object.fromEntries(this.debt) : this.debt;
+        this.persistencePort.saveSync('debt', debtObject);
     }
 
     /**

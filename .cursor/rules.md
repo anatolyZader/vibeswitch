@@ -408,11 +408,116 @@ This is a **pure Node.js (CommonJS) VS Code extension** - NO TypeScript.
 - **Classes**: PascalCase (e.g., `DebtManager`, `SessionTracker`)
 - **Constants**: UPPER_SNAKE_CASE (e.g., `DETECTION_CACHE_MS`)
 - **Private functions**: Prefix with underscore if truly private (e.g., `_internalHelper`)
-
+- **Module-specific naming**: In each module, controllers, services, ports, and adapters MUST include the module name as a prefix (e.g., `awarenessController.js`, `awarenessService.js`, `IAwarenessService.js`, `awarenessVSCodeAdapter.js`, `awarenessPersistenceAdapter.js`)
+- **Port naming convention**: Port interfaces MUST be named with the pattern `I` + Module name + Port name (e.g., `IAwarenessVSCodePort.js`, `IAwarenessPersistencePort.js`, `IAwarenessMessagingPort.js`, `ILoggerPort.js`, `IFileSystemPort.js`, `IIdGeneratorPort.js`, `IHashGeneratorPort.js`)
 ### Best Practices
 - **No TypeScript**: This is pure JavaScript - don't add type annotations or TS-specific syntax
-- **JSDoc comments**: Use JSDoc for function documentation: `/** @param {string} mode */`
+- **JSDoc comments**: Do not add JSDoc comments by default. Only add JSDoc when documenting:
+  - Public APIs (functions/classes exported from modules)
+  - Constructors with object-based dependency injection (e.g., `new AwarenessService({ vscodeAdapter, persistenceAdapter })`)
+  - Ports or interfaces (e.g., `*Port`, `*Service`, `*Adapter` classes)
+  - Avoid JSDoc for private helpers, internal functions, and implementation-heavy infrastructure code
 - **Consistent formatting**: Follow existing code style in the project
 - **Test coverage**: Write tests for new functionality in `test/suite/`
 - **Performance**: Be mindful of file system operations and API calls - cache when appropriate
 
+### Documentation Management
+- **All markdown documentation files MUST be placed in `/docs` directory** - When creating any new markdown files (documentation, explanations, changelogs, architecture notes, etc.), they must be created in the `/docs` folder at the project root
+- **Create `/docs` directory if it doesn't exist** - Before creating any markdown file, ensure the `/docs` directory exists in the root directory
+- **This applies to ALL markdown files** - Documentation files, explanation files, change logs, architecture documents, review notes, and any other `.md` files must be placed in `/docs` only
+- **No markdown files in root or other directories** - Do not create markdown documentation files in the root directory or other project directories; they must go in `/docs`
+### Testing & TDD Rules (STRICT)
+
+**ENFORCEMENT**: If you cannot show the failing test first, STOP and ask me for permission to proceed without TDD.
+
+#### Core TDD Workflow
+- **Always follow: RED → GREEN → REFACTOR**
+- If a request changes behavior, you MUST:
+  1. Propose/confirm acceptance criteria
+  2. Add/adjust tests first (RED)
+  3. Implement minimal production code to pass (GREEN)
+  4. Refactor with no behavior changes (REFACTOR)
+
+#### Output Format (Non-Negotiable)
+For any change that affects logic, provide in this order:
+1. **Acceptance Criteria** - Bullet list of observable behaviors
+2. **Test Plan** - What to test, which layers
+3. **New/Updated Tests** - Code blocks showing test code
+4. **Implementation** - Minimal code to make tests pass
+5. **Refactor** - Only if needed, with tests still passing
+
+#### Definition of Done (DoD)
+- No PR-level change is "done" unless:
+  - Tests added/updated
+  - All tests pass
+  - Edge cases covered
+  - No skipped tests
+  - No snapshot tests unless explicitly requested
+  - No reliance on real network/time/randomness without fakes
+
+#### Test Pyramid & Scope
+- **Prefer fast tests**:
+  - **Domain**: Unit tests (pure, no IO) — highest priority
+  - **Application/service**: Unit tests with ports mocked
+  - **Integration**: Limited, meaningful, uses real adapters only when needed
+  - **E2E**: Rare, only for critical flows
+
+#### Architectural Testing Boundaries (DDD / Hexagonal)
+- **Domain tests MUST NOT import**: DB clients, HTTP clients, filesystem, VS Code APIs, env vars, global process state
+- **Application tests**: Can mock ports (repositories, pubsub, auth, clock)
+- **Infrastructure tests**: Validate adapters in isolation (DB adapter, pubsub adapter)
+- **Cross-cut modules**: Test as libraries (pure functions where possible)
+
+#### Mandatory Test Categories (When Relevant)
+- **Happy path** - Normal operation
+- **Validation / Invariants** - Input validation and business rules
+- **Edge cases** - Empty, nullish, min/max, duplicates
+- **Error paths** - Port failures, timeouts, auth denied
+- **Idempotency** - Where commands/events can repeat
+- **Concurrency/race safety** - At least one test if code touches queues, debouncers, timers
+- **Event-driven behavior** - Emitted events + payload shape
+
+#### Anti-Patterns (Forbidden Unless Explicitly Requested)
+- ❌ Implementing features without tests
+- ❌ "Fixing tests" by weakening assertions
+- ❌ Disabling/flaky retries without root cause
+- ❌ Over-mocking internal functions; mock ports, not private methods
+- ❌ Testing implementation details instead of outcomes
+
+#### Jest Conventions (Node/JS)
+- Use table tests for variants
+- Use fake timers for debouncers/throttlers
+- Use deterministic clocks (inject Clock port)
+- Avoid global state; reset mocks between tests
+- Prefer explicit assertions over snapshots
+
+#### Minimal Changes Rule
+- The implementation must be the smallest change that makes tests pass
+- Refactor only after green
+- Refactor step must not change behavior; run tests after
+
+#### When Request is Ambiguous
+- **Do not code first**
+- Produce acceptance criteria + proposed tests
+- Then implement after approval
+
+#### Coverage Guidance (Pragmatic)
+- New domain logic: Aim for strong branch coverage via cases
+- Don't chase %; cover behaviors and invariants
+
+#### Test File Placement
+- **Domain**: `business_modules/<module>/domain/**` tested by `tests/business_modules/<module>/domain/**/*.test.js` (mirror structure)
+- **Application**: `business_modules/<module>/app/**` tested by `tests/business_modules/<module>/app/**/*.test.js`
+- **Infrastructure**: `business_modules/<module>/infrastructure/**` tested by `tests/business_modules/<module>/infrastructure/**/*.test.js`
+- **Cross-cut**: `cross-cut-modules/**` tested by `tests/cross-cut-modules/**/*.test.js`
+
+#### Commit-Style Steps (Mental Model)
+- **Commit 1**: Failing test(s)
+- **Commit 2**: Minimal code to pass
+- **Commit 3**: Refactor (if needed)
+
+#### Recommended Jest Setup
+- `testEnvironment: 'node'`
+- `clearMocks: true, restoreMocks: true`
+- Fake timers used per-test, not globally
+- Separate `test` script (fast, local) and `test:ci` (integration)

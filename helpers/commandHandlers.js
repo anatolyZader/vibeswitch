@@ -6,8 +6,8 @@
 const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
-const ui = require('../ui/ui');
-const userStatsUI = require('../ui/userStatsUI');
+const modeSwitcher = require('../ui/mode-switcher');
+const userStatsUI = require('../ui/stats-dashboard');
 
 /**
  * Create command handlers with dependency injection
@@ -19,8 +19,8 @@ const userStatsUI = require('../ui/userStatsUI');
  * @returns {Object} Command handlers map
  */
 function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state }) {
-    // Get vscodeAdapter from state for Ports and Adapters pattern
-    const vscodeAdapter = state.vscodeAdapter;
+    // Get vscodeAdapter from DI container for Ports and Adapters pattern
+    const vscodeAdapter = state.getAdapter('awareness', 'vscodeAdapter');
     
     // Helper functions to use adapter if available, fallback to direct vscode
     const showErrorMessage = vscodeAdapter ? vscodeAdapter.showErrorMessage.bind(vscodeAdapter) : vscode.window.showErrorMessage;
@@ -35,7 +35,7 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state 
         'vibeswitch.switchMode': async () => {
             try {
                 log(`VibeSwitch: switchMode command triggered, currentMode=${state.currentMode}`);
-                ui.showModePicker(
+                modeSwitcher.showModePicker(
                     state.currentMode,
                     state.usageStats,
                     async (mode) => {

@@ -32,7 +32,7 @@ class ExtensionState {
     
     /**
      * Get current mode
-     */`
+     */
     getMode() {
         return this.currentMode;
     }

@@ -1,13 +1,18 @@
 /**
  * Keep-All Detector
  * Detects when users rapidly accept multiple AI suggestions (potential "Keep All" pattern)
+ * 
+ * Domain entity - uses ports for all infrastructure operations
  */
 
-const { getLogger } = require('../../../../logger');
-
 class KeepAllDetector {
-    constructor(onKeepAll) {
+    /**
+     * @param {Function} onKeepAll - Callback when "keep all" pattern detected
+     * @param {ILoggerPort} loggerPort - Logger port (interface, optional)
+     */
+    constructor(onKeepAll, loggerPort = null) {
         this.onKeepAll = onKeepAll;
+        this.loggerPort = loggerPort;
         
         // "Keep All" detection - track rapid acceptances
         this.recentAcceptances = [];
@@ -61,7 +66,9 @@ class KeepAllDetector {
             const uniqueFiles = new Set(recent.map(e => e.document));
             const totalSize = recent.reduce((sum, e) => sum + e.size, 0);
             
-            getLogger().log(`AwarenessMonitor: "Keep All" detected - ${recent.length} suggestions accepted across ${uniqueFiles.size} files`);
+            if (this.loggerPort) {
+                this.loggerPort.log(`AwarenessMonitor: "Keep All" detected - ${recent.length} suggestions accepted across ${uniqueFiles.size} files`);
+            }
             
             // Call optional callback (e.g., for UsageStats)
             if (this.onKeepAll) {

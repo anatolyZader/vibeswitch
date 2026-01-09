@@ -1,24 +1,41 @@
 /**
  * File Watcher
  * Monitors file system for externally created files and scans existing files
+ * 
+ * Domain entity - uses ports for all infrastructure operations
  */
 
-// Keep minimal vscode import for types only
-// All API calls should go through vscodeAdapter
-const vscode = require('vscode');
-const fs = require('fs');
-const path = require('path');
-const { getLogger } = require('../../../../logger');
+const path = require('path'); // Pure utility library, no I/O - acceptable in domain
 const { CODE_EXTENSIONS, isNonCodeDocument } = require('../utils/utils');
 
 class FileWatcher {
-    constructor(agentSuggestionHandler, debtManager, updateScore, onScoreUpdate, vscodeAdapter = null) {
+    /**
+     * @param {Object} agentSuggestionHandler - Agent suggestion handler (domain entity)
+     * @param {Object} debtManager - Debt manager (domain entity)
+     * @param {Function} updateScore - Score update callback
+     * @param {Function} onScoreUpdate - Score update callback
+     * @param {IAwarenessVSCodePort} vscodePort - VS Code port (interface)
+     * @param {IFileSystemPort} fileSystemPort - File system port (interface)
+     * @param {ILoggerPort} loggerPort - Logger port (interface)
+     */
+    constructor(agentSuggestionHandler, debtManager, updateScore, onScoreUpdate, vscodePort, fileSystemPort, loggerPort) {
+        if (!vscodePort) {
+            throw new Error('FileWatcher requires vscodePort');
+        }
+        if (!fileSystemPort) {
+            throw new Error('FileWatcher requires fileSystemPort');
+        }
+        if (!loggerPort) {
+            throw new Error('FileWatcher requires loggerPort');
+        }
+        
         this.agentSuggestionHandler = agentSuggestionHandler;
         this.debtManager = debtManager;
         this.updateScore = updateScore;
         this.onScoreUpdate = onScoreUpdate;
-        // VS Code adapter (Ports and Adapters pattern) - optional for backward compatibility
-        this.vscodeAdapter = vscodeAdapter;
+        this.vscodePort = vscodePort;
+        this.fileSystemPort = fileSystemPort;
+        this.loggerPort = loggerPort;
         
         // File system watcher for externally created files
         this.fileSystemWatcher = null;
@@ -30,12 +47,9 @@ class FileWatcher {
      * Set up file system watcher to detect externally created files (terminal, etc.)
      */
     setupFileSystemWatcher() {
-        // Use vscodeAdapter if available (Ports and Adapters pattern), otherwise fallback to direct vscode
-        const workspaceFolders = this.vscodeAdapter 
-            ? this.vscodeAdapter.workspaceFolders 
-            : vscode.workspace.workspaceFolders;
+        const workspaceFolders = this.vscodePort.workspaceFolders;
         if (!workspaceFolders || workspaceFolders.length === 0) {
-            getLogger().log('AwarenessMonitor: No workspace folders, skipping file system watcher');
+            this.loggerPort.log('AwarenessMonitor: No workspace folders, skipping file system watcher');
             return;
         }
 
@@ -47,18 +61,18 @@ class FileWatcher {
             }
 
             try {
-                getLogger().log(`AwarenessMonitor: Setting up file system watcher for ${folderPath}`);
+                this.loggerPort.log(`AwarenessMonitor: Setting up file system watcher for ${folderPath}`);
                 
-                // Watch for file creation events
-                const watcher = fs.watch(folderPath, { recursive: true }, (eventType, filename) => {
+                // Watch for file creation events using file system adapter
+                const watcher = this.fileSystemPort.watch(folderPath, { recursive: true }, (eventType, filename) => {
                     if (!filename) return;
                     
                     const filePath = path.join(folderPath, filename);
                     
                     // Only process 'rename' events (which includes file creation)
                     if (eventType === 'rename') {
-                        // Check if file exists (it was created, not deleted)
-                        fs.stat(filePath, (err, stats) => {
+                        // Check if file exists (it was created, not deleted) using file system adapter
+                        this.fileSystemPort.stat(filePath, (err, stats) => {
                             if (err) {
                                 // File doesn't exist (was deleted), ignore
                                 return;
@@ -80,7 +94,7 @@ class FileWatcher {
                                     }
                                 }
                                 
-                                getLogger().log(`AwarenessMonitor: Externally created file detected: ${filePath}`);
+                                this.loggerPort.log(`AwarenessMonitor: Externally created file detected: ${filePath}`);
                                 this.handleExternallyCreatedFile(filePath);
                             }
                         });
@@ -88,16 +102,14 @@ class FileWatcher {
                 });
 
                 watcher.on('error', (err) => {
-                    getLogger().log(`AwarenessMonitor: File system watcher error: ${err.message}`);
-                    console.error('AwarenessMonitor: File system watcher error:', err);
+                    this.loggerPort.error(`AwarenessMonitor: File system watcher error: ${err.message}`, err);
                 });
 
                 this.fileSystemWatcher = watcher;
                 this.watchedDirectories.add(folderPath);
-                getLogger().log(`AwarenessMonitor: File system watcher active for ${folderPath}`);
+                this.loggerPort.log(`AwarenessMonitor: File system watcher active for ${folderPath}`);
             } catch (error) {
-                getLogger().log(`AwarenessMonitor: Failed to set up file system watcher for ${folderPath}: ${error.message}`);
-                console.error('AwarenessMonitor: Failed to set up file system watcher:', error);
+                this.loggerPort.error(`AwarenessMonitor: Failed to set up file system watcher for ${folderPath}`, error);
             }
         }
     }
@@ -113,9 +125,8 @@ class FileWatcher {
             return; // Not a code file
         }
 
-        // Create a URI for the file
-        // Use vscodeAdapter.Uri if available (Ports and Adapters pattern), otherwise fallback to vscode.Uri
-        const Uri = this.vscodeAdapter ? this.vscodeAdapter.Uri : vscode.Uri;
+        // Create a URI for the file using VS Code adapter
+        const Uri = this.vscodePort.Uri;
         const fileUri = Uri.file(filePath);
         
         // Check scheme (skip virtual documents)
@@ -123,7 +134,7 @@ class FileWatcher {
             return;
         }
 
-        getLogger().log(`AwarenessMonitor: Processing externally created file: ${filePath}`);
+        this.loggerPort.log(`AwarenessMonitor: Processing externally created file: ${filePath}`);
         
         // Process file as suggestion
         if (this.agentSuggestionHandler) {
@@ -133,10 +144,10 @@ class FileWatcher {
                 filePath: filePath
             }).then(suggestion => {
                 if (suggestion) {
-                    getLogger().log(`AwarenessMonitor: Detected externally created file with content - ${suggestion.size} chars`);
+                    this.loggerPort.log(`AwarenessMonitor: Detected externally created file with content - ${suggestion.size} chars`);
                 }
             }).catch(err => {
-                getLogger().log(`AwarenessMonitor: Error reading externally created file: ${err.message}`, true);
+                this.loggerPort.error(`AwarenessMonitor: Error reading externally created file`, err);
             });
         }
     }
@@ -146,16 +157,13 @@ class FileWatcher {
      * Called on startup to catch files that were created before the extension was active
      */
     scanExistingFiles() {
-        // Use vscodeAdapter if available (Ports and Adapters pattern), otherwise fallback to direct vscode
-        const workspaceFolders = this.vscodeAdapter 
-            ? this.vscodeAdapter.workspaceFolders 
-            : vscode.workspace.workspaceFolders;
+        const workspaceFolders = this.vscodePort.workspaceFolders;
         if (!workspaceFolders || workspaceFolders.length === 0) {
-            getLogger().log('AwarenessMonitor: No workspace folders found, skipping file scan');
+            this.loggerPort.log('AwarenessMonitor: No workspace folders found, skipping file scan');
             return;
         }
 
-        getLogger().log('AwarenessMonitor: Scanning existing files for debt...');
+        this.loggerPort.log('AwarenessMonitor: Scanning existing files for debt...');
         
         const ignoreDirs = ['node_modules', '.git', '.vscode', 'dist', 'build', 'out', 'target', '.next', '.cache'];
         
@@ -164,7 +172,8 @@ class FileWatcher {
         
         const scanDirectory = (dirPath) => {
             try {
-                const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+                // Use file system adapter for directory reading
+                const entries = this.fileSystemPort.readdirSync(dirPath, { withFileTypes: true });
                 
                 for (const entry of entries) {
                     const fullPath = path.join(dirPath, entry.name);
@@ -192,12 +201,12 @@ class FileWatcher {
                         continue; // Already tracked
                     }
                     
-                    // Check file content
+                    // Check file content using file system adapter
                     try {
-                        const content = fs.readFileSync(fullPath, 'utf8');
+                        const content = this.fileSystemPort.readFileSync(fullPath, 'utf8');
                         if (content.trim().length > 0) {
                             // File has content and isn't in debt yet - add it
-                            getLogger().log(`AwarenessMonitor: Found existing file to add to debt: ${fullPath}`);
+                            this.loggerPort.log(`AwarenessMonitor: Found existing file to add to debt: ${fullPath}`);
                             this.handleExternallyCreatedFile(fullPath);
                             added++;
                         }
@@ -208,18 +217,18 @@ class FileWatcher {
                 }
             } catch (err) {
                 // Skip directories we can't read
-                getLogger().log(`AwarenessMonitor: Error scanning directory ${dirPath}: ${err.message}`);
+                this.loggerPort.error(`AwarenessMonitor: Error scanning directory ${dirPath}`, err);
             }
         };
         
         // Scan each workspace folder
         for (const folder of workspaceFolders) {
             const folderPath = folder.uri.fsPath;
-            getLogger().log(`AwarenessMonitor: Scanning workspace folder: ${folderPath}`);
+            this.loggerPort.log(`AwarenessMonitor: Scanning workspace folder: ${folderPath}`);
             scanDirectory(folderPath);
         }
         
-        getLogger().log(`AwarenessMonitor: File scan complete: ${scanned} files scanned, ${added} files added to debt`);
+        this.loggerPort.log(`AwarenessMonitor: File scan complete: ${scanned} files scanned, ${added} files added to debt`);
         
         // Trigger score update after scan (even if no files added, to refresh UI)
         setTimeout(() => {
@@ -227,7 +236,7 @@ class FileWatcher {
                 this.updateScore();
             }
             if (this.onScoreUpdate) {
-                getLogger().log('AwarenessMonitor: Triggering score update callback after scan...');
+                this.loggerPort.log('AwarenessMonitor: Triggering score update callback after scan...');
                 this.onScoreUpdate();
             }
         }, added > 0 ? 2000 : 500); // Longer delay if files were added (to allow async file reading to complete)
@@ -240,7 +249,7 @@ class FileWatcher {
         if (this.fileSystemWatcher) {
             this.fileSystemWatcher.close();
             this.fileSystemWatcher = null;
-            getLogger().log('AwarenessMonitor: File system watcher closed');
+            this.loggerPort.log('AwarenessMonitor: File system watcher closed');
         }
         this.watchedDirectories.clear();
         this.recentlyCreatedFiles.clear();
@@ -264,32 +273,3 @@ class FileWatcher {
 }
 
 module.exports = FileWatcher;
-
-// @ai
-// Arbitrary utility function for demonstration
-function calculateFileHash(filePath) {
-    // @ai
-    const crypto = require('crypto');
-    const fs = require('fs');
-    // @ai
-    try {
-        const content = fs.readFileSync(filePath);
-        return crypto.createHash('md5').update(content).digest('hex');
-    } catch (err) {
-        return null;
-    }
-}
-
-// @ai
-// Some random configuration object
-const watcherConfig = {
-    maxRetries: 3,
-    retryDelay: 1000,
-    enableDebugMode: false,
-    customFilters: []
-};
-
-// @ai
-// Export additional utility
-module.exports.calculateFileHash = calculateFileHash;
-module.exports.watcherConfig = watcherConfig;

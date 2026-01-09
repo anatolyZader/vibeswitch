@@ -2,6 +2,8 @@
  * Change Ledger
  * Stores batch events per document for DIFF bullet generation and enforcement
  * 
+ * Domain entity - uses ports for all infrastructure operations
+ * 
  * Tracks:
  * - Observed diffs (editor-level batches with classification)
  * - Declared diffs (DIFF bullet skeletons)
@@ -10,18 +12,25 @@
  * Fix: Buffered writes to prevent write amplification and race conditions
  */
 
-const crypto = require('crypto');
-
 class ChangeLedger {
     /**
-     * @param {Object} context - VS Code extension context (for backward compatibility)
      * @param {number} maxEntries - Maximum entries to keep (default: 2000)
      * @param {number} flushIntervalMs - Flush interval in milliseconds (default: 1000)
-     * @param {Object} persistenceAdapter - Persistence adapter implementing IPersistencePort (optional)
+     * @param {IAwarenessPersistencePort} persistencePort - Persistence port (interface, required)
+     * @param {IHashGeneratorPort} hashGeneratorPort - Hash generator port (interface, required)
+     * @param {ILoggerPort} loggerPort - Logger port (interface, optional)
      */
-    constructor(context, maxEntries = 2000, flushIntervalMs = 1000, persistenceAdapter = null) {
-        this.context = context; // Keep for backward compatibility
-        this.persistenceAdapter = persistenceAdapter; // Ports and Adapters pattern
+    constructor(maxEntries = 2000, flushIntervalMs = 1000, persistencePort, hashGeneratorPort, loggerPort = null) {
+        if (!persistencePort) {
+            throw new Error('ChangeLedger requires persistencePort');
+        }
+        if (!hashGeneratorPort) {
+            throw new Error('ChangeLedger requires hashGeneratorPort');
+        }
+        
+        this.persistencePort = persistencePort;
+        this.hashGeneratorPort = hashGeneratorPort;
+        this.loggerPort = loggerPort;
         this.maxEntries = maxEntries;
         this.key = 'vibeswitch.changeLedger.v1';
         this.ckKey = 'vibeswitch.changeLedger.checkpoint.v1';
@@ -38,32 +47,14 @@ class ChangeLedger {
         this._activationTime = Date.now();
     }
 
-    /**
-     * Load all entries from workspace state (with caching)
-     * @returns {Array} Array of ledger entries
-     * @private
-     */
     _load() {
         if (this._memEntries === null) {
-            // Use persistence adapter if available (Ports and Adapters pattern)
-            if (this.persistenceAdapter) {
-                this._memEntries = this.persistenceAdapter.loadSync(this.key) || [];
-            } else if (this.context && this.context.workspaceState) {
-                // Fallback to direct context access (backward compatibility)
-            this._memEntries = this.context.workspaceState.get(this.key, []);
-            } else {
-                this._memEntries = [];
-            }
+            // Use persistence adapter for loading
+            this._memEntries = this.persistenceAdapter.loadSync(this.key) || [];
         }
         return this._memEntries;
     }
 
-    /**
-     * Flush entries to workspace state (async, serialized)
-     * Fix: Queue additional flush if one is pending to prevent lost writes
-     * @returns {Promise<void>}
-     * @private
-     */
     async _flush() {
         // Mutex: prevent concurrent flushes, but queue another if needed
         if (this._flushPending) {
@@ -82,14 +73,8 @@ class ChangeLedger {
                 this._memEntries.splice(0, this._memEntries.length - this.maxEntries);
             }
             
-            // Fix: Await the async update
-            // Use persistence adapter if available (Ports and Adapters pattern)
-            if (this.persistenceAdapter) {
-                await this.persistenceAdapter.save(this.key, this._memEntries);
-            } else if (this.context && this.context.workspaceState) {
-                // Fallback to direct context access (backward compatibility)
-            await this.context.workspaceState.update(this.key, this._memEntries);
-            }
+            // Use persistence adapter for saving
+            await this.persistenceAdapter.save(this.key, this._memEntries);
             this._dirty = false;
         } finally {
             this._flushPending = false;
@@ -101,26 +86,22 @@ class ChangeLedger {
                 // queueMicrotask is available in Node.js and VS Code extension host
                 if (typeof queueMicrotask === 'function') {
                     queueMicrotask(() => this._flush().catch(err => {
-                        const { getLogger } = require('../../../../logger');
-                        getLogger().log(`ChangeLedger: Queued flush error: ${err.message}`, true);
+                        if (this.loggerAdapter) {
+                            this.loggerPort.error('ChangeLedger: Queued flush error', err);
+                        }
                     }));
                 } else {
                     // Fallback for older Node versions
                     Promise.resolve().then(() => this._flush().catch(err => {
-                        const { getLogger } = require('../../../../logger');
-                        getLogger().log(`ChangeLedger: Queued flush error: ${err.message}`, true);
+                        if (this.loggerAdapter) {
+                            this.loggerPort.error('ChangeLedger: Queued flush error', err);
+                        }
                     }));
                 }
             }
         }
     }
 
-    /**
-     * Schedule a flush (debounced)
-     * Fix: Coalesce flush calls - if timer already set, keep earliest scheduled time
-     * This reduces timer churn under bursts
-     * @private
-     */
     _scheduleFlush() {
         // Fix: If timer already scheduled, don't reset it (coalesce to earliest flush)
         // This reduces timer churn and ensures we don't delay flushes unnecessarily
@@ -133,45 +114,23 @@ class ChangeLedger {
             this._flush().catch(err => {
                 // Log but don't throw - ledger writes shouldn't crash the extension
                 const { getLogger } = require('../logger');
-                getLogger().log(`ChangeLedger: Flush error: ${err.message}`, true);
+                if (this.loggerAdapter) {
+                    this.loggerPort.error('ChangeLedger: Flush error', err);
+                }
             });
         }, this._flushIntervalMs);
     }
 
-    /**
-     * Generate a unique batch ID
-     * @returns {string} Batch ID
-     * @private
-     */
     _generateBatchId() {
-        // Use crypto.randomUUID() if available, fallback to timestamp + random
-        if (typeof crypto.randomUUID === 'function') {
-            return crypto.randomUUID();
+        // Use hash generator adapter for ID generation (use hash of timestamp + random)
+        // Note: This method should ideally use IIdGeneratorPort, but for now we use hashGenerator
+        const random = Math.random().toString(36).substring(2, 15);
+        const timestamp = Date.now().toString();
+        return this.hashGeneratorAdapter.createHash('md5', timestamp + random).substring(0, 36);
         }
         return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     }
 
-    /**
-     * Append a new entry to the ledger
-     * Fix: Uses in-memory buffer + scheduled flush to prevent write amplification
-     * @param {Object} entry - Entry to append
-     *   - {string} batchId - Batch ID (auto-generated if not provided for 'batch' kind)
-     *   - {number} ts - Timestamp
-     *   - {string} uri - Document URI
-     *   - {string} file - Workspace-relative file path
-     *   - {string} label - Classification label (ai/user/formatter/unknown)
-     *   - {number} confidence - Classification confidence
-     *   - {Array<string>} reasons - Classification reasons
-     *   - {number} changeCount - Number of changes in batch
-     *   - {number} inserted - Total characters inserted
-     *   - {number} deleted - Total characters deleted
-     *   - {number} lineSpan - Line span of changes
-     *   - {number} distinctRangeCount - Number of distinct ranges
-     *   - {string} kind - Entry kind ('batch' or 'diff_bullets')
-     *   - {Array<string>} bullets - DIFF bullets (if kind is 'diff_bullets')
-     *   - {string} batchId - For diff_bullets, links to batch entry (auto-linked if not provided)
-     * @returns {string} The batchId (for linking diff_bullets)
-     */
     append(entry) {
         const entries = this._load();
         let batchId = entry.batchId;
@@ -204,10 +163,9 @@ class ChangeLedger {
             }
             
             // Fix: Invariant check in dev - log error if still no batchId found
-            if (!batchId && process.env.NODE_ENV !== 'production') {
-                const { getLogger } = require('../logger');
+            if (!batchId && process.env.NODE_ENV !== 'production' && this.loggerAdapter) {
                 const recentTail = entries.slice(-5).map(e => `${e.kind}:${e.uri || e.file || 'unknown'}`).join(', ');
-                getLogger().log(`ChangeLedger: diff_bullets entry missing batchId for ${entry.uri || entry.file || 'unknown'}. Recent entries: ${recentTail}`, true);
+                this.loggerPort.log(`ChangeLedger: diff_bullets entry missing batchId for ${entry.uri || entry.file || 'unknown'}. Recent entries: ${recentTail}`);
             }
         }
         
@@ -222,10 +180,6 @@ class ChangeLedger {
         return batchId;
     }
 
-    /**
-     * Force immediate flush (for dispose/critical moments)
-     * @returns {Promise<void>}
-     */
     async flush() {
         if (this._flushTimer) {
             clearTimeout(this._flushTimer);
@@ -234,14 +188,6 @@ class ChangeLedger {
         await this._flush();
     }
 
-    /**
-     * Set a checkpoint (marks "reviewed up to here")
-     * Fix: Richer checkpoint payload with reason and metadata
-     * @param {Object} options - Checkpoint options
-     *   - {string} reason - Reason for checkpoint ('markReviewed', 'gitCommit', etc.)
-     *   - {string} mode - Current mode ('vibe', 'dev')
-     *   - {string} workspaceFolder - Workspace folder path
-     */
     async checkpointNow(options = {}) {
         const checkpoint = {
             ts: Date.now(),
@@ -250,30 +196,13 @@ class ChangeLedger {
             workspaceFolder: options.workspaceFolder || null
         };
         
-        // Use persistence adapter if available (Ports and Adapters pattern)
-        if (this.persistenceAdapter) {
-            await this.persistenceAdapter.save(this.ckKey, checkpoint);
-        } else if (this.context && this.context.workspaceState) {
-            // Fallback to direct context access (backward compatibility)
-        await this.context.workspaceState.update(this.ckKey, checkpoint);
-        }
+        // Use persistence adapter for saving checkpoint
+        await this.persistenceAdapter.save(this.ckKey, checkpoint);
     }
 
-    /**
-     * Get checkpoint info
-     * @returns {Object|null} Checkpoint object or null
-     */
     getCheckpoint() {
-        // Use persistence adapter if available (Ports and Adapters pattern)
-        let checkpoint;
-        if (this.persistenceAdapter) {
-            checkpoint = this.persistenceAdapter.loadSync(this.ckKey) || null;
-        } else if (this.context && this.context.workspaceState) {
-            // Fallback to direct context access (backward compatibility)
-            checkpoint = this.context.workspaceState.get(this.ckKey, null);
-        } else {
-            checkpoint = null;
-        }
+        // Use persistence adapter for loading checkpoint
+        const checkpoint = this.persistenceAdapter.loadSync(this.ckKey) || null;
         
         // Fix: If checkpoint is 0 or missing, use activation time
         if (!checkpoint) {
@@ -288,11 +217,6 @@ class ChangeLedger {
         return checkpoint;
     }
 
-    /**
-     * Get all entries since the last checkpoint
-     * Fix: Uses activation time as default, not 0
-     * @returns {Array} Entries since checkpoint
-     */
     getSinceCheckpoint() {
         const checkpoint = this.getCheckpoint();
         const since = checkpoint ? checkpoint.ts : this._activationTime;
