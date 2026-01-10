@@ -1,6 +1,10 @@
 /**
- * Suggestion - Domain entity representing an AI-generated code suggestion
+ * Suggestion - Domain entity 
  * 
+  **Represents**: An AI-generated code suggestion that needs review
+- **Scope**: Only AI-generated changes that become "suggestions"
+- **Lifecycle**: Long-lived, tracked until resolved (accepted/rejected/adapted)
+- **When Created**: Only after a `Change` is classified as AI-generated
  * This is a core domain entity with identity (id) that encapsulates
  * the business concept of an AI suggestion and its lifecycle state.
  */
@@ -17,6 +21,9 @@ class Suggestion {
      * @param {boolean} options.isExternalCreation - Whether file was created externally
      * @param {boolean} options.isFileWrite - Whether this is a file write operation
      * @param {number} options.timestamp - Creation timestamp (default: Date.now())
+     * @param {string} options.classificationLabel - Classification label from Change entity ('ai')
+     * @param {number} options.classificationConfidence - Classification confidence (0-1)
+     * @param {Array<string>} options.classificationReasons - Classification reasons
      */
     constructor(id, document, range, text, size, options = {}) {
         if (!id) {
@@ -55,6 +62,11 @@ class Suggestion {
         this.isFileCreation = options.isFileCreation || false;
         this.isExternalCreation = options.isExternalCreation || false;
         this.isFileWrite = options.isFileWrite || false;
+        
+        // Classification metadata (preserved from Change entity)
+        this.classificationLabel = options.classificationLabel || 'ai'; // Default to 'ai' since only AI creates suggestions
+        this.classificationConfidence = options.classificationConfidence || null;
+        this.classificationReasons = options.classificationReasons || [];
     }
 
     /**

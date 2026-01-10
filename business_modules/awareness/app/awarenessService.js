@@ -10,8 +10,11 @@ const DebtService = require('./debtService');
 const ChangeLedgerService = require('./changeLedgerService');
 const SessionService = require('./sessionService');
 const FileWatcherService = require('./fileWatcherService');
-const EventService = require('./eventService');
 const SuggestionService = require('./suggestionService');
+const ClassificationService = require('./classificationService');
+
+// Import input layer
+const AwarenessEventListener = require('../input/awarenessEventListener');
 
 // Import domain services
 const ScoreCalculator = require('../domain/services/scoreCalculator');
@@ -21,7 +24,8 @@ const KeepAllDetector = require('../domain/services/keepAllDetector');
 const SuggestionAggregate = require('../domain/aggregates/suggestionAggregate');
 
 // Import domain utilities
-const { rangesOverlap } = require('../domain/utils/utils');
+const { rangesOverlap, isPositionInRange: checkPositionInRange } = require('../domain/utils/utils');
+const { buildDiffBullets } = require('../domain/utils/diffBulletBuilder');
 
 // Import domain events
 const AISuggestionEvent = require('../domain/events/aiSuggestionEvent');
@@ -83,6 +87,7 @@ class AwarenessService extends IAwarenessService {
         this.sessionTracker = null;
         this.fileWatcher = null;
         this.changeLedger = null;
+        this.classificationService = null; // Classification service
         this.eventHandlers = null;
         this.keepAllDetector = null;
         this.scoreCalculator = null;
@@ -90,8 +95,6 @@ class AwarenessService extends IAwarenessService {
         // State
         this.context = null;
         this.updateFileColorsInExplorer = null;
-        this.activeDocument = { value: null };
-        this.cursorPosition = { value: null };
         this.disposables = [];
         this.updateTimer = null;
         this.isActive = false;
@@ -117,8 +120,9 @@ class AwarenessService extends IAwarenessService {
      * @param {Object} context - VS Code extension context
      * @param {Function} updateFileColorsInExplorer - Callback to update file colors in Explorer
      * @param {string} mode - Current mode ('vibe', 'dev') for classifier config
+     * @param {AwarenessController} controller - Awareness controller instance (required for event listener)
      */
-    async start(context, updateFileColorsInExplorer = null, mode = 'dev') {
+    async start(context, updateFileColorsInExplorer = null, mode = 'dev', controller = null) {
         if (!context) {
             throw new Error('AwarenessService.start() called with null/undefined context');
         }
@@ -213,17 +217,26 @@ class AwarenessService extends IAwarenessService {
             this.loggerAdapter // Adapter implements ILoggerPort
         );
 
-        this.eventHandlers = new EventService(
-            this.suggestionService, // Pass suggestionService
-            this.debtService,
-            this.sessionTracker,
-            this.activeDocument,
-            this.cursorPosition,
-            mode,
-            this.changeLedger,
-            {},
-            this.vscodeAdapter, // Adapter implements IAwarenessVSCodePort
-            this.loggerAdapter // Adapter implements ILoggerPort
+        // Create classification service
+        this.classificationService = new ClassificationService({
+            idGeneratorPort: this.idGeneratorAdapter,
+            mode: mode,
+            debounceMs: 200,
+            loggerPort: this.loggerAdapter,
+            vscodeAdapter: this.vscodeAdapter,
+            recordChangeBatch: (entry) => this.recordChangeBatch(entry),
+            generateDiffBullets: (document, rawChanges, classification) => this.generateDiffBullets(document, rawChanges, classification),
+            handleAISuggestionBatch: (document, changes) => this.handleAISuggestionBatch(document, changes),
+            handleUserEditBatch: (document, changes) => this.handleUserEditBatch(document, changes)
+        });
+
+        // Create event listener in input layer (requires controller)
+        if (!controller) {
+            throw new Error('AwarenessService.start() requires controller parameter for event listener');
+        }
+        
+        this.eventHandlers = new AwarenessEventListener(
+            controller // Pass controller (input layer)
         );
         
         // Register event listeners using adapters
@@ -334,6 +347,13 @@ class AwarenessService extends IAwarenessService {
         if (this.eventHandlers) {
             await safe('disposeEventHandlers', async () => {
                 await this.eventHandlers.dispose();
+            });
+        }
+        
+        // Dispose classification service
+        if (this.classificationService) {
+            safe('disposeClassificationService', () => {
+                this.classificationService.dispose();
             });
         }
         
@@ -619,6 +639,264 @@ class AwarenessService extends IAwarenessService {
                 this.vscodeAdapter.workspaceFolders.map(f => f.uri.fsPath) : [],
             recentAcceptances: this.keepAllDetector ? this.keepAllDetector.getRecentAcceptanceCount() : 0
         };
+    }
+    
+    // ============================================
+    // Event Handling Methods - Called by Controller
+    // ============================================
+    
+    /**
+     * Classify text document change event
+     * @param {vscode.TextDocumentChangeEvent} event - VS Code text document change event
+     * @param {Function} onClassified - Callback (document, classification, changes[])
+     */
+    classifyTextChange(event, onClassified) {
+        if (!this.classificationService) {
+            return;
+        }
+        
+        this.classificationService.classifyEvent(event, (document, classification, changes) => {
+            // Process classification results (handles routing, batch recording, diff bullets)
+            this.classificationService.handleClassifiedChanges(document, classification, changes);
+            
+            // Call the provided callback (for event listener compatibility)
+            if (onClassified) {
+                onClassified(document, classification, changes);
+            }
+        });
+    }
+    
+    /**
+     * Handle classified changes (delegates to classification service)
+     * @param {vscode.TextDocument} document - The document
+     * @param {Object} classification - Classification result {label, confidence, reasons, meta}
+     * @param {Array<Change>} changes - Array of Change domain entities
+     */
+    handleClassifiedChanges(document, classification, changes) {
+        if (this.classificationService) {
+            this.classificationService.handleClassifiedChanges(document, classification, changes);
+        }
+    }
+    
+    /**
+     * Handle AI suggestion batch (from text change classification)
+     * @param {vscode.TextDocument} document - The document
+     * @param {Array<Change>} changes - Array of Change domain entities
+     */
+    handleAISuggestionBatch(document, changes) {
+        if (this.suggestionService) {
+            this.suggestionService.recordAISuggestionBatch(document, changes);
+        }
+    }
+    
+    /**
+     * Handle user edit batch (from text change classification)
+     * @param {vscode.TextDocument} document - The document
+     * @param {Array<Change>} changes - Array of Change domain entities
+     */
+    handleUserEditBatch(document, changes) {
+        if (this.suggestionService) {
+            this.suggestionService.recordUserEditBatch(document, changes);
+        }
+    }
+    
+    /**
+     * Handle file created event
+     * @param {vscode.Uri} fileUri - The file URI
+     * @param {Object} options - Options
+     * @returns {Promise} Promise resolving to suggestion or null
+     */
+    async handleFileCreated(fileUri, options = {}) {
+        if (this.suggestionService) {
+            return await this.suggestionService.processFileAsSuggestion(fileUri, options);
+        }
+        return null;
+    }
+    
+    /**
+     * Handle file saved event
+     * @param {vscode.TextDocument} document - The saved document
+     * @param {Object} options - Options with range, text, size, isFileWrite
+     */
+    handleFileSaved(document, options) {
+        if (this.suggestionService) {
+            const uri = document.uri.toString();
+            this.suggestionService.createSuggestionAndTrack({
+                document: uri,
+                range: options.range,
+                text: options.text,
+                size: options.size,
+                isFileWrite: options.isFileWrite
+            }, options.size);
+        }
+    }
+    
+    /**
+     * Handle file opened event
+     * @param {string} uri - Document URI string
+     */
+    handleFileOpened(uri) {
+        const hasUnreviewedDebt = this.debtService && this.debtService.hasUnreviewedDebt(uri);
+        const hasPendingSuggestions = this.suggestionService ? 
+            this.suggestionService.hasPendingSuggestions(uri) : false;
+        
+        if (hasUnreviewedDebt || hasPendingSuggestions) {
+            // Initialize review session tracking
+            if (this.sessionTracker) {
+                this.sessionTracker.initializeSession(uri);
+            }
+        }
+    }
+    
+    /**
+     * Handle cursor move event
+     * @param {string} uri - Document URI string
+     * @param {vscode.Position} position - Cursor position
+     */
+    handleCursorMove(uri, position) {
+        // Update review tracking if this file has debt
+        if (this.sessionTracker) {
+            this.sessionTracker.updateCursorActivity(uri);
+        }
+    }
+    
+    /**
+     * Handle scroll event
+     * @param {string} uri - Document URI string
+     */
+    handleScroll(uri) {
+        // Update review tracking if this file has debt
+        if (this.sessionTracker) {
+            this.sessionTracker.updateScrollActivity(uri);
+        }
+    }
+    
+    /**
+     * Record change batch in ledger
+     * @param {Object} entry - Change ledger entry
+     * @returns {string} Batch ID
+     */
+    recordChangeBatch(entry) {
+        if (this.changeLedger) {
+            return this.changeLedger.append(entry);
+        }
+        return null;
+    }
+    
+    /**
+     * Update suggestion review time
+     * @param {string} suggestionId - Suggestion ID
+     * @param {number} reviewTime - Review time in milliseconds
+     */
+    updateSuggestionReviewTime(suggestionId, reviewTime) {
+        if (this.suggestionAggregate) {
+            const suggestion = this.suggestionAggregate.findSuggestion(suggestionId);
+            if (suggestion) {
+                suggestion.reviewTime = reviewTime;
+            }
+        }
+    }
+    
+    /**
+     * Mark suggestion as reviewed
+     * @param {string} suggestionId - Suggestion ID
+     */
+    markSuggestionAsReviewed(suggestionId) {
+        if (this.suggestionAggregate) {
+            const suggestion = this.suggestionAggregate.findSuggestion(suggestionId);
+            if (suggestion) {
+                suggestion.reviewed = true;
+            }
+        }
+    }
+    
+    /**
+     * Flush pending changes for a document
+     * @param {vscode.TextDocument} document - Document to flush
+     * @param {Object} options - Flush options
+     * @param {string} options.source - Source of flush ('close', 'switch', etc.)
+     */
+    flushChanges(document, options = {}) {
+        if (this.classificationService) {
+            this.classificationService.flush(document, options);
+        }
+    }
+    
+    /**
+     * Flush all pending changes
+     * @param {Function} onClassified - Callback for each classified batch
+     *   (document, classification, changes[])
+     */
+    flushAllChanges(onClassified) {
+        if (this.classificationService) {
+            this.classificationService.flushAll((document, classification, changes) => {
+                // Process classification results
+                this.classificationService.handleClassifiedChanges(document, classification, changes);
+                
+                // Call the provided callback
+                if (onClassified) {
+                    onClassified(document, classification, changes);
+                }
+            });
+        }
+    }
+    
+    /**
+     * Generate diff bullets from changes (business logic)
+     * @param {vscode.TextDocument} document - Document
+     * @param {Array} rawChanges - Raw change objects (for buildDiffBullets compatibility)
+     * @param {Object} classification - Classification result
+     * @returns {Array<string>} Array of diff bullet strings
+     */
+    generateDiffBullets(document, rawChanges, classification) {
+        if (!this.vscodeAdapter) {
+            return [];
+        }
+        return buildDiffBullets(document, rawChanges, classification, this.vscodeAdapter);
+    }
+    
+    /**
+     * Check if position is within range (business logic)
+     * @param {vscode.Position} position - Position to check
+     * @param {vscode.Range} range - Range to check against
+     * @returns {boolean} True if position is within range
+     */
+    isPositionInRange(position, range) {
+        return checkPositionInRange(position, range);
+    }
+    
+    /**
+     * Get relative path from URI
+     * @param {vscode.Uri} uri - URI to convert
+     * @returns {string} Relative path
+     */
+    asRelativePath(uri) {
+        if (this.vscodeAdapter) {
+            return this.vscodeAdapter.asRelativePath(uri);
+        }
+        return uri.fsPath || uri.toString();
+    }
+    
+    /**
+     * Get Range constructor
+     * @returns {Function} Range constructor
+     */
+    getRange() {
+        if (this.vscodeAdapter) {
+            return this.vscodeAdapter.Range;
+        }
+        return null;
+    }
+    
+    /**
+     * Get text documents from workspace
+     * @returns {Array<vscode.TextDocument>} Array of text documents
+     */
+    getTextDocuments() {
+        if (this.vscodeAdapter) {
+            return this.vscodeAdapter.textDocuments || [];
+        }
+        return [];
     }
 }
 

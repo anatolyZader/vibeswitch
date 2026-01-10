@@ -14,6 +14,7 @@ suite('AwarenessService with Adapters', () => {
     let mockVSCodeAdapter;
     let mockPersistenceAdapter;
     let awarenessService;
+    let awarenessController;
     let mockContext;
     
     setup(() => {
@@ -27,6 +28,12 @@ suite('AwarenessService with Adapters', () => {
         awarenessService = new AwarenessService({
             vscodeAdapter: mockVSCodeAdapter,
             persistenceAdapter: mockPersistenceAdapter
+        });
+        
+        // Create controller for event listener
+        awarenessController = new AwarenessController({
+            awarenessService: awarenessService,
+            logger: null
         });
     });
     
@@ -45,7 +52,7 @@ suite('AwarenessService with Adapters', () => {
     });
     
     test('should start monitoring with adapters', async () => {
-        await awarenessService.start(mockContext, null, 'dev');
+        await awarenessController.startMonitoring(mockContext, null, 'dev');
         
         // Verify event handlers are registered
         assert.strictEqual(mockVSCodeAdapter._textDocumentChangeHandlers.length, 1);
@@ -54,7 +61,7 @@ suite('AwarenessService with Adapters', () => {
     });
     
     test('should handle text document changes via adapter', async () => {
-        await awarenessService.start(mockContext, null, 'dev');
+        await awarenessController.startMonitoring(mockContext, null, 'dev');
         
         const mockEvent = {
             document: {
@@ -77,7 +84,7 @@ suite('AwarenessService with Adapters', () => {
     });
     
     test('should stop monitoring and clean up', async () => {
-        await awarenessService.start(mockContext, null, 'dev');
+        await awarenessController.startMonitoring(mockContext, null, 'dev');
         assert.ok(awarenessService.eventHandlers);
         
         await awarenessService.stop();
@@ -145,98 +152,9 @@ suite('AwarenessController with DI Container', () => {
     });
 });
 
-suite('EventHandlers with Adapters', () => {
-    let mockVSCodeAdapter;
-    let eventHandlers;
-    
-    setup(() => {
-        mockVSCodeAdapter = new MockVSCodeAdapter();
-    });
-    
-    teardown(() => {
-        mockVSCodeAdapter.clear();
-    });
-    
-    test('should create EventHandlers with adapter', () => {
-        const EventHandlers = require('../../business_modules/awareness/domain/entities/eventHandlers');
-        const mockAgentHandler = {};
-        const mockDebtManager = {};
-        const mockSessionTracker = {};
-        
-        eventHandlers = new EventHandlers(
-            mockAgentHandler,
-            mockDebtManager,
-            mockSessionTracker,
-            { value: null },
-            { value: null },
-            'dev',
-            null,
-            {},
-            mockVSCodeAdapter
-        );
-        
-        assert.ok(eventHandlers);
-        assert.strictEqual(eventHandlers.vscodeAdapter, mockVSCodeAdapter);
-    });
-    
-    test('should use adapter for asRelativePath', () => {
-        const EventHandlers = require('../../../../business_modules/awareness/domain/entities/eventHandlers');
-        eventHandlers = new EventHandlers(
-            {}, {}, {}, { value: null }, { value: null }, 'dev', null, {}, mockVSCodeAdapter
-        );
-        
-        const uri = mockVSCodeAdapter.Uri.file('/workspace/test.js');
-        const relative = mockVSCodeAdapter.asRelativePath(uri);
-        assert.ok(relative);
-    });
-});
-
-suite('AgentSuggestionHandler with Adapters', () => {
-    let mockVSCodeAdapter;
-    let handler;
-    
-    setup(() => {
-        mockVSCodeAdapter = new MockVSCodeAdapter();
-    });
-    
-    teardown(() => {
-        mockVSCodeAdapter.clear();
-    });
-    
-    test('should create AgentSuggestionHandler with adapter', () => {
-        const AgentSuggestionHandler = require('../../../../business_modules/awareness/domain/entities/agentSuggestionHandler');
-        handler = new AgentSuggestionHandler(
-            {}, // debtManager
-            () => {}, // updateScore
-            {}, // callbacks
-            () => {}, // trackAcceptance
-            null, // updateFileColorsInExplorer
-            mockVSCodeAdapter // vscodeAdapter
-        );
-        
-        assert.ok(handler);
-        assert.strictEqual(handler.vscodeAdapter, mockVSCodeAdapter);
-    });
-    
-    test('should use adapter for Range creation', () => {
-        const AgentSuggestionHandler = require('../../../../business_modules/awareness/domain/entities/agentSuggestionHandler');
-        handler = new AgentSuggestionHandler({}, () => {}, {}, () => {}, null, mockVSCodeAdapter);
-        
-        const Range = mockVSCodeAdapter.Range;
-        const range = new Range(0, 0, 10, 20);
-        assert.ok(range);
-        assert.strictEqual(range.start.line, 0);
-    });
-    
-    test('should use adapter for openTextDocument', async () => {
-        const AgentSuggestionHandler = require('../../../../business_modules/awareness/domain/entities/agentSuggestionHandler');
-        handler = new AgentSuggestionHandler({}, () => {}, {}, () => {}, null, mockVSCodeAdapter);
-        
-        const uri = mockVSCodeAdapter.Uri.file('/test.js');
-        const doc = await mockVSCodeAdapter.openTextDocument(uri);
-        assert.ok(doc);
-        assert.ok(doc.uri);
-    });
-});
+// NOTE: EventHandlers and AgentSuggestionHandler have been refactored
+// EventHandlers → AwarenessEventListener (input layer)
+// AgentSuggestionHandler → SuggestionAggregate + SuggestionService (domain + app layer)
+// These test suites are obsolete and have been removed
 
 

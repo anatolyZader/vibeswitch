@@ -11,6 +11,9 @@
 // Import domain aggregates
 const SuggestionAggregate = require('../domain/aggregates/suggestionAggregate');
 
+// Import domain entities
+const Change = require('../domain/entities/change');
+
 // Import domain services
 const KeepAllDetector = require('../domain/services/keepAllDetector');
 
@@ -89,13 +92,16 @@ class SuggestionService {
     /**
      * Record a detected AI suggestion
      * @param {vscode.TextDocument} document - The document
-     * @param {vscode.TextDocumentContentChangeEvent} change - The change event
+     * @param {Change|vscode.TextDocumentContentChangeEvent} change - The change (Change entity or raw change)
      */
     recordAISuggestion(document, change) {
         if (!this.suggestionAggregate) return;
 
         const uri = document.uri.toString();
-        const changeSize = change.text.length;
+        // Support both Change entities and raw changes for backward compatibility
+        const changeSize = change instanceof Change ? change.size : change.text.length;
+        const changeRange = change instanceof Change ? change.range : change.range;
+        const changeText = change instanceof Change ? change.text : change.text;
 
         // Derive fileName from URI for display purposes only
         const fileName = uri.split('/').pop().split('?')[0];
@@ -103,12 +109,20 @@ class SuggestionService {
             this.loggerAdapter.debug(`[DEBUG] 📝 AI suggestion: ${changeSize} chars in ${fileName}`);
         }
 
+        // Extract classification metadata if available
+        const classificationMeta = change instanceof Change && change.classification ? {
+            classificationLabel: change.classification.label,
+            classificationConfidence: change.classification.confidence,
+            classificationReasons: change.classification.reasons
+        } : {};
+
         // Create suggestion entity
         const suggestion = this.suggestionAggregate.createSuggestion({
             document: uri,
-            range: change.range,
-            text: change.text,
-            size: changeSize
+            range: changeRange,
+            text: changeText,
+            size: changeSize,
+            ...classificationMeta
         });
 
         // Add to aggregate and track
@@ -128,36 +142,36 @@ class SuggestionService {
     /**
      * Record a batch of AI changes as a single suggestion
      * @param {vscode.TextDocument} document - The document
-     * @param {Array<vscode.TextDocumentContentChangeEvent>} aggregatedChanges - Batch of changes
+     * @param {Array<Change>} changes - Batch of Change domain entities
      * @param {Object} meta - Optional metadata
      */
-    recordAISuggestionBatch(document, aggregatedChanges, meta = {}) {
-        if (!this.suggestionAggregate || !aggregatedChanges || aggregatedChanges.length === 0) {
+    recordAISuggestionBatch(document, changes, meta = {}) {
+        if (!this.suggestionAggregate || !changes || changes.length === 0) {
             return;
         }
 
         const uri = document.uri.toString();
 
         // Calculate merged range (union of all change ranges)
-        const start = aggregatedChanges.reduce((min, c) =>
+        const start = changes.reduce((min, c) =>
             c.range.start.isBefore(min) ? c.range.start : min,
-            aggregatedChanges[0].range.start
+            changes[0].range.start
         );
-        const end = aggregatedChanges.reduce((max, c) =>
+        const end = changes.reduce((max, c) =>
             c.range.end.isAfter(max) ? c.range.end : max,
-            aggregatedChanges[0].range.end
+            changes[0].range.end
         );
         const Range = this.vscodeAdapter.Range;
         const mergedRange = new Range(start, end);
 
         // Cap merged range span for debt sizing if huge but inserted tiny
         const lineSpan = end.line - start.line;
-        const totalInserted = aggregatedChanges.reduce((sum, c) => sum + (c.text?.length || 0), 0);
+        const totalInserted = changes.reduce((sum, c) => sum + (c.size || 0), 0);
         const avgInsertedPerLine = lineSpan > 0 ? totalInserted / lineSpan : totalInserted;
 
         let effectiveRange = mergedRange;
         if (lineSpan > 100 && avgInsertedPerLine < 5) {
-            const firstChange = aggregatedChanges[0];
+            const firstChange = changes[0];
             const windowSize = Math.min(50, lineSpan);
             const Position = this.vscodeAdapter.Position;
             const cappedEnd = new Position(
@@ -173,15 +187,23 @@ class SuggestionService {
 
         const fileName = uri.split('/').pop().split('?')[0];
         if (this.loggerAdapter) {
-            this.loggerAdapter.debug(`[DEBUG] 📝 AI suggestion batch: ${aggregatedChanges.length} changes, ${mergedSize} chars in ${fileName}`);
+            this.loggerAdapter.debug(`[DEBUG] 📝 AI suggestion batch: ${changes.length} changes, ${mergedSize} chars in ${fileName}`);
         }
 
-        // Create suggestion entity
+        // Extract classification metadata from first change (all changes in batch have same classification)
+        const classificationMeta = changes[0]?.classification ? {
+            classificationLabel: changes[0].classification.label,
+            classificationConfidence: changes[0].classification.confidence,
+            classificationReasons: changes[0].classification.reasons
+        } : {};
+
+        // Create suggestion entity with classification metadata
         const suggestion = this.suggestionAggregate.createSuggestion({
             document: uri,
             range: mergedRange,
             text: mergedText,
             size: mergedSize,
+            ...classificationMeta,
             ...meta
         });
 
@@ -275,10 +297,10 @@ class SuggestionService {
     /**
      * Record a batch of user edits (might be adapting AI suggestions)
      * @param {vscode.TextDocument} document - The document
-     * @param {Array<vscode.TextDocumentContentChangeEvent>} aggregatedChanges - Batch of changes
+     * @param {Array<Change>} changes - Batch of Change domain entities
      */
-    recordUserEditBatch(document, aggregatedChanges) {
-        if (!this.suggestionAggregate || !aggregatedChanges || aggregatedChanges.length === 0) {
+    recordUserEditBatch(document, changes) {
+        if (!this.suggestionAggregate || !changes || changes.length === 0) {
             return;
         }
 
@@ -291,8 +313,8 @@ class SuggestionService {
             return; // No pending suggestions for this document
         }
 
-        // Merge ranges
-        const sortedRanges = [...aggregatedChanges]
+        // Merge ranges (Change entities have range property)
+        const sortedRanges = [...changes]
             .map(c => c.range)
             .sort((a, b) => {
                 const lineDiff = a.start.line - b.start.line;
@@ -347,11 +369,17 @@ class SuggestionService {
      * Record user edits (might be adapting AI suggestions)
      * @deprecated Use recordUserEditBatch for batch processing
      * @param {vscode.TextDocument} document - The document
-     * @param {vscode.TextDocumentContentChangeEvent} change - The change event
+     * @param {Change|vscode.TextDocumentContentChangeEvent} change - The change (Change entity or raw change)
      */
     recordUserEdit(document, change) {
         // Convert single change to batch format
-        this.recordUserEditBatch(document, [change]);
+        // Support both Change entities and raw changes for backward compatibility
+        const changes = change instanceof Change ? [change] : [{
+            range: change.range,
+            text: change.text,
+            rangeLength: change.rangeLength
+        }];
+        this.recordUserEditBatch(document, changes);
     }
 
     /**

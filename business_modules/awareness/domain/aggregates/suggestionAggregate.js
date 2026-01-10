@@ -67,7 +67,10 @@ class SuggestionAggregate {
             isFileCreation = false,
             isExternalCreation = false,
             isFileWrite = false,
-            timestamp = Date.now()
+            timestamp = Date.now(),
+            classificationLabel,
+            classificationConfidence,
+            classificationReasons
         } = options;
 
         // Use ID generator port for ID generation
@@ -83,7 +86,10 @@ class SuggestionAggregate {
             isFileCreation,
             isExternalCreation,
             isFileWrite,
-            timestamp
+            timestamp,
+            classificationLabel,
+            classificationConfidence,
+            classificationReasons
         });
     }
 
