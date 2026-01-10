@@ -1,36 +1,36 @@
 /**
- * File Watcher
- * Monitors file system for externally created files and scans existing files
+ * FileWatcherService - Application service for file system monitoring
  * 
- * Domain entity - uses ports for all infrastructure operations
+ * Orchestrates file system watching, coordinates with suggestion handler and debt service.
+ * This is an application service that handles infrastructure orchestration.
  */
 
-const path = require('path'); // Pure utility library, no I/O - acceptable in domain
-const { CODE_EXTENSIONS, isNonCodeDocument } = require('../utils/utils');
+const path = require('path'); // Pure utility library, no I/O - acceptable
+const { CODE_EXTENSIONS, isNonCodeDocument } = require('../domain/utils/utils');
 
-class FileWatcher {
+class FileWatcherService {
     /**
-     * @param {Object} agentSuggestionHandler - Agent suggestion handler (domain entity)
-     * @param {Object} debtManager - Debt manager (domain entity)
+     * @param {Object} suggestionService - Suggestion service (application service)
+     * @param {Object} debtService - Debt service (application service)
      * @param {Function} updateScore - Score update callback
      * @param {Function} onScoreUpdate - Score update callback
      * @param {IAwarenessVSCodePort} vscodePort - VS Code port (interface)
      * @param {IFileSystemPort} fileSystemPort - File system port (interface)
      * @param {ILoggerPort} loggerPort - Logger port (interface)
      */
-    constructor(agentSuggestionHandler, debtManager, updateScore, onScoreUpdate, vscodePort, fileSystemPort, loggerPort) {
+    constructor(suggestionService, debtService, updateScore, onScoreUpdate, vscodePort, fileSystemPort, loggerPort) {
         if (!vscodePort) {
-            throw new Error('FileWatcher requires vscodePort');
+            throw new Error('FileWatcherService requires vscodePort');
         }
         if (!fileSystemPort) {
-            throw new Error('FileWatcher requires fileSystemPort');
+            throw new Error('FileWatcherService requires fileSystemPort');
         }
         if (!loggerPort) {
-            throw new Error('FileWatcher requires loggerPort');
+            throw new Error('FileWatcherService requires loggerPort');
         }
         
-        this.agentSuggestionHandler = agentSuggestionHandler;
-        this.debtManager = debtManager;
+        this.suggestionService = suggestionService;
+        this.debtService = debtService;
         this.updateScore = updateScore;
         this.onScoreUpdate = onScoreUpdate;
         this.vscodePort = vscodePort;
@@ -137,8 +137,8 @@ class FileWatcher {
         this.loggerPort.log(`AwarenessMonitor: Processing externally created file: ${filePath}`);
         
         // Process file as suggestion
-        if (this.agentSuggestionHandler) {
-            this.agentSuggestionHandler.processFileAsSuggestion(fileUri, {
+        if (this.suggestionService) {
+            this.suggestionService.processFileAsSuggestion(fileUri, {
                 isFileCreation: true,
                 isExternalCreation: true,
                 filePath: filePath
@@ -197,7 +197,7 @@ class FileWatcher {
                     
                     // Check if already in debt
                     const normalizedPath = path.resolve(fullPath).replace(/\\/g, '/');
-                    if (this.debtManager && this.debtManager.getDebtMap().has(normalizedPath)) {
+                    if (this.debtService && this.debtService.getDebtMap().has(normalizedPath)) {
                         continue; // Already tracked
                     }
                     
@@ -272,4 +272,4 @@ class FileWatcher {
     }
 }
 
-module.exports = FileWatcher;
+module.exports = FileWatcherService;

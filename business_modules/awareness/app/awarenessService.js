@@ -5,14 +5,17 @@
  * This is the application layer that coordinates domain entities and uses adapters.
  */
 
-// Import domain entities
-const DebtManager = require('../domain/entities/debtManager');
-const ChangeLedger = require('../domain/entities/changeLedger');
-const ScoreCalculator = require('../domain/entities/scoreCalculator');
-const SessionTracker = require('../domain/entities/sessionTracker');
-const FileWatcher = require('../domain/entities/fileWatcher');
-const EventHandlers = require('../domain/entities/eventHandlers');
-const KeepAllDetector = require('../domain/entities/keepAllDetector');
+// Import application services
+const DebtService = require('./debtService');
+const ChangeLedgerService = require('./changeLedgerService');
+const SessionService = require('./sessionService');
+const FileWatcherService = require('./fileWatcherService');
+const EventService = require('./eventService');
+const SuggestionService = require('./suggestionService');
+
+// Import domain services
+const ScoreCalculator = require('../domain/services/scoreCalculator');
+const KeepAllDetector = require('../domain/services/keepAllDetector');
 
 // Import domain aggregates
 const SuggestionAggregate = require('../domain/aggregates/suggestionAggregate');
@@ -74,8 +77,9 @@ class AwarenessService extends IAwarenessService {
         this.onScoreUpdate = null;
         
         // Internal components (initialized in start())
-        this.debtManager = null;
+        this.debtService = null;
         this.suggestionAggregate = null; // Replaces agentSuggestionHandler
+        this.suggestionService = null; // Suggestion lifecycle management
         this.sessionTracker = null;
         this.fileWatcher = null;
         this.changeLedger = null;
@@ -128,14 +132,14 @@ class AwarenessService extends IAwarenessService {
         this.updateFileColorsInExplorer = updateFileColorsInExplorer;
         this.isActive = true;
         
-        // Initialize domain entities with ports (adapters are injected as port implementations)
-        this.debtManager = new DebtManager(
+        // Initialize application services
+        this.debtService = new DebtService(
             this.onScoreUpdate,
             updateFileColorsInExplorer,
             this.persistenceAdapter, // Adapter implements IAwarenessPersistencePort
             this.loggerAdapter // Adapter implements ILoggerPort
         );
-        this.debtManager.loadDebt();
+        this.debtService.loadDebt();
         
         this.keepAllDetector = new KeepAllDetector(this.onKeepAll, this.loggerAdapter); // Adapter implements ILoggerPort
         
@@ -165,18 +169,35 @@ class AwarenessService extends IAwarenessService {
             }
         };
 
-        this.sessionTracker = new SessionTracker(
-            this.debtManager,
-            this, // Pass service instead of handler (service implements the interface)
+        // Create suggestion service for lifecycle management
+        this.suggestionService = new SuggestionService({
+            suggestionAggregate: this.suggestionAggregate,
+            debtService: this.debtService,
+            keepAllDetector: this.keepAllDetector,
+            vscodeAdapter: this.vscodeAdapter,
+            loggerAdapter: this.loggerAdapter,
+            messagingAdapter: this.messagingAdapter,
+            updateScore: () => this.updateScore(),
+            updateFileColorsInExplorer: updateFileColorsInExplorer,
+            onAISuggestion: this.onAISuggestion,
+            onAISuggestionOutcome: this.onAISuggestionOutcome,
+            onKeepAll: this.onKeepAll,
+            activeStatusCheckTimers: this.activeStatusCheckTimers,
+            isActive: () => this.isActive
+        });
+
+        this.sessionTracker = new SessionService(
+            this.debtService,
+            this.suggestionService, // Pass suggestionService
             debtClearedCallback,
             () => this.updateScore(),
             updateFileColorsInExplorer,
             this.messagingAdapter // Pass messaging adapter for domain events
         );
         
-        this.fileWatcher = new FileWatcher(
-            this, // Pass service instead of handler (service implements the interface)
-            this.debtManager,
+        this.fileWatcher = new FileWatcherService(
+            this.suggestionService, // Pass suggestionService
+            this.debtService,
             () => this.updateScore(),
             this.onScoreUpdate,
             this.vscodeAdapter, // Adapter implements IAwarenessVSCodePort
@@ -184,17 +205,17 @@ class AwarenessService extends IAwarenessService {
             this.loggerAdapter // Adapter implements ILoggerPort
         );
         
-        this.changeLedger = new ChangeLedger(
+        this.changeLedger = new ChangeLedgerService(
             2000,
             1000,
             this.persistenceAdapter, // Adapter implements IAwarenessPersistencePort
             this.hashGeneratorAdapter, // Adapter implements IHashGeneratorPort
             this.loggerAdapter // Adapter implements ILoggerPort
         );
-        
-        this.eventHandlers = new EventHandlers(
-            this, // Pass service instead of handler (service implements the interface)
-            this.debtManager,
+
+        this.eventHandlers = new EventService(
+            this.suggestionService, // Pass suggestionService
+            this.debtService,
             this.sessionTracker,
             this.activeDocument,
             this.cursorPosition,
@@ -293,9 +314,9 @@ class AwarenessService extends IAwarenessService {
         this.isActive = false;
         
         // Save debt before stopping
-        if (this.debtManager) {
+        if (this.debtService) {
             safe('saveDebt', () => {
-                this.debtManager.saveDebt();
+                this.debtService.saveDebt();
             });
         }
         
@@ -349,7 +370,7 @@ class AwarenessService extends IAwarenessService {
             });
         }
         
-        // Keep: suggestionAggregate, scoreCalculator, debtManager, keepAllDetector
+        // Keep: suggestionAggregate, scoreCalculator, debtService, keepAllDetector
         // (preserve state for when monitoring restarts)
         
         getLogger().log('AwarenessService: Monitoring stopped');
@@ -366,14 +387,14 @@ class AwarenessService extends IAwarenessService {
         
         const suggestions = this.suggestionAggregate ? this.suggestionAggregate.getSuggestions() : [];
         const getDebtScore = () => {
-            if (!this.debtManager) return 0;
-            return this.debtManager.calculateDebtScore(suggestions);
+            if (!this.debtService) return 0;
+            return this.debtService.calculateDebtScore(suggestions);
         };
         const getReviewDebtSummary = () => {
-            if (!this.debtManager) {
+            if (!this.debtService) {
                 return { total: 0, files: [] };
             }
-            return this.debtManager.getDebtSummary();
+            return this.debtService.getDebtSummary();
         };
         
         this.scoreCalculator.updateScore(
@@ -424,10 +445,10 @@ class AwarenessService extends IAwarenessService {
         
         const suggestions = this.suggestionAggregate ? this.suggestionAggregate.getSuggestions() : [];
         const getReviewDebtSummary = () => {
-            if (!this.debtManager) {
+            if (!this.debtService) {
                 return { total: 0, files: [] };
             }
-            return this.debtManager.getDebtSummary();
+            return this.debtService.getDebtSummary();
         };
         
         const score = this.scoreCalculator.getScore(suggestions, getReviewDebtSummary);
@@ -455,8 +476,7 @@ class AwarenessService extends IAwarenessService {
     }
 
     // ============================================
-    // Orchestration Methods (moved from AgentSuggestionHandler)
-    // These methods coordinate between aggregate, debtManager, callbacks, etc.
+    // Delegation Methods - Delegate to SuggestionService
     // ============================================
 
     /**
@@ -465,36 +485,8 @@ class AwarenessService extends IAwarenessService {
      * @param {vscode.TextDocumentContentChangeEvent} change - The change event
      */
     recordAISuggestion(document, change) {
-        if (!this.suggestionAggregate) return;
-        
-        const uri = document.uri.toString();
-        const changeSize = change.text.length;
-        
-        // Derive fileName from URI for display purposes only
-        const fileName = uri.split('/').pop().split('?')[0];
-        if (this.loggerAdapter) {
-            this.loggerAdapter.debug(`[DEBUG] 📝 AI suggestion: ${changeSize} chars in ${fileName}`);
-        }
-        
-        // Create suggestion entity
-        const suggestion = this.suggestionAggregate.createSuggestion({
-            document: uri,
-            range: change.range,
-            text: change.text,
-            size: changeSize
-        });
-        
-        // Add to aggregate and track
-        this._addSuggestionAndTrack(suggestion, changeSize);
-        
-        // Call optional callback (e.g., for UsageStats)
-        if (this.onAISuggestion) {
-            this.onAISuggestion({
-                filePath: uri,
-                size: suggestion.size,
-                timestamp: suggestion.timestamp,
-                isFileCreation: false
-            });
+        if (this.suggestionService) {
+            this.suggestionService.recordAISuggestion(document, change);
         }
     }
 
@@ -505,93 +497,8 @@ class AwarenessService extends IAwarenessService {
      * @param {Object} meta - Optional metadata
      */
     recordAISuggestionBatch(document, aggregatedChanges, meta = {}) {
-        if (!this.suggestionAggregate || !aggregatedChanges || aggregatedChanges.length === 0) {
-            return;
-        }
-
-        const uri = document.uri.toString();
-        
-        // Calculate merged range (union of all change ranges)
-        const start = aggregatedChanges.reduce((min, c) => 
-            c.range.start.isBefore(min) ? c.range.start : min, 
-            aggregatedChanges[0].range.start
-        );
-        const end = aggregatedChanges.reduce((max, c) => 
-            c.range.end.isAfter(max) ? c.range.end : max, 
-            aggregatedChanges[0].range.end
-        );
-        const Range = this.vscodeAdapter.Range;
-        const mergedRange = new Range(start, end);
-        
-        // Cap merged range span for debt sizing if huge but inserted tiny
-        const lineSpan = end.line - start.line;
-        const totalInserted = aggregatedChanges.reduce((sum, c) => sum + (c.text?.length || 0), 0);
-        const avgInsertedPerLine = lineSpan > 0 ? totalInserted / lineSpan : totalInserted;
-        
-        let effectiveRange = mergedRange;
-        if (lineSpan > 100 && avgInsertedPerLine < 5) {
-            const firstChange = aggregatedChanges[0];
-            const windowSize = Math.min(50, lineSpan);
-            const Position = this.vscodeAdapter.Position;
-            const cappedEnd = new Position(
-                Math.min(firstChange.range.start.line + windowSize, end.line),
-                end.character
-            );
-            effectiveRange = new Range(firstChange.range.start, cappedEnd);
-        }
-
-        // Get merged text from document
-        const mergedText = document.getText(effectiveRange);
-        const mergedSize = mergedText.length;
-
-        const fileName = uri.split('/').pop().split('?')[0];
-        if (this.loggerAdapter) {
-            this.loggerAdapter.debug(`[DEBUG] 📝 AI suggestion batch: ${aggregatedChanges.length} changes, ${mergedSize} chars in ${fileName}`);
-        }
-
-        // Create suggestion entity
-        const suggestion = this.suggestionAggregate.createSuggestion({
-            document: uri,
-            range: mergedRange,
-            text: mergedText,
-            size: mergedSize,
-            ...meta
-        });
-
-        // Create/update batch for this suggestion
-        const batchId = this.suggestionAggregate.createOrUpdateBatch(uri, suggestion.id, mergedSize);
-        suggestion.batchId = batchId;
-        
-        // Check if this is a new batch (first suggestion) for event publishing
-        const batch = this.suggestionAggregate.getBatch(batchId);
-        const isNewBatch = batch && batch.suggestionIds.length === 1;
-
-        // Add to aggregate and track
-        this._addSuggestionAndTrack(suggestion, mergedSize);
-
-        // Publish batch created event if this is a new batch
-        if (isNewBatch && this.messagingAdapter) {
-            safe('publishSuggestionBatchCreatedEvent', async () => {
-                const batchEvent = new SuggestionBatchCreatedEvent({
-                    batchId: batch.batchId,
-                    filePath: batch.filePath.toString(),
-                    suggestionCount: batch.suggestionIds.length,
-                    totalSize: batch.totalSize
-                });
-                await this.messagingAdapter.publishSuggestionBatchCreatedEvent(batchEvent);
-            });
-        }
-
-        // Call optional callback (e.g., for UsageStats)
-        if (this.onAISuggestion) {
-            this.onAISuggestion({
-                filePath: uri,
-                size: mergedSize,
-                timestamp: suggestion.timestamp,
-                isFileCreation: false,
-                batchId: batchId,
-                isNewBatch: isNewBatch
-            });
+        if (this.suggestionService) {
+            this.suggestionService.recordAISuggestionBatch(document, aggregatedChanges, meta);
         }
     }
 
@@ -602,45 +509,9 @@ class AwarenessService extends IAwarenessService {
      * @returns {Promise<Object|null>} Suggestion entity or null
      */
     async processFileAsSuggestion(fileUri, options = {}) {
-        if (!this.suggestionAggregate) return null;
-        
-        const {
-            isFileCreation = false,
-            isExternalCreation = false,
-            isFileWrite = false
-        } = options;
-
-        try {
-            const openDoc = (uri) => this.vscodeAdapter.openTextDocument(uri);
-            const doc = await openDoc(fileUri);
-            const content = doc.getText();
-            
-            if (content.trim().length > 0) {
-                const lastLine = Math.max(0, doc.lineCount - 1);
-                const lastLineText = doc.lineAt(lastLine).text;
-                const lastChar = lastLineText.length;
-                
-                const Range = this.vscodeAdapter.Range;
-                const suggestion = this.suggestionAggregate.createSuggestion({
-                    document: doc.uri.toString(),
-                    range: new Range(0, 0, lastLine, lastChar),
-                    text: content,
-                    size: content.length,
-                    isFileCreation,
-                    isExternalCreation,
-                    isFileWrite
-                });
-                
-                this._addSuggestionAndTrack(suggestion, content.length);
-                
-                return suggestion;
-            }
-        } catch (err) {
-            if (this.loggerAdapter) {
-                this.loggerAdapter.error(`AwarenessService: Error processing file ${fileUri.fsPath || fileUri}`, err);
-            }
+        if (this.suggestionService) {
+            return await this.suggestionService.processFileAsSuggestion(fileUri, options);
         }
-        
         return null;
     }
 
@@ -650,68 +521,8 @@ class AwarenessService extends IAwarenessService {
      * @param {Array<vscode.TextDocumentContentChangeEvent>} aggregatedChanges - Batch of changes
      */
     recordUserEditBatch(document, aggregatedChanges) {
-        if (!this.suggestionAggregate || !aggregatedChanges || aggregatedChanges.length === 0) {
-            return;
-        }
-        
-        const uri = document.uri.toString();
-        const fileName = uri.split('/').pop().split('?')[0];
-        
-        // Get pending suggestions for this document
-        const pendingSuggestions = this.suggestionAggregate.getPendingSuggestionsForFile(uri);
-        if (pendingSuggestions.length === 0) {
-            return; // No pending suggestions for this document
-        }
-        
-        // Merge ranges
-        const sortedRanges = [...aggregatedChanges]
-            .map(c => c.range)
-            .sort((a, b) => {
-                const lineDiff = a.start.line - b.start.line;
-                if (lineDiff !== 0) return lineDiff;
-                return a.start.character - b.start.character;
-            });
-        
-        const mergedRanges = [];
-        for (const range of sortedRanges) {
-            if (mergedRanges.length === 0) {
-                mergedRanges.push(range);
-                continue;
-            }
-            
-            const lastMerged = mergedRanges[mergedRanges.length - 1];
-            const isTouching = range.start.isEqual(lastMerged.end) || 
-                range.start.isBefore(lastMerged.end) ||
-                (range.start.line === lastMerged.end.line && range.start.character <= lastMerged.end.character);
-            const isOverlapping = rangesOverlap(range, lastMerged);
-            
-            if (isOverlapping || isTouching) {
-                const start = range.start.isBefore(lastMerged.start) 
-                    ? range.start 
-                    : lastMerged.start;
-                const end = range.end.isAfter(lastMerged.end)
-                    ? range.end
-                    : lastMerged.end;
-                const Range = this.vscodeAdapter.Range;
-                mergedRanges[mergedRanges.length - 1] = new Range(start, end);
-            } else {
-                mergedRanges.push(range);
-            }
-        }
-        
-        // Check overlap against pending suggestions
-        for (const suggestion of pendingSuggestions) {
-            for (const mergedRange of mergedRanges) {
-                if (rangesOverlap(mergedRange, suggestion.range)) {
-                    suggestion.recordUserEdit();
-                    
-                    const logKey = `userEditOverlap:${uri}:${suggestion.id}`;
-                    if (this.loggerAdapter) {
-                        this.loggerAdapter.debug(`✏️  User edit batch overlaps AI suggestion in ${fileName}`, logKey);
-                    }
-                    break; // One overlap per suggestion is enough
-                }
-            }
+        if (this.suggestionService) {
+            this.suggestionService.recordUserEditBatch(document, aggregatedChanges);
         }
     }
 
@@ -722,8 +533,9 @@ class AwarenessService extends IAwarenessService {
      * @param {vscode.TextDocumentContentChangeEvent} change - The change event
      */
     recordUserEdit(document, change) {
-        // Convert single change to batch format
-        this.recordUserEditBatch(document, [change]);
+        if (this.suggestionService) {
+            this.suggestionService.recordUserEdit(document, change);
+        }
     }
 
     /**
@@ -731,136 +543,8 @@ class AwarenessService extends IAwarenessService {
      * @param {string} suggestionId - ID of the suggestion to check
      */
     async checkSuggestionStatus(suggestionId) {
-        if (!this.suggestionAggregate) return;
-        
-        const suggestion = this.suggestionAggregate.findSuggestion(suggestionId);
-        if (!suggestion || !suggestion.isPending()) {
-            return;
-        }
-        
-        try {
-            const Uri = this.vscodeAdapter.Uri;
-            const doc = await this.vscodeAdapter.openTextDocument(Uri.parse(suggestion.document));
-            const safeRange = doc.validateRange(suggestion.range);
-            const currentText = doc.getText(safeRange);
-            const currentSize = currentText.length;
-            
-            const MIN_SIZE_FOR_RATIO = 10;
-            if (!suggestion.size || suggestion.size < MIN_SIZE_FOR_RATIO) {
-                if (currentSize === 0) {
-                    this.suggestionAggregate.updateSuggestionStatus(suggestion, 'rejected');
-                    this.suggestionAggregate.updateBatchOutcome(suggestion);
-                    if (this.loggerAdapter) {
-                        this.loggerAdapter.debug(`[DEBUG] Tiny suggestion rejected: empty after validation`);
-                    }
-                }
-                return;
-            }
-            
-            const sizeRatio = currentSize / suggestion.size;
-            
-            if (currentSize < suggestion.size * 0.4) {
-                this.suggestionAggregate.updateSuggestionStatus(suggestion, 'rejected');
-                if (this.loggerAdapter) {
-                    this.loggerAdapter.debug(`[DEBUG] Suggestion rejected: ${(sizeRatio * 100).toFixed(1)}% of original`);
-                }
-            } else if (suggestion.userEdited) {
-                this.suggestionAggregate.updateSuggestionStatus(suggestion, 'adapted');
-                this.suggestionAggregate.updateBatchOutcome(suggestion);
-                if (this.loggerAdapter) {
-                    this.loggerAdapter.debug(`[DEBUG] Suggestion adapted by user`);
-                }
-            } else {
-                let sourceType = 'AI suggestion';
-                if (suggestion.isFileCreation || suggestion.isExternalCreation) {
-                    sourceType = suggestion.isExternalCreation ? 'externally created file' : 'file creation';
-                } else if (suggestion.isFileWrite) {
-                    sourceType = 'agent file write';
-                } else {
-                    sourceType = 'text change';
-                }
-                
-                if (suggestion.reviewed) {
-                    this.suggestionAggregate.updateSuggestionStatus(suggestion, 'accepted');
-                    this.suggestionAggregate.updateBatchOutcome(suggestion);
-                    if (this.loggerAdapter) {
-                        this.loggerAdapter.debug(`[DEBUG] Suggestion accepted (${sourceType})`);
-                    }
-                    
-                    // Check for keep all pattern
-                    const batch = suggestion.batchId ? this.suggestionAggregate.getBatch(suggestion.batchId) : null;
-                    if (batch && batch.isFullyResolved() && batch.isKeepAllPattern()) {
-                        const result = {
-                            batchId: batch.batchId,
-                            suggestionIds: batch.getSuggestionIdStrings(),
-                            filePath: batch.filePath.toString(),
-                            acceptanceCount: batch.acceptedCount
-                        };
-                        
-                        if (this.keepAllDetector) {
-                            this.keepAllDetector.trackAcceptance(result);
-                        }
-                        
-                        if (this.messagingAdapter) {
-                            safe('publishKeepAllEvent', async () => {
-                                const event = new KeepAllEvent({
-                                    suggestionIds: result.suggestionIds || [],
-                                    filePath: result.filePath,
-                                    acceptanceCount: result.count || 0
-                                });
-                                await this.messagingAdapter.publishKeepAllEvent(event);
-                            });
-                        }
-                        
-                        if (this.onKeepAll) {
-                            this.onKeepAll(result);
-                        }
-                    }
-                } else {
-                    // No user interaction yet - keep pending, schedule another check
-                    const timer = setTimeout(() => {
-                        this.activeStatusCheckTimers.delete(timer);
-                        if (this.isActive) {
-                            this.checkSuggestionStatus(suggestion.id);
-                        }
-                    }, 10000);
-                    this.activeStatusCheckTimers.add(timer);
-                    return; // Exit early, don't emit outcome yet
-                }
-            }
-            
-            // Call optional callback (e.g., for UsageStats)
-            if (this.onAISuggestionOutcome) {
-                this.onAISuggestionOutcome({
-                    filePath: suggestion.document,
-                    status: suggestion.status,
-                    size: suggestion.size,
-                    reviewTime: suggestion.reviewTime,
-                    editCount: suggestion.editCount,
-                    isFileCreation: suggestion.isFileCreation,
-                    isExternalCreation: suggestion.isExternalCreation,
-                    isFileWrite: suggestion.isFileWrite
-                });
-            }
-            
-            // Publish domain event
-            if (this.messagingAdapter) {
-                safe('publishAISuggestionOutcomeEvent', async () => {
-                    const event = new AISuggestionOutcomeEvent({
-                        suggestionId: suggestion.id,
-                        outcome: suggestion.status,
-                        filePath: suggestion.document
-                    });
-                    await this.messagingAdapter.publishAISuggestionOutcomeEvent(event);
-                });
-            }
-            
-            // Update score immediately when status changes
-            this.updateScore();
-        } catch (err) {
-            if (this.loggerAdapter) {
-                this.loggerAdapter.error('AwarenessService: Error checking suggestion status', err);
-            }
+        if (this.suggestionService) {
+            await this.suggestionService.checkSuggestionStatus(suggestionId);
         }
     }
 
@@ -907,41 +591,10 @@ class AwarenessService extends IAwarenessService {
      * @returns {Suggestion} Created suggestion entity
      */
     createSuggestionAndTrack(options, contentLength) {
-        if (!this.suggestionAggregate) return null;
-        
-        const suggestion = this.suggestionAggregate.createSuggestion(options);
-        this._addSuggestionAndTrack(suggestion, contentLength);
-        return suggestion;
-    }
-
-    _addSuggestionAndTrack(suggestion, contentLength) {
-        if (!this.suggestionAggregate) return;
-        
-        // Add to aggregate
-        this.suggestionAggregate.addSuggestion(suggestion);
-        
-        // Add to debt
-        if (this.debtManager) {
-            const uri = suggestion.document;
-            this.debtManager.addToDebt(uri, contentLength, () => this.updateScore());
+        if (this.suggestionService) {
+            return this.suggestionService.createSuggestionAndTrack(options, contentLength);
         }
-        
-        // Update file colors immediately when new suggestion is added
-        if (this.updateFileColorsInExplorer) {
-            this.updateFileColorsInExplorer();
-        }
-        
-        // Schedule status check after 5 seconds
-        const timer = setTimeout(() => {
-            this.activeStatusCheckTimers.delete(timer);
-            if (this.isActive) {
-                this.checkSuggestionStatus(suggestion.id);
-            }
-        }, 5000);
-        this.activeStatusCheckTimers.add(timer);
-        
-        // Immediately update score to reflect new activity
-        this.updateScore();
+        return null;
     }
     
     /**
@@ -956,7 +609,7 @@ class AwarenessService extends IAwarenessService {
             hasCallback: !!this.onScoreUpdate,
             hasCallbacks: !!(this.onAISuggestion || this.onAISuggestionOutcome || this.onKeepAll || this.onDebtCleared),
             aiSuggestionsCount: suggestions.length,
-            reviewDebtCount: this.debtManager ? this.debtManager.getDebtSize() : 0,
+            reviewDebtCount: this.debtService ? this.debtService.getDebtSize() : 0,
             currentScore: this.scoreCalculator ? this.scoreCalculator.getCurrentScore() : 0,
             scores: this.scoreCalculator ? this.scoreCalculator.getScoreComponents() : {},
             hasFileSystemWatcher: this.fileWatcher ? this.fileWatcher.isActive() : false,

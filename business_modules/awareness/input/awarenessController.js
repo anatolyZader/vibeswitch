@@ -1,13 +1,11 @@
 /**
  * AwarenessController - Input layer controller for awareness monitoring
  * 
- * Thin controller that handles VS Code commands and delegates to AwarenessService.
+ * Thin controller that handles VS Code commands and delegates to app layer service files.
  * Uses explicit dependencies instead of whole DI container for better testability.
  * 
  * Design principles:
  * - Controller throws errors; composition root handles UI
- * - Logger interface is normalized (error/info methods)
- * - Minimal try/catch boilerplate
  */
 
 class AwarenessController {

@@ -3,6 +3,12 @@
  * 
  * This aggregate manages the collection of suggestions, enforces invariants,
  * and provides query methods. It does NOT handle orchestration or callbacks.
+ * 
+ **Access Rules**:
+- ✅ Only `SuggestionAggregate` can create `Suggestion` entities
+- ✅ Only `SuggestionAggregate` can create `SuggestionBatch` entities
+- ✅ Only `SuggestionAggregate` can modify suggestion status (via `updateSuggestionStatus()`)
+- ✅ Only `SuggestionAggregate` can add suggestions to batches
  */
 
 const Suggestion = require('../entities/suggestion');

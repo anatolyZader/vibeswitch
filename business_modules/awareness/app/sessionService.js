@@ -1,23 +1,25 @@
 /**
- * Session Tracker
- * Tracks active review sessions using ReviewSession entities
+ * SessionService - Application service for managing review sessions
+ * 
+ * Orchestrates review session tracking, coordinates with debt service,
+ * and publishes domain events. This is an application service.
  */
 
-const { normalizeToUri } = require('../utils/utils');
-const ReviewSession = require('./reviewSession');
+const { normalizeToUri } = require('../domain/utils/utils');
+const ReviewSession = require('../domain/entities/reviewSession');
 
-class SessionTracker {
+class SessionService {
     /**
-     * @param {Object} debtManager - Debt manager (domain entity)
-     * @param {Object} agentSuggestionHandler - Agent suggestion handler (domain entity)
+     * @param {Object} debtService - Debt service (application service)
+     * @param {Object} suggestionService - Suggestion service (application service)
      * @param {Function} onDebtCleared - Callback when debt is cleared
      * @param {Function} updateScore - Score update callback
      * @param {Function} updateFileColorsInExplorer - Callback to update file colors (optional)
      * @param {Object} messagingAdapter - Messaging adapter for domain events (optional)
      */
-    constructor(debtManager, agentSuggestionHandler, onDebtCleared, updateScore, updateFileColorsInExplorer = null, messagingAdapter = null) {
-        this.debtManager = debtManager;
-        this.agentSuggestionHandler = agentSuggestionHandler;
+    constructor(debtService, suggestionService, onDebtCleared, updateScore, updateFileColorsInExplorer = null, messagingAdapter = null) {
+        this.debtService = debtService;
+        this.suggestionService = suggestionService;
         this.onDebtCleared = onDebtCleared;
         this.updateScore = updateScore;
         this.updateFileColorsInExplorer = updateFileColorsInExplorer;
@@ -45,8 +47,8 @@ class SessionTracker {
         this.sessions.set(uri, session);
         
         // Update debt if file has debt
-        if (this.debtManager) {
-            this.debtManager.updateSession(uri, {
+        if (this.debtService) {
+            this.debtService.updateSession(uri, {
                 sessionStart: session.sessionStart
             });
         }
@@ -106,9 +108,9 @@ class SessionTracker {
         }
         
         for (const [uri, session] of this.sessions.entries()) {
-            const hasUnreviewedDebt = this.debtManager && this.debtManager.hasUnreviewedDebt(uri);
-            const hasPendingSuggestions = this.agentSuggestionHandler ? 
-                this.agentSuggestionHandler.getPendingSuggestionsForFile(uri).length > 0 : false;
+            const hasUnreviewedDebt = this.debtService && this.debtService.hasUnreviewedDebt(uri);
+            const hasPendingSuggestions = this.suggestionService ? 
+                this.suggestionService.getPendingSuggestionsForFile(uri).length > 0 : false;
             
             // If no debt and no pending suggestions, remove session
             if (!hasUnreviewedDebt && !hasPendingSuggestions) {
@@ -118,11 +120,11 @@ class SessionTracker {
             
             // Check if session timed out
             if (session.hasTimedOut(ACTIVITY_TIMEOUT)) {
-                if (this.debtManager && hasUnreviewedDebt) {
-                    const debt = this.debtManager.getDebt(uri);
+                if (this.debtService && hasUnreviewedDebt) {
+                    const debt = this.debtService.getDebt(uri);
                     if (debt) {
                         session.complete();
-                        this.debtManager.markAsReviewed(uri, session.reviewTime);
+                        this.debtService.markAsReviewed(uri, session.reviewTime);
                     }
                 }
                 this.sessions.delete(uri);
@@ -134,11 +136,11 @@ class SessionTracker {
                 let needsScoreUpdate = false;
                 
                 // Mark debt as paid
-                if (this.debtManager && hasUnreviewedDebt) {
-                    const debt = this.debtManager.getDebt(uri);
+                if (this.debtService && hasUnreviewedDebt) {
+                    const debt = this.debtService.getDebt(uri);
                     if (debt) {
                         session.complete();
-                        this.debtManager.markAsReviewed(uri, session.reviewTime);
+                        this.debtService.markAsReviewed(uri, session.reviewTime);
                         
                         // Publish domain event if messaging adapter is available
                         if (this.messagingAdapter) {
@@ -172,8 +174,8 @@ class SessionTracker {
                 }
                 
                 // Mark all pending suggestions in this file as reviewed
-                if (hasPendingSuggestions && this.agentSuggestionHandler) {
-                    const pendingSuggestions = this.agentSuggestionHandler.getPendingSuggestionsForFile(uri);
+                if (hasPendingSuggestions && this.suggestionService) {
+                    const pendingSuggestions = this.suggestionService.getPendingSuggestionsForFile(uri);
                     for (const suggestion of pendingSuggestions) {
                         suggestion.markAsReviewed(session.reviewTime, session.sessionStart);
                         needsScoreUpdate = true;
@@ -258,5 +260,5 @@ class SessionTracker {
     }
 }
 
-module.exports = SessionTracker;
+module.exports = SessionService;
 

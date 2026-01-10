@@ -1,8 +1,8 @@
 /**
- * Awareness Score Calculator
- * Calculates the awareness score based on user review behavior and AI suggestions
+ * ScoreCalculator - Domain service for calculating awareness scores
  * 
- * Domain entity - uses ports for all infrastructure operations
+ * Encapsulates business logic for calculating awareness scores based on
+ * user review behavior and AI suggestions. This is a domain service.
  */
 
 const { getRelativePath } = require('../utils/utils');
@@ -247,7 +247,7 @@ class ScoreCalculator {
                         // Use VS Code port for URI creation
                         const Uri = this.vscodePort ? this.vscodePort.Uri : null;
                         if (!Uri) {
-                            continue; // Skip if no port available
+                            return null; // Skip if no port available
                         }
                         const uri = Uri.parse(s.document);
                         if (uri.scheme === 'file') {
@@ -267,7 +267,8 @@ class ScoreCalculator {
                           s.isExternalCreation ? 'external file' :
                           s.isFileWrite ? 'file write' : 'text change'
                 };
-            });
+            })
+            .filter(Boolean); // Remove null entries
         
         return {
             total: this.currentScore,

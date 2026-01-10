@@ -1,13 +1,14 @@
 /**
- * Debt Manager
- * Manages persistent tracking of unreviewed files and calculates debt scores
+ * DebtService - Application service for managing review debt
  * 
- * Domain entity - uses ports for all infrastructure operations
+ * Orchestrates debt management: persistence, callbacks, and aggregate calculations.
+ * This is an application service that coordinates Debt domain entities.
  */
 
-const { normalizeToUri } = require('../utils/utils');
+const Debt = require('../domain/entities/debt');
+const { normalizeToUri } = require('../domain/utils/utils');
 
-class DebtManager {
+class DebtService {
     /**
      * @param {Function} onScoreUpdate - Callback for score updates
      * @param {Function} updateFileColorsInExplorer - Callback to update file colors
@@ -16,14 +17,14 @@ class DebtManager {
      */
     constructor(onScoreUpdate, updateFileColorsInExplorer = null, persistencePort, loggerPort = null) {
         if (!persistencePort) {
-            throw new Error('DebtManager requires persistencePort');
+            throw new Error('DebtService requires persistencePort');
         }
         
         this.onScoreUpdate = onScoreUpdate;
         this.updateFileColorsInExplorer = updateFileColorsInExplorer;
         this.persistencePort = persistencePort;
         this.loggerPort = loggerPort;
-        this.debt = new Map(); // URI string -> debt object (FIXED: use URI as canonical key)
+        this.debts = new Map(); // URI string -> Debt entity
     }
 
     /**
@@ -34,7 +35,7 @@ class DebtManager {
         
         try {
             const stored = this.persistencePort.loadSync('debt');
-            // Convert object to Map (workspaceState stores as object)
+            // Convert object to Map of Debt entities
             let debtData;
             if (stored instanceof Map) {
                 debtData = stored;
@@ -44,19 +45,28 @@ class DebtManager {
                 debtData = new Map();
             }
             
-            this.debt = debtData;
+            // Convert plain objects to Debt entities
+            this.debts = new Map();
+            for (const [uri, data] of debtData.entries()) {
+                if (data instanceof Debt) {
+                    this.debts.set(uri, data);
+                } else {
+                    // Convert plain object to Debt entity
+                    this.debts.set(uri, Debt.fromJSON(uri, data));
+                }
+            }
             
             if (this.loggerPort) {
-                this.loggerPort.log(`AwarenessMonitor: Loaded ${this.debt.size} files with debt`);
+                this.loggerPort.log(`AwarenessMonitor: Loaded ${this.debts.size} files with debt`);
             }
             
             // Clean up old debt (older than 7 days)
             const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
-            for (const [path, debt] of this.debt.entries()) {
+            for (const [uri, debt] of this.debts.entries()) {
                 if (debt.modifiedAt < sevenDaysAgo) {
-                    this.debt.delete(path);
+                    this.debts.delete(uri);
                     if (this.loggerPort) {
-                        this.loggerPort.log(`AwarenessMonitor: Removed stale debt for ${path}`);
+                        this.loggerPort.log(`AwarenessMonitor: Removed stale debt for ${uri}`);
                     }
                 }
             }
@@ -67,7 +77,7 @@ class DebtManager {
             if (this.loggerPort) {
                 this.loggerPort.error('AwarenessMonitor: Error loading debt', error);
             }
-            this.debt = new Map();
+            this.debts = new Map();
         }
     }
 
@@ -77,14 +87,16 @@ class DebtManager {
     saveDebt() {
         if (!this.persistencePort) return;
         
-        // Convert Map to object for storage (workspaceState stores as object)
-        const debtObject = this.debt instanceof Map ? Object.fromEntries(this.debt) : this.debt;
+        // Convert Map of Debt entities to plain objects for storage
+        const debtObject = {};
+        for (const [uri, debt] of this.debts.entries()) {
+            debtObject[uri] = debt.toJSON();
+        }
         this.persistencePort.saveSync('debt', debtObject);
     }
 
     /**
      * Add file to debt
-     * FIXED: Accept URI string as canonical identifier (works with remote workspaces)
      * @param {string} filePathOrUri - File path (fsPath) or URI string
      * @param {number} changeSize - Size of the change
      * @param {Function} updateScore - Callback to trigger score update
@@ -93,41 +105,15 @@ class DebtManager {
         const uri = normalizeToUri(filePathOrUri);
         if (!uri) return;
         
-        const existing = this.debt.get(uri);
-        const now = Date.now();
-        
-        if (existing && !existing.reviewed) {
-            // File already has debt, accumulate it
-            existing.totalChanges += changeSize;
-            existing.lastModifiedAt = now;
-            existing.modificationCount++;
-        } else if (existing && existing.reviewed) {
-            // File was reviewed but new changes came in - create new entry
-            this.debt.set(uri, {
-                modifiedAt: now,
-                lastModifiedAt: now,
-                totalChanges: changeSize,
-                modificationCount: 1,
-                reviewed: false,
-                firstOpenedAt: null,
-                totalReviewTime: 0,
-                lastVisitedAt: null,
-                reviewSessions: 0
-            });
-        } else {
-            // New debt entry
-            this.debt.set(uri, {
-                modifiedAt: now,
-                lastModifiedAt: now,
-                totalChanges: changeSize,
-                modificationCount: 1,
-                reviewed: false,
-                firstOpenedAt: null,
-                totalReviewTime: 0,
-                lastVisitedAt: null,
-                reviewSessions: 0
-            });
+        let debt = this.debts.get(uri);
+        if (!debt) {
+            // Create new Debt entity
+            debt = new Debt(uri);
+            this.debts.set(uri, debt);
         }
+        
+        // Use domain entity method
+        debt.addChange(changeSize);
         
         this.saveDebt();
         
@@ -144,30 +130,27 @@ class DebtManager {
 
     /**
      * Get debt entry for a file
-     * FIXED: Accept URI string as canonical identifier
      * @param {string} filePathOrUri - File path (fsPath) or URI string
-     * @returns {Object|null} Debt object or null
+     * @returns {Debt|null} Debt entity or null
      */
     getDebt(filePathOrUri) {
         const uri = normalizeToUri(filePathOrUri);
         if (!uri) return null;
-        return this.debt.get(uri) || null;
+        return this.debts.get(uri) || null;
     }
 
     /**
      * Mark debt as reviewed
-     * FIXED: Accept URI string as canonical identifier
      * @param {string} filePathOrUri - File path (fsPath) or URI string
      * @param {number} reviewTime - Time spent reviewing
      */
     markAsReviewed(filePathOrUri, reviewTime) {
         const uri = normalizeToUri(filePathOrUri);
         if (!uri) return;
-        const debt = this.debt.get(uri);
+        const debt = this.debts.get(uri);
         if (debt) {
-            debt.reviewed = true;
-            debt.reviewedAt = Date.now();
-            debt.totalReviewTime += reviewTime;
+            // Use domain entity method
+            debt.markAsReviewed(reviewTime);
             this.saveDebt();
             
             // Update file colors immediately when debt is cleared
@@ -179,20 +162,16 @@ class DebtManager {
 
     /**
      * Update debt with session info
-     * FIXED: Accept URI string as canonical identifier
      * @param {string} filePathOrUri - File path (fsPath) or URI string
      * @param {Object} sessionData - Session data
      */
     updateSession(filePathOrUri, sessionData) {
         const uri = normalizeToUri(filePathOrUri);
         if (!uri) return;
-        const debt = this.debt.get(uri);
+        const debt = this.debts.get(uri);
         if (debt) {
-            if (!debt.firstOpenedAt) {
-                debt.firstOpenedAt = sessionData.sessionStart;
-            }
-            debt.lastVisitedAt = Date.now();
-            debt.reviewSessions = (debt.reviewSessions || 0) + 1;
+            // Use domain entity method
+            debt.updateSession(sessionData);
             this.saveDebt();
         }
     }
@@ -204,8 +183,8 @@ class DebtManager {
      * @returns {number} Debt score (0-30)
      */
     calculateDebtScore(aiSuggestions) {
-        const unreviewedFiles = Array.from(this.debt.values())
-            .filter(d => !d.reviewed);
+        const unreviewedFiles = Array.from(this.debts.values())
+            .filter(d => !d.isReviewed());
         
         // Pending suggestions are also debt - they represent unreviewed AI-generated code
         const pendingSuggestions = aiSuggestions ? aiSuggestions.filter(s => s.status === 'pending') : [];
@@ -247,8 +226,8 @@ class DebtManager {
      * @returns {Object} Summary with total count and top 10 oldest files
      */
     getDebtSummary() {
-        const unreviewedFiles = Array.from(this.debt.entries())
-            .filter(([_, debt]) => !debt.reviewed)
+        const unreviewedFiles = Array.from(this.debts.entries())
+            .filter(([_, debt]) => !debt.isReviewed())
             .map(([path, debt]) => ({
                 path: path,
                 modifiedAt: debt.modifiedAt,
@@ -266,10 +245,10 @@ class DebtManager {
 
     /**
      * Get the debt Map (for direct access when needed)
-     * @returns {Map} Debt Map
+     * @returns {Map<string, Debt>} Debt Map
      */
     getDebtMap() {
-        return this.debt;
+        return this.debts;
     }
 
     /**
@@ -277,22 +256,20 @@ class DebtManager {
      * @returns {number} Number of files in debt
      */
     getDebtSize() {
-        return this.debt.size;
+        return this.debts.size;
     }
 
     /**
      * Check if file has unreviewed debt
-     * FIXED: Accept URI string as canonical identifier
      * @param {string} filePathOrUri - File path (fsPath) or URI string
      * @returns {boolean} True if file has unreviewed debt
      */
     hasUnreviewedDebt(filePathOrUri) {
         const uri = normalizeToUri(filePathOrUri);
         if (!uri) return false;
-        const debt = this.debt.get(uri);
-        return debt && !debt.reviewed;
+        const debt = this.debts.get(uri);
+        return debt && !debt.isReviewed();
     }
 }
 
-module.exports = DebtManager;
-
+module.exports = DebtService;

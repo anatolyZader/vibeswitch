@@ -1,8 +1,8 @@
 /**
- * Event Handlers
- * Handles all VS Code events for awareness monitoring
+ * EventService - Application service for handling VS Code events
  * 
- * Domain entity - uses ports for all infrastructure operations
+ * Orchestrates all VS Code events for awareness monitoring. This is an application service
+ * that coordinates domain entities and infrastructure adapters.
  * 
  * PRODUCTION-GRADE IMPROVEMENTS:
  * - Event batching: calls classifier once per event (not per change)
@@ -14,34 +14,34 @@
  * - Mode-configurable classifier thresholds
  */
 
-const { isNonCodeDocument, isSkippableUri, isPositionInRange } = require('../utils/utils');
-const ChangeClassifier = require('../utils/changeClassifier');
-const { buildDiffBullets } = require('../utils/diffBulletBuilder');
+const { isNonCodeDocument, isSkippableUri, isPositionInRange } = require('../domain/utils/utils');
+const ChangeClassifier = require('../domain/utils/changeClassifier');
+const { buildDiffBullets } = require('../domain/utils/diffBulletBuilder');
 
-class EventHandlers {
+class EventService {
     /**
-     * @param {Object} agentSuggestionHandler - Agent suggestion handler (domain entity)
-     * @param {Object} debtManager - Debt manager (domain entity)
-     * @param {Object} sessionTracker - Session tracker (domain entity)
+     * @param {Object} suggestionService - Suggestion service (application service)
+     * @param {Object} debtService - Debt service (application service)
+     * @param {Object} sessionService - Session service (application service)
      * @param {Object} activeDocument - Active document reference
      * @param {Object} cursorPosition - Cursor position reference
      * @param {string} mode - Current mode ('vibe', 'dev') for classifier config
-     * @param {Object} changeLedger - Change ledger for DIFF bullet tracking (optional)
+     * @param {Object} changeLedgerService - Change ledger service for DIFF bullet tracking (optional)
      * @param {Object} options - Options object
      * @param {IAwarenessVSCodePort} vscodePort - VS Code port (interface, required)
      * @param {ILoggerPort} loggerPort - Logger port (interface, optional)
      */
-    constructor(agentSuggestionHandler, debtManager, sessionTracker, activeDocument, cursorPosition, mode = 'dev', changeLedger = null, options = {}, vscodePort, loggerPort = null) {
+    constructor(suggestionService, debtService, sessionService, activeDocument, cursorPosition, mode = 'dev', changeLedgerService = null, options = {}, vscodePort, loggerPort = null) {
         if (!vscodePort) {
-            throw new Error('EventHandlers requires vscodePort');
+            throw new Error('EventService requires vscodePort');
         }
         
-        this.agentSuggestionHandler = agentSuggestionHandler;
-        this.debtManager = debtManager;
-        this.sessionTracker = sessionTracker;
+        this.suggestionService = suggestionService;
+        this.debtService = debtService;
+        this.sessionService = sessionService;
         this.activeDocument = activeDocument;
         this.cursorPosition = cursorPosition;
-        this.changeLedger = changeLedger; // DIFF bullet tracking
+        this.changeLedgerService = changeLedgerService; // DIFF bullet tracking
         this.vscodePort = vscodePort; // VS Code port (interface)
         this.loggerPort = loggerPort;
         
@@ -152,7 +152,7 @@ class EventHandlers {
                     const isFormatter = classification.label === 'formatter';
                     
                     // DIFF bullet tracking: record batch event and generate bullets
-                    if (this.changeLedger) {
+                    if (this.changeLedgerService) {
                         const uri = document.uri.toString();
                         // Use VS Code port for relative path
                         const file = this.vscodePort.asRelativePath(document.uri);
@@ -172,7 +172,7 @@ class EventHandlers {
                         const distinctRangeCount = distinctRanges.size;
                         
                         // Fix: Capture batchId from append() return value for explicit linking
-                        const batchId = this.changeLedger.append({
+                        const batchId = this.changeLedgerService.append({
                             ts: Date.now(),
                             uri,
                             file,
@@ -190,7 +190,7 @@ class EventHandlers {
                         // Generate and record DIFF bullet skeletons (explicitly linked via batchId)
                         const bullets = buildDiffBullets(document, aggregatedChanges, classification, this.vscodePort);
                         if (bullets.length > 0) {
-                            this.changeLedger.append({
+                            this.changeLedgerService.append({
                                 ts: Date.now(),
                                 uri,
                                 file,
@@ -214,8 +214,8 @@ class EventHandlers {
                             }
                         // Fix: Record as single batch suggestion (not per-change)
                         // This prevents dozens of "pending suggestions" from a single AI refactor
-                        if (this.agentSuggestionHandler) {
-                            this.agentSuggestionHandler.recordAISuggestionBatch(document, aggregatedChanges);
+                        if (this.suggestionService) {
+                            this.suggestionService.recordAISuggestionBatch(document, aggregatedChanges);
                         }
                         return;
                     } else if (isFormatter) {
@@ -234,8 +234,8 @@ class EventHandlers {
                     } else if (classification.label === 'user') {
                         // Fix: Only record user edits for explicit 'user' label, not 'unknown'
                         // Unknown means we couldn't determine origin - don't assume it's user
-                        if (this.agentSuggestionHandler) {
-                            this.agentSuggestionHandler.recordUserEditBatch(document, aggregatedChanges);
+                        if (this.suggestionService) {
+                            this.suggestionService.recordUserEditBatch(document, aggregatedChanges);
                         }
                     } else {
                         // Unknown label - don't record as user edits (could be AI we missed, or ambiguous)
@@ -268,8 +268,8 @@ class EventHandlers {
             
             // Process file as suggestion
             // FIXED: Pass URI directly, not fsPath (works with remote schemes)
-            if (this.agentSuggestionHandler) {
-                this.agentSuggestionHandler.processFileAsSuggestion(fileUri, {
+            if (this.suggestionService) {
+                this.suggestionService.processFileAsSuggestion(fileUri, {
                     isFileCreation: true,
                     filePath: null // Let processFileAsSuggestion handle path extraction from URI
                 }).then(suggestion => {
@@ -326,7 +326,7 @@ class EventHandlers {
                 // Use VS Code port for Range
                 const Range = this.vscodePort.Range;
                 // Use service method to create and track suggestion
-                this.agentSuggestionHandler.createSuggestionAndTrack({
+                this.suggestionService.createSuggestionAndTrack({
                     document: uri, // FIXED: Use URI string
                     range: new Range(0, 0, lastLine, lastChar),
                     text: content,
@@ -374,16 +374,16 @@ class EventHandlers {
         
         // FIXED: Use URI as canonical identifier (works with remote workspaces)
         const uri = document.uri.toString();
-        const hasUnreviewedDebt = this.debtManager && this.debtManager.hasUnreviewedDebt(uri);
+        const hasUnreviewedDebt = this.debtService && this.debtService.hasUnreviewedDebt(uri);
         
         // Check if file has unreviewed debt or pending suggestions
-        const hasPendingSuggestions = this.agentSuggestionHandler ? 
-            this.agentSuggestionHandler.hasPendingSuggestions(uri) : false;
+        const hasPendingSuggestions = this.suggestionService ? 
+            this.suggestionService.hasPendingSuggestions(uri) : false;
         
         if (hasUnreviewedDebt || hasPendingSuggestions) {
             // Initialize review session tracking
-            if (this.sessionTracker) {
-                this.sessionTracker.initializeSession(uri);
+            if (this.sessionService) {
+                this.sessionService.initializeSession(uri);
             }
         }
     }
@@ -416,8 +416,8 @@ class EventHandlers {
             clearTimeout(activeReview.dwellTimer);
         }
         
-        if (this.agentSuggestionHandler && activeReview.reviewStarted) {
-            const suggestions = this.agentSuggestionHandler.getSuggestions();
+        if (this.suggestionService && activeReview.reviewStarted) {
+            const suggestions = this.suggestionService.getSuggestions();
             const suggestion = suggestions.find(s => s.id === activeReview.suggestionId);
             
             if (suggestion) {
@@ -452,13 +452,13 @@ class EventHandlers {
         }
         
         // Update review tracking if this file has debt
-        if (this.sessionTracker) {
-            this.sessionTracker.updateCursorActivity(uri);
+        if (this.sessionService) {
+            this.sessionService.updateCursorActivity(uri);
         }
         
         // FIXED: Only track one suggestion at a time per document
-        if (this.agentSuggestionHandler) {
-            const pendingSuggestions = this.agentSuggestionHandler.getSuggestionsByStatus('pending');
+        if (this.suggestionService) {
+            const pendingSuggestions = this.suggestionService.getSuggestionsByStatus('pending');
             const activeReview = this.activeReviewSuggestion.get(uri);
             
             // First, close any active review that's no longer valid
@@ -500,8 +500,8 @@ class EventHandlers {
                             suggestion.reviewed = true;
                             // Fix: Trigger status check and updates immediately after marking as reviewed
                             // This prevents UX feeling delayed/stuck until next scheduled status check
-                            if (this.agentSuggestionHandler) {
-                                this.agentSuggestionHandler.checkSuggestionStatus(suggestion.id);
+                            if (this.suggestionService) {
+                                this.suggestionService.checkSuggestionStatus(suggestion.id);
                                 // updateFileColorsInExplorer and updateScore are handled by checkSuggestionStatus
                             }
                         }
@@ -531,8 +531,8 @@ class EventHandlers {
         const uri = event.textEditor.document.uri.toString();
         
         // Update review tracking if this file has debt
-        if (this.sessionTracker) {
-            this.sessionTracker.updateScrollActivity(uri);
+        if (this.sessionService) {
+            this.sessionService.updateScrollActivity(uri);
         }
     }
 
@@ -622,4 +622,4 @@ class EventHandlers {
     }
 }
 
-module.exports = EventHandlers;
+module.exports = EventService;

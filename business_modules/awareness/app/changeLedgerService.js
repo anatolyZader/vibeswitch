@@ -1,18 +1,11 @@
 /**
- * Change Ledger
- * Stores batch events per document for DIFF bullet generation and enforcement
+ * ChangeLedgerService - Application service for managing change ledger
  * 
- * Domain entity - uses ports for all infrastructure operations
- * 
- * Tracks:
- * - Observed diffs (editor-level batches with classification)
- * - Declared diffs (DIFF bullet skeletons)
- * - Checkpoints for enforcement boundaries
- * 
- * Fix: Buffered writes to prevent write amplification and race conditions
+ * Manages persistence, buffering, and orchestration of change ledger entries.
+ * This is an application service that handles infrastructure concerns.
  */
 
-class ChangeLedger {
+class ChangeLedgerService {
     /**
      * @param {number} maxEntries - Maximum entries to keep (default: 2000)
      * @param {number} flushIntervalMs - Flush interval in milliseconds (default: 1000)
@@ -22,10 +15,10 @@ class ChangeLedger {
      */
     constructor(maxEntries = 2000, flushIntervalMs = 1000, persistencePort, hashGeneratorPort, loggerPort = null) {
         if (!persistencePort) {
-            throw new Error('ChangeLedger requires persistencePort');
+            throw new Error('ChangeLedgerService requires persistencePort');
         }
         if (!hashGeneratorPort) {
-            throw new Error('ChangeLedger requires hashGeneratorPort');
+            throw new Error('ChangeLedgerService requires hashGeneratorPort');
         }
         
         this.persistencePort = persistencePort;
@@ -87,14 +80,14 @@ class ChangeLedger {
                 if (typeof queueMicrotask === 'function') {
                     queueMicrotask(() => this._flush().catch(err => {
                         if (this.loggerPort) {
-                            this.loggerPort.error('ChangeLedger: Queued flush error', err);
+                            this.loggerPort.error('ChangeLedgerService: Queued flush error', err);
                         }
                     }));
                 } else {
                     // Fallback for older Node versions
                     Promise.resolve().then(() => this._flush().catch(err => {
                         if (this.loggerPort) {
-                            this.loggerPort.error('ChangeLedger: Queued flush error', err);
+                            this.loggerPort.error('ChangeLedgerService: Queued flush error', err);
                         }
                     }));
                 }
@@ -114,7 +107,7 @@ class ChangeLedger {
             this._flush().catch(err => {
                 // Log but don't throw - ledger writes shouldn't crash the extension
                 if (this.loggerPort) {
-                    this.loggerPort.error('ChangeLedger: Flush error', err);
+                    this.loggerPort.error('ChangeLedgerService: Flush error', err);
                 }
             });
         }, this._flushIntervalMs);
@@ -161,7 +154,7 @@ class ChangeLedger {
             // Fix: Invariant check in dev - log error if still no batchId found
             if (!batchId && process.env.NODE_ENV !== 'production' && this.loggerPort) {
                 const recentTail = entries.slice(-5).map(e => `${e.kind}:${e.uri || e.file || 'unknown'}`).join(', ');
-                this.loggerPort.log(`ChangeLedger: diff_bullets entry missing batchId for ${entry.uri || entry.file || 'unknown'}. Recent entries: ${recentTail}`);
+                this.loggerPort.log(`ChangeLedgerService: diff_bullets entry missing batchId for ${entry.uri || entry.file || 'unknown'}. Recent entries: ${recentTail}`);
             }
         }
         
@@ -240,5 +233,4 @@ class ChangeLedger {
     }
 }
 
-module.exports = ChangeLedger;
-
+module.exports = ChangeLedgerService;

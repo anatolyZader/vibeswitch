@@ -1,8 +1,8 @@
 /**
- * Keep-All Detector
- * Detects when users rapidly accept multiple AI suggestions (potential "Keep All" pattern)
+ * KeepAllDetector - Domain service for detecting "Keep All" patterns
  * 
- * Domain entity - uses ports for all infrastructure operations
+ * Encapsulates business logic for detecting when users rapidly accept
+ * multiple AI suggestions. This is a domain service.
  */
 
 class KeepAllDetector {
