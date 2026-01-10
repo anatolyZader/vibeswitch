@@ -914,10 +914,6 @@ class AwarenessService extends IAwarenessService {
         return suggestion;
     }
 
-    /**
-     * Internal helper: Add suggestion to aggregate and track (debt, status check, score update)
-     * @private
-     */
     _addSuggestionAndTrack(suggestion, contentLength) {
         if (!this.suggestionAggregate) return;
         

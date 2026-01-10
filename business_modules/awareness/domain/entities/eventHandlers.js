@@ -70,10 +70,6 @@ class EventHandlers {
         this.previousActiveDocumentUri = null;
     }
 
-    /**
-     * Get classifier configuration based on mode
-     * @private
-     */
     _getClassifierConfig(mode) {
         const baseConfig = {
             multiLineThreshold: 50,
@@ -136,7 +132,7 @@ class EventHandlers {
 
         // Rate-limited logging via logger's built-in rate limiter
         const logKey = `onTextChange:${uri}`;
-        if (this.loggerAdapter) {
+        if (this.loggerPort) {
             this.loggerPort.log(`AwarenessMonitor: Text change detected - scheme: ${scheme}, file: ${fileName}, changes: ${event.contentChanges.length}`, false, false, logKey);
         }
         
@@ -158,8 +154,8 @@ class EventHandlers {
                     // DIFF bullet tracking: record batch event and generate bullets
                     if (this.changeLedger) {
                         const uri = document.uri.toString();
-                        // Use VS Code adapter for relative path
-                        const file = this.vscodeAdapter.asRelativePath(document.uri);
+                        // Use VS Code port for relative path
+                        const file = this.vscodePort.asRelativePath(document.uri);
                         const inserted = aggregatedChanges.reduce((sum, c) => sum + (c.text?.length || 0), 0);
                         // Fix: Use rangeLength property (handles multi-line deletions correctly)
                         const deleted = aggregatedChanges.reduce((sum, c) => sum + (c.rangeLength || 0), 0);
@@ -192,7 +188,7 @@ class EventHandlers {
                         });
                         
                         // Generate and record DIFF bullet skeletons (explicitly linked via batchId)
-                        const bullets = buildDiffBullets(document, aggregatedChanges, classification, this.vscodeAdapter);
+                        const bullets = buildDiffBullets(document, aggregatedChanges, classification, this.vscodePort);
                         if (bullets.length > 0) {
                             this.changeLedger.append({
                                 ts: Date.now(),
@@ -208,7 +204,7 @@ class EventHandlers {
                     if (isAI) {
                             const totalSize = aggregatedChanges.reduce((sum, c) => sum + c.text.length, 0);
                             const reasonsStr = classification.reasons.join('; ');
-                            if (this.loggerAdapter) {
+                            if (this.loggerPort) {
                                 this.loggerPort.log(
                                     `AwarenessMonitor: ✅ AI change detected (confidence=${(classification.confidence * 100).toFixed(0)}%): size=${totalSize}, changes=${aggregatedChanges.length}, reasons=[${reasonsStr}], file=${document.fileName}`,
                                     false,
@@ -226,7 +222,7 @@ class EventHandlers {
                         // Fix: Formatters should not mark AI suggestions as adapted
                         // Treat formatter detection as "neutral" - don't call recordUserEdit
                         // This prevents auto-formatters from accidentally marking AI suggestions as adapted
-                        if (this.loggerAdapter) {
+                        if (this.loggerPort) {
                             this.loggerPort.log(
                                 `AwarenessMonitor: 🔧 Formatter detected: ${classification.reasons.join('; ')}`,
                                 false,
@@ -256,7 +252,7 @@ class EventHandlers {
      * @param {vscode.FileCreateEvent} event - File create event
      */
     onFilesCreated(event) {
-        if (this.loggerAdapter) {
+        if (this.loggerPort) {
             this.loggerPort.log(`AwarenessMonitor: onFilesCreated called with ${event.files.length} files`, false, false, 'onFilesCreated');
         }
         
@@ -266,7 +262,7 @@ class EventHandlers {
                 continue;
             }
             
-            if (this.loggerAdapter) {
+            if (this.loggerPort) {
                 this.loggerPort.log(`AwarenessMonitor: Processing file creation - ${fileUri.toString()}`, false, false, `fileCreated:${fileUri.toString()}`);
             }
             
@@ -278,12 +274,12 @@ class EventHandlers {
                     filePath: null // Let processFileAsSuggestion handle path extraction from URI
                 }).then(suggestion => {
                     if (suggestion) {
-                        if (this.loggerAdapter) {
+                        if (this.loggerPort) {
                             this.loggerPort.log(`AwarenessMonitor: Detected AI file creation - ${suggestion.size} chars`, false, false, `fileCreatedSuccess:${fileUri.toString()}`);
                         }
                     }
                 }).catch(err => {
-                    if (this.loggerAdapter) {
+                    if (this.loggerPort) {
                         this.loggerPort.error('AwarenessMonitor: Error reading created file', err);
                     }
                 });
@@ -318,7 +314,7 @@ class EventHandlers {
             // Fix: Remove size-based scan - rely only on saveCache (uri+version)
             // Size-based scan is O(n) and can skip legit distinct suggestions with same size
             if (this.agentSuggestionHandler) {
-                if (this.loggerAdapter) {
+                if (this.loggerPort) {
                     this.loggerPort.log(`AwarenessMonitor: Large file saved - ${content.length} chars in ${document.fileName}`, false, false, `fileSaved:${uri}`);
                 }
                 
@@ -327,8 +323,8 @@ class EventHandlers {
                 const lastLineText = document.lineAt(lastLine).text;
                 const lastChar = lastLineText.length;
                 
-                // Use VS Code adapter for Range
-                const Range = this.vscodeAdapter.Range;
+                // Use VS Code port for Range
+                const Range = this.vscodePort.Range;
                 // Use service method to create and track suggestion
                 this.agentSuggestionHandler.createSuggestionAndTrack({
                     document: uri, // FIXED: Use URI string
@@ -357,10 +353,6 @@ class EventHandlers {
         }
     }
 
-    /**
-     * Simple hash function for content deduplication
-     * @private
-     */
     _simpleHash(str) {
         let hash = 0;
         for (let i = 0; i < str.length; i++) {
@@ -415,11 +407,6 @@ class EventHandlers {
         this._closeActiveReview(uri);
     }
 
-    /**
-     * Close active review for a document
-     * FIXED: Updates review time in separate state, not suggestion object
-     * @private
-     */
     _closeActiveReview(uri) {
         const activeReview = this.activeReviewSuggestion.get(uri);
         if (!activeReview) return;
@@ -558,10 +545,10 @@ class EventHandlers {
         // FIXED: Flush classifier for previous document (prevent memory leaks)
         if (this.previousActiveDocumentUri) {
             // Try to get document from workspace
-            // Use adapter if available, otherwise fallback to direct VS Code API (backward compatibility)
-            const textDocuments = this.vscodeAdapter 
-                ? this.vscodeAdapter.textDocuments
-                : this.vscodeAdapter.textDocuments;
+            // Use port if available
+            const textDocuments = this.vscodePort 
+                ? this.vscodePort.textDocuments
+                : [];
             const previousDoc = textDocuments.find(
                 d => d.uri.toString() === this.previousActiveDocumentUri
             );

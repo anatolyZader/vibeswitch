@@ -125,10 +125,6 @@ class ChangeClassifier {
         }, this.debounceMs);
     }
 
-    /**
-     * Classify aggregated changes and emit result
-     * @private
-     */
     _classifyAndEmit(uri) {
         const pending = this.pendingChanges.get(uri);
         if (!pending || pending.changes.length === 0) {
@@ -184,33 +180,10 @@ class ChangeClassifier {
         }
     }
 
-    /**
-     * Check if changes contain @ai marker (primary signal for AI-generated code)
-     * @param {Array<vscode.TextDocumentContentChangeEvent>} changes - Aggregated changes
-     * @returns {boolean} True if @ai marker is found
-     * @private
-     */
     _hasAIMarker(changes) {
         return hasAIMarker(changes);
     }
 
-    /**
-     * Classify aggregated changes with rich output
-     * PRIMARY: Behavioral inference via heuristics (edit patterns, batch characteristics, temporal patterns)
-     * SECONDARY: @ai marker (strong signal when present, but cannot be relied upon)
-     * 
-     * Strategy: Behavioral heuristics are the primary detection method. Markers are
-     * helpful hints that strengthen confidence when present, but absence of marker
-     * does NOT mean human origin - we must use behavioral inference.
-     * 
-     * DESIGN IMPROVEMENT: Returns rich classification result for debugging and tuning
-     * @param {Array<vscode.TextDocumentContentChangeEvent>} changes - Aggregated changes
-     * @param {Array<number>} eventTimestamps - Timestamps for each event (for temporal analysis)
-     * @param {Array<Set>} eventRangeSets - Range sets for each event (for scattered pattern detection)
-     * @param {number} firstChangeTime - Timestamp of first change in batch
-     * @returns {{label: 'ai'|'user'|'formatter'|'unknown', confidence: number, reasons: string[]}} Classification result
-     * @private
-     */
     _classify(changes, eventTimestamps = [], eventRangeSets = [], firstChangeTime = null) {
         if (changes.length === 0) {
             return { label: 'unknown', confidence: 0, reasons: ['no changes'] };
@@ -266,10 +239,6 @@ class ChangeClassifier {
     }
     
     
-    /**
-     * Legacy method for backward compatibility
-     * @private
-     */
     _classifyAsAI(changes, eventTimestamps = [], eventRangeSets = [], firstChangeTime = null) {
         const result = this._classify(changes, eventTimestamps, eventRangeSets, firstChangeTime);
         return result.label === 'ai';

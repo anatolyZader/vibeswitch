@@ -3,11 +3,6 @@
  * Accumulates detector scores and determines final classification label and confidence
  */
 
-/**
- * Accumulate scores from detector results
- * @param {Array<Function>} detectors - Array of detector functions to run
- * @returns {{aiScore: number, formatterScore: number, userScore: number, reasonObjects: Array<{tag: string|null, text: string}>}} Accumulated scores and reasons
- */
 function accumulateScores(detectors) {
     let aiScore = 0;
     let formatterScore = 0;
@@ -37,13 +32,6 @@ function accumulateScores(detectors) {
     return { aiScore, formatterScore, userScore, reasonObjects };
 }
 
-/**
- * Determine final classification label and confidence from scores
- * @param {number} aiScore - Accumulated AI score
- * @param {number} formatterScore - Accumulated formatter score
- * @param {number} userScore - Accumulated user score
- * @returns {{label: string, confidence: number}} Final label and confidence
- */
 function determineLabel(aiScore, formatterScore, userScore) {
     let label = 'unknown';
     let confidence = 0;

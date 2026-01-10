@@ -265,11 +265,6 @@ class SuggestionAggregate {
         return { total, pending };
     }
 
-    /**
-     * Evict suggestions when approaching capacity limit
-     * Eviction policy: non-pending first, then oldest pending as last resort
-     * @private
-     */
     _evictSuggestions() {
         const targetSize = Math.floor(this.MAX_TOTAL_SUGGESTIONS * 0.8);
         const currentSize = this.suggestionsById.size;
@@ -335,11 +330,6 @@ class SuggestionAggregate {
         }
     }
 
-    /**
-     * Remove suggestion from per-document pending index when status changes
-     * @param {Suggestion} suggestion - Suggestion entity
-     * @private
-     */
     _removeFromPendingIndex(suggestion) {
         const docUri = suggestion.document;
         const pendingIds = this.pendingByDocUri.get(docUri);

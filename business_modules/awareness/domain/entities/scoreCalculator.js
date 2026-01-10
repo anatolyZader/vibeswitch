@@ -47,8 +47,8 @@ class ScoreCalculator {
         const debtScore = getDebtScore();
         const hasDebt = debtScore > 0;
         
-        // Rate-limited debug logging via logger adapter
-        if (this.loggerAdapter) {
+        // Rate-limited debug logging via logger port
+        if (this.loggerPort) {
             this.loggerPort.debug(`Updating score: ${recentSuggestions.length} recent, ${aiSuggestions.length} total, debt: ${debtScore}`, 'scoreCalculator:updateScore');
         }
         
@@ -244,17 +244,17 @@ class ScoreCalculator {
                 let filePath = null;
                 if (s.document) {
                     try {
-                        // Use VS Code adapter for URI creation
-                        const Uri = this.vscodeAdapter ? this.vscodeAdapter.Uri : null;
+                        // Use VS Code port for URI creation
+                        const Uri = this.vscodePort ? this.vscodePort.Uri : null;
                         if (!Uri) {
-                            continue; // Skip if no adapter available
+                            continue; // Skip if no port available
                         }
                         const uri = Uri.parse(s.document);
                         if (uri.scheme === 'file') {
                             filePath = uri.fsPath;
                         }
                     } catch (err) {
-                        if (this.loggerAdapter) {
+                        if (this.loggerPort) {
                             this.loggerPort.error('AwarenessMonitor: Error parsing document URI', err);
                         }
                     }

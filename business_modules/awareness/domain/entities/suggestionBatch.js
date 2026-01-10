@@ -69,10 +69,6 @@ class SuggestionBatch {
         this._updateStatus();
     }
 
-    /**
-     * Update batch status based on outcomes
-     * @private
-     */
     _updateStatus() {
         const total = this.suggestionIds.length;
         const resolved = this.acceptedCount + this.rejectedCount + this.modifiedCount;

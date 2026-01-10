@@ -146,10 +146,6 @@ class AwarenessEventEmitterMessagingAdapter extends IAwarenessMessagingPort {
         }
     }
 
-    /**
-     * Generate a correlation ID for event tracking
-     * @private
-     */
     _generateCorrelationId() {
         return `awareness-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
     }

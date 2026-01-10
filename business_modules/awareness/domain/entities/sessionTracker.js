@@ -7,6 +7,14 @@ const { normalizeToUri } = require('../utils/utils');
 const ReviewSession = require('./reviewSession');
 
 class SessionTracker {
+    /**
+     * @param {Object} debtManager - Debt manager (domain entity)
+     * @param {Object} agentSuggestionHandler - Agent suggestion handler (domain entity)
+     * @param {Function} onDebtCleared - Callback when debt is cleared
+     * @param {Function} updateScore - Score update callback
+     * @param {Function} updateFileColorsInExplorer - Callback to update file colors (optional)
+     * @param {Object} messagingAdapter - Messaging adapter for domain events (optional)
+     */
     constructor(debtManager, agentSuggestionHandler, onDebtCleared, updateScore, updateFileColorsInExplorer = null, messagingAdapter = null) {
         this.debtManager = debtManager;
         this.agentSuggestionHandler = agentSuggestionHandler;

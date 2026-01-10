@@ -3,10 +3,6 @@
  * Manages pending changes aggregation: tracking, capping, and event metadata
  */
 
-/**
- * Create a new pending changes entry
- * @returns {Object} Pending changes entry
- */
 function createPendingEntry() {
     return {
         changes: [],
@@ -23,12 +19,6 @@ function createPendingEntry() {
     };
 }
 
-/**
- * Calculate event range set from content changes
- * Uses line-based keys for more stable scatteredness detection
- * @param {Array<vscode.TextDocumentContentChangeEvent>} contentChanges - Content changes from event
- * @returns {Set<string>} Set of line-based range keys
- */
 function calculateEventRangeSet(contentChanges) {
     const eventRangeSet = new Set();
     for (const change of contentChanges) {
@@ -39,13 +29,6 @@ function calculateEventRangeSet(contentChanges) {
     return eventRangeSet;
 }
 
-/**
- * Add changes to pending entry with capping
- * @param {Object} pending - Pending changes entry
- * @param {Array<vscode.TextDocumentContentChangeEvent>} contentChanges - Changes to add
- * @param {number} maxChangesPerDocumentBatch - Maximum changes per document batch
- * @param {number} timestamp - Current timestamp
- */
 function addChangesWithCapping(pending, contentChanges, maxChangesPerDocumentBatch, timestamp) {
     // Track first change time if this is the first batch
     if (pending.changes.length === 0) {
@@ -77,13 +60,6 @@ function addChangesWithCapping(pending, contentChanges, maxChangesPerDocumentBat
     }
 }
 
-/**
- * Record event metadata
- * @param {Object} pending - Pending changes entry
- * @param {number} timestamp - Event timestamp
- * @param {Set<string>} eventRangeSet - Range set for this event
- * @param {number} changeCount - Number of changes in this event
- */
 function recordEventMetadata(pending, timestamp, eventRangeSet, changeCount) {
     // Track one timestamp per event (not per change)
     pending.eventTimestamps.push(timestamp);
