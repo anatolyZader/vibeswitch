@@ -199,81 +199,41 @@ class AwarenessController {
     /**
      * Handle file saved event
      * @param {vscode.TextDocument} document - The saved document
-     * @param {Map} saveCache - Cache for duplicate detection (uri:version -> {hash, timestamp})
+     * @returns {boolean} True if file was processed, false otherwise
      */
-    handleFileSaved(document, saveCache) {
+    handleFileSaved(document) {
         try {
             // Validate document (early return if invalid)
             if (!this.awarenessService.isValidCodeDocument(document)) {
-                return;
+                return false;
             }
             
-            const content = document.getText();
             const uri = document.uri.toString();
+            const content = document.getText();
             
-            // Lowered threshold to catch more AI file operations
-            if (content.length > 200) {
-                // Improved duplicate detection: primary key is uri + version (fast, deterministic)
-                const cacheKey = `${uri}:${document.version}`;
-                const cached = saveCache.get(cacheKey);
-                
-                // If we already processed this exact version, skip
-                if (cached) {
-                    return; // Already processed
-                }
-                
-                // Log the event
-                this.log(`AwarenessMonitor: Large file saved - ${content.length} chars in ${document.fileName}`, `fileSaved:${uri}`);
-                
-                // Fixed: Range math bug - lineCount is 1-based count, but line indices are 0-based
-                const lastLine = Math.max(0, document.lineCount - 1);
-                const lastLineText = document.lineAt(lastLine).text;
-                const lastChar = lastLineText.length;
-                
-                // Get Range constructor
-                const Range = this.awarenessService.getRange();
-                if (!Range) {
-                    return; // Cannot create range without Range constructor
-                }
-                
-                // Create and track suggestion
-                this.awarenessService.handleFileSaved(document, {
-                    range: new Range(0, 0, lastLine, lastChar),
-                    text: content,
-                    size: content.length,
-                    isFileWrite: true
-                });
-                
-                // Update cache (primary key: version)
-                saveCache.set(cacheKey, {
-                    hash: this._simpleHash(content),
-                    timestamp: Date.now()
-                });
-                
-                // Clean old cache entries (keep last 100)
-                if (saveCache.size > 100) {
-                    const entries = Array.from(saveCache.entries());
-                    entries.sort((a, b) => b[1].timestamp - a[1].timestamp);
-                    saveCache.clear();
-                    entries.slice(0, 100).forEach(([key, value]) => {
-                        saveCache.set(key, value);
-                    });
-                }
-            }
+            // Log the event
+            this.log(`AwarenessMonitor: File saved - ${content.length} chars in ${document.fileName}`, `fileSaved:${uri}`);
+            
+            // Delegate to service (service handles threshold, Range creation, and processing)
+            return this.awarenessService.handleFileSaved(document);
         } catch (error) {
             this.logger?.error('AwarenessController.handleFileSaved failed', error);
             throw error;
         }
     }
     
-    _simpleHash(str) {
-        let hash = 0;
-        for (let i = 0; i < str.length; i++) {
-            const char = str.charCodeAt(i);
-            hash = ((hash << 5) - hash) + char;
-            hash = hash & hash; // Convert to 32bit integer
+    /**
+     * Get content hash for cache (delegates to service)
+     * @param {string} content - Content to hash
+     * @returns {string} Hash string
+     */
+    getContentHash(content) {
+        try {
+            return this.awarenessService.getContentHash(content);
+        } catch (error) {
+            this.logger?.error('AwarenessController.getContentHash failed', error);
+            return '';
         }
-        return hash.toString(36);
     }
     
     /**

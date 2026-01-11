@@ -99,17 +99,32 @@ async function activate(context) {
         const AwarenessVSCodeAdapter = require('./business_modules/awareness/infrastructure/adapters/awarenessVSCodeAdapter');
         const AwarenessWorkspaceStateAdapter = require('./business_modules/awareness/infrastructure/adapters/awarenessWorkspaceStateAdapter');
         const AwarenessEventEmitterMessagingAdapter = require('./business_modules/awareness/infrastructure/adapters/awarenessEventEmitterMessagingAdapter');
+        const AwarenessLoggerAdapter = require('./business_modules/awareness/infrastructure/adapters/awarenessLoggerAdapter');
+        const AwarenessFileSystemAdapter = require('./business_modules/awareness/infrastructure/adapters/awarenessFileSystemAdapter');
+        const AwarenessIdGeneratorAdapter = require('./business_modules/awareness/infrastructure/adapters/awarenessIdGeneratorAdapter');
+        const AwarenessHashGeneratorAdapter = require('./business_modules/awareness/infrastructure/adapters/awarenessHashGeneratorAdapter');
+        const EventSubscriptionDService = require('./business_modules/awareness/domain/services/eventSubscriptionServiceD');
+        const VSCodeWorkspaceDService = require('./business_modules/awareness/domain/services/vscodeWorkspaceServiceD');
         
         // Create awareness module-specific adapters
+        // All adapters are created here and injected - no distinction between "internal" and "external"
         const awarenessVscodeAdapter = new AwarenessVSCodeAdapter(vscode);
         const persistenceAdapter = new AwarenessWorkspaceStateAdapter(context);
         const messagingAdapter = new AwarenessEventEmitterMessagingAdapter();
+        const loggerAdapter = new AwarenessLoggerAdapter();
+        const fileSystemAdapter = new AwarenessFileSystemAdapter();
+        const idGeneratorAdapter = new AwarenessIdGeneratorAdapter();
+        const hashGeneratorAdapter = new AwarenessHashGeneratorAdapter();
         
         // Store adapters in DI container (single source of truth)
         // Use DI container methods for all adapter access - no direct property assignments
         state.setAdapter('awareness', 'vscodeAdapter', awarenessVscodeAdapter);
         state.setAdapter('awareness', 'persistenceAdapter', persistenceAdapter);
         state.setAdapter('awareness', 'messagingAdapter', messagingAdapter);
+        state.setAdapter('awareness', 'loggerAdapter', loggerAdapter);
+        state.setAdapter('awareness', 'fileSystemAdapter', fileSystemAdapter);
+        state.setAdapter('awareness', 'idGeneratorAdapter', idGeneratorAdapter);
+        state.setAdapter('awareness', 'hashGeneratorAdapter', hashGeneratorAdapter);
         
         // Initialize output channel using direct VS Code API (extension-level concern, not module-specific)
         state.outputChannel = vscode.window.createOutputChannel('VibeSwitch');
@@ -161,12 +176,26 @@ async function activate(context) {
         const awarenessVscodeAdapterFromDI = state.getAdapter('awareness', 'vscodeAdapter');
         const awarenessPersistenceAdapter = state.getAdapter('awareness', 'persistenceAdapter');
         const awarenessMessagingAdapter = state.getAdapter('awareness', 'messagingAdapter');
+        const awarenessLoggerAdapter = state.getAdapter('awareness', 'loggerAdapter');
+        const awarenessFileSystemAdapter = state.getAdapter('awareness', 'fileSystemAdapter');
+        const awarenessIdGeneratorAdapter = state.getAdapter('awareness', 'idGeneratorAdapter');
+        const awarenessHashGeneratorAdapter = state.getAdapter('awareness', 'hashGeneratorAdapter');
+        
+        // Create domain services (no dependencies - ports passed as method parameters)
+        const eventSubscriptionDService = new EventSubscriptionDService();
+        const vscodeWorkspaceDService = new VSCodeWorkspaceDService();
         
         // Create AwarenessService with explicit dependencies (Ports and Adapters pattern)
         const awarenessService = new AwarenessService({
             vscodeAdapter: awarenessVscodeAdapterFromDI,
             persistenceAdapter: awarenessPersistenceAdapter,
-            messagingAdapter: awarenessMessagingAdapter
+            messagingAdapter: awarenessMessagingAdapter,
+            loggerAdapter: awarenessLoggerAdapter,
+            fileSystemAdapter: awarenessFileSystemAdapter,
+            idGeneratorAdapter: awarenessIdGeneratorAdapter,
+            hashGeneratorAdapter: awarenessHashGeneratorAdapter,
+            eventSubscriptionDService: eventSubscriptionDService,
+            vscodeWorkspaceDService: vscodeWorkspaceDService
         });
         
         // Register service in DI container (before creating controller)

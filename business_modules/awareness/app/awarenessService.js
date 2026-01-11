@@ -19,6 +19,7 @@ const AwarenessEventListener = require('../input/awarenessEventListener');
 // Import domain services
 const ScoreCalculator = require('../domain/services/scoreCalculator');
 const KeepAllDetector = require('../domain/services/keepAllDetector');
+// EventSubscriptionDService and VSCodeWorkspaceDService are now injected via constructor (created in extension.js)
 
 // Import domain aggregates
 const SuggestionAggregate = require('../domain/aggregates/suggestionAggregate');
@@ -35,11 +36,7 @@ const KeepAllEvent = require('../domain/events/keepAllEvent');
 const DebtClearedEvent = require('../domain/events/debtClearedEvent');
 const SuggestionBatchCreatedEvent = require('../domain/events/suggestionBatchCreatedEvent');
 
-// Import adapters
-const AwarenessLoggerAdapter = require('../infrastructure/adapters/awarenessLoggerAdapter');
-const AwarenessFileSystemAdapter = require('../infrastructure/adapters/awarenessFileSystemAdapter');
-const AwarenessIdGeneratorAdapter = require('../infrastructure/adapters/awarenessIdGeneratorAdapter');
-const AwarenessHashGeneratorAdapter = require('../infrastructure/adapters/awarenessHashGeneratorAdapter');
+// Adapters are now injected via constructor (no imports needed)
 
 // Import utilities
 const { getLogger } = require('../../../../logger');
@@ -54,24 +51,62 @@ class AwarenessService extends IAwarenessService {
      * @param {Object} adapters.vscodeAdapter - VS Code adapter implementing IAwarenessVSCodePort
      * @param {Object} adapters.persistenceAdapter - Persistence adapter implementing IAwarenessPersistencePort
      * @param {Object} adapters.messagingAdapter - Messaging adapter implementing IAwarenessMessagingPort (optional)
+     * @param {Object} adapters.loggerAdapter - Logger adapter implementing ILoggerPort
+     * @param {Object} adapters.fileSystemAdapter - File system adapter implementing IFileSystemPort
+     * @param {Object} adapters.idGeneratorAdapter - ID generator adapter implementing IIdGeneratorPort
+     * @param {Object} adapters.hashGeneratorAdapter - Hash generator adapter implementing IHashGeneratorPort
+     * @param {Object} adapters.eventSubscriptionDService - Event subscription domain service
+     * @param {Object} adapters.vscodeWorkspaceDService - VS Code workspace domain service
      */
-    constructor({ vscodeAdapter, persistenceAdapter, messagingAdapter = null }) {
+    constructor({ 
+        vscodeAdapter, 
+        persistenceAdapter, 
+        messagingAdapter = null,
+        loggerAdapter,
+        fileSystemAdapter,
+        idGeneratorAdapter,
+        hashGeneratorAdapter,
+        eventSubscriptionDService,
+        vscodeWorkspaceDService
+    }) {
+        // Validate required adapters
         if (!vscodeAdapter) {
             throw new Error('AwarenessService requires vscodeAdapter');
         }
         if (!persistenceAdapter) {
             throw new Error('AwarenessService requires persistenceAdapter');
         }
+        if (!loggerAdapter) {
+            throw new Error('AwarenessService requires loggerAdapter');
+        }
+        if (!fileSystemAdapter) {
+            throw new Error('AwarenessService requires fileSystemAdapter');
+        }
+        if (!idGeneratorAdapter) {
+            throw new Error('AwarenessService requires idGeneratorAdapter');
+        }
+        if (!hashGeneratorAdapter) {
+            throw new Error('AwarenessService requires hashGeneratorAdapter');
+        }
+        if (!eventSubscriptionDService) {
+            throw new Error('AwarenessService requires eventSubscriptionDService');
+        }
+        if (!vscodeWorkspaceDService) {
+            throw new Error('AwarenessService requires vscodeWorkspaceDService');
+        }
         
+        // Store all injected adapters (Ports and Adapters pattern)
         this.vscodeAdapter = vscodeAdapter;
         this.persistenceAdapter = persistenceAdapter;
         this.messagingAdapter = messagingAdapter; // Optional - events won't be published if not provided
+        this.loggerAdapter = loggerAdapter;
+        this.fileSystemAdapter = fileSystemAdapter;
+        this.idGeneratorAdapter = idGeneratorAdapter;
+        this.hashGeneratorAdapter = hashGeneratorAdapter;
         
-        // Create infrastructure adapters for domain entities
-        this.loggerAdapter = new AwarenessLoggerAdapter();
-        this.fileSystemAdapter = new AwarenessFileSystemAdapter();
-        this.idGeneratorAdapter = new AwarenessIdGeneratorAdapter();
-        this.hashGeneratorAdapter = new AwarenessHashGeneratorAdapter();
+        // Store injected domain services (created in composition root)
+        this.eventSubscriptionDService = eventSubscriptionDService;
+        this.vscodeWorkspaceDService = vscodeWorkspaceDService;
         
         // Optional callbacks for external tracking (e.g., UsageStats)
         this.onAISuggestion = null;
@@ -239,53 +274,77 @@ class AwarenessService extends IAwarenessService {
             controller // Pass controller (input layer)
         );
         
-        // Register event listeners using adapters
+        // Register event listeners using domain service (pass adapter as port to methods)
         this.disposables.push(
-            this.vscodeAdapter.onDidChangeTextDocument((event) => {
-                safe('onTextChange', () => this.eventHandlers.onTextChange(event));
-            })
+            this.eventSubscriptionDService.subscribeToTextDocumentChanges(
+                (event) => {
+                    safe('onTextChange', () => this.eventHandlers.onTextChange(event));
+                },
+                this.vscodeAdapter // Pass adapter as port
+            )
         );
         
         this.disposables.push(
-            this.vscodeAdapter.onDidCreateFiles((event) => {
-                safe('onFilesCreated', () => this.eventHandlers.onFilesCreated(event));
-            })
+            this.eventSubscriptionDService.subscribeToFileCreation(
+                (event) => {
+                    safe('onFilesCreated', () => this.eventHandlers.onFilesCreated(event));
+                },
+                this.vscodeAdapter // Pass adapter as port
+            )
         );
         
         this.disposables.push(
-            this.vscodeAdapter.onDidSaveTextDocument((document) => {
-                safe('onFileSaved', () => this.eventHandlers.onFileSaved(document));
-            })
+            this.eventSubscriptionDService.subscribeToFileSave(
+                (document) => {
+                    safe('onFileSaved', () => this.eventHandlers.onFileSaved(document));
+                },
+                this.vscodeAdapter // Pass adapter as port
+            )
         );
         
         this.disposables.push(
-            this.vscodeAdapter.onDidOpenTextDocument((document) => {
-                safe('onFileOpened', () => this.eventHandlers.onFileOpened(document));
-            })
+            this.eventSubscriptionDService.subscribeToFileOpen(
+                (document) => {
+                    safe('onFileOpened', () => this.eventHandlers.onFileOpened(document));
+                },
+                this.vscodeAdapter // Pass adapter as port
+            )
         );
         
         this.disposables.push(
-            this.vscodeAdapter.onDidCloseTextDocument((document) => {
-                safe('onDocumentClose', () => this.eventHandlers.onDocumentClose(document));
-            })
+            this.eventSubscriptionDService.subscribeToFileClose(
+                (document) => {
+                    safe('onDocumentClose', () => this.eventHandlers.onDocumentClose(document));
+                },
+                this.vscodeAdapter // Pass adapter as port
+            )
         );
         
         this.disposables.push(
-            this.vscodeAdapter.onDidChangeTextEditorSelection((event) => {
-                safe('onCursorMove', () => this.eventHandlers.onCursorMove(event));
-            })
+            this.eventSubscriptionDService.subscribeToCursorMove(
+                (event) => {
+                    safe('onCursorMove', () => this.eventHandlers.onCursorMove(event));
+                },
+                this.vscodeAdapter // Pass adapter as port
+            )
         );
         
         this.disposables.push(
-            this.vscodeAdapter.onDidChangeTextEditorVisibleRanges((event) => {
-                safe('onScroll', () => this.eventHandlers.onScroll(event));
-            })
+            this.eventSubscriptionDService.subscribeToScroll(
+                (event) => {
+                    safe('onScroll', () => this.eventHandlers.onScroll(event));
+                },
+                this.vscodeAdapter // Pass adapter as port
+            )
         );
         
         this.disposables.push(
-            this.vscodeAdapter.onDidChangeActiveTextEditor((editor) => {
-                safe('onEditorChange', () => this.eventHandlers.onEditorChange(editor));
-            })
+            this.eventSubscriptionDService.subscribeToEditorChange(
+                (editor) => {
+                    safe('onEditorChange', () => this.eventHandlers.onEditorChange(editor));
+                },
+                this.vscodeAdapter // Pass adapter as port
+            )
         );
         
         // Start file watcher
@@ -635,8 +694,7 @@ class AwarenessService extends IAwarenessService {
             hasFileSystemWatcher: this.fileWatcher ? this.fileWatcher.isActive() : false,
             hasUpdateTimer: !!this.updateTimer,
             watchedDirectories: this.fileWatcher ? this.fileWatcher.getWatchedDirectories() : [],
-            workspaceFolders: this.vscodeAdapter.workspaceFolders ? 
-                this.vscodeAdapter.workspaceFolders.map(f => f.uri.fsPath) : [],
+            workspaceFolders: this.vscodeWorkspaceDService.getWorkspaceFolders(this.vscodeAdapter).map(f => f.uri.fsPath),
             recentAcceptances: this.keepAllDetector ? this.keepAllDetector.getRecentAcceptanceCount() : 0
         };
     }
@@ -716,19 +774,60 @@ class AwarenessService extends IAwarenessService {
     /**
      * Handle file saved event
      * @param {vscode.TextDocument} document - The saved document
-     * @param {Object} options - Options with range, text, size, isFileWrite
+     * @returns {boolean} True if file was processed, false otherwise
      */
-    handleFileSaved(document, options) {
-        if (this.suggestionService) {
-            const uri = document.uri.toString();
-            this.suggestionService.createSuggestionAndTrack({
-                document: uri,
-                range: options.range,
-                text: options.text,
-                size: options.size,
-                isFileWrite: options.isFileWrite
-            }, options.size);
+    handleFileSaved(document) {
+        if (!this.suggestionService) {
+            return false;
         }
+        
+        const content = document.getText();
+        
+        // Lowered threshold to catch more AI file operations (business logic)
+        if (content.length <= 200) {
+            return false; // Below threshold, skip
+        }
+        
+        // Fixed: Range math bug - lineCount is 1-based count, but line indices are 0-based
+        const lastLine = Math.max(0, document.lineCount - 1);
+        const lastLineText = document.lineAt(lastLine).text;
+        const lastChar = lastLineText.length;
+        
+        // Get Range constructor from adapter
+        const Range = this.getRange();
+        if (!Range) {
+            return false; // Cannot create range without Range constructor
+        }
+        
+        // Create range for entire file
+        const range = new Range(0, 0, lastLine, lastChar);
+        const uri = document.uri.toString();
+        
+        // Create and track suggestion
+        this.suggestionService.createSuggestionAndTrack({
+            document: uri,
+            range: range,
+            text: content,
+            size: content.length,
+            isFileWrite: true
+        }, content.length);
+        
+        return true; // Successfully processed
+    }
+    
+    /**
+     * Get content hash for cache (simple hash for duplicate detection)
+     * @param {string} content - Content to hash
+     * @returns {string} Hash string
+     */
+    getContentHash(content) {
+        let hash = 0;
+        for (let i = 0; i < content.length; i++) {
+            const char = content.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32bit integer
+        }
+        return hash.toString(36);
     }
     
     /**
@@ -866,37 +965,28 @@ class AwarenessService extends IAwarenessService {
     }
     
     /**
-     * Get relative path from URI
+     * Get relative path from URI (delegates to domain service, passes adapter as port)
      * @param {vscode.Uri} uri - URI to convert
      * @returns {string} Relative path
      */
     asRelativePath(uri) {
-        if (this.vscodeAdapter) {
-            return this.vscodeAdapter.asRelativePath(uri);
-        }
-        return uri.fsPath || uri.toString();
+        return this.vscodeWorkspaceDService.asRelativePath(uri, this.vscodeAdapter);
     }
     
     /**
-     * Get Range constructor
+     * Get Range constructor (delegates to domain service, passes adapter as port)
      * @returns {Function} Range constructor
      */
     getRange() {
-        if (this.vscodeAdapter) {
-            return this.vscodeAdapter.Range;
-        }
-        return null;
+        return this.vscodeWorkspaceDService.getRange(this.vscodeAdapter);
     }
     
     /**
-     * Get text documents from workspace
+     * Get text documents from workspace (delegates to domain service, passes adapter as port)
      * @returns {Array<vscode.TextDocument>} Array of text documents
      */
     getTextDocuments() {
-        if (this.vscodeAdapter) {
-            return this.vscodeAdapter.textDocuments || [];
-        }
-        return [];
+        return this.vscodeWorkspaceDService.getTextDocuments(this.vscodeAdapter);
     }
 }
 

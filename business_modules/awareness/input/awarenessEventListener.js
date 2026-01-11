@@ -62,8 +62,39 @@ class AwarenessEventListener {
      * @param {vscode.TextDocument} document - The saved document
      */
     onFileSaved(document) {
-        // Delegate to controller - handles validation, logging, cache management, and processing
-        this.controller.handleFileSaved(document, this.saveCache);
+        // Manage cache (input-layer state)
+        const uri = document.uri.toString();
+        const cacheKey = `${uri}:${document.version}`;
+        const cached = this.saveCache.get(cacheKey);
+        
+        // If we already processed this exact version, skip
+        if (cached) {
+            return; // Already processed
+        }
+        
+        // Delegate to controller - handles validation, logging, and processing
+        // Controller will return whether it was processed, then we update cache
+        const wasProcessed = this.controller.handleFileSaved(document);
+        
+        if (wasProcessed) {
+            // Update cache (primary key: version)
+            const content = document.getText();
+            const contentHash = this.controller.getContentHash(content);
+            this.saveCache.set(cacheKey, {
+                hash: contentHash,
+                timestamp: Date.now()
+            });
+            
+            // Clean old cache entries (keep last 100)
+            if (this.saveCache.size > 100) {
+                const entries = Array.from(this.saveCache.entries());
+                entries.sort((a, b) => b[1].timestamp - a[1].timestamp);
+                this.saveCache.clear();
+                entries.slice(0, 100).forEach(([key, value]) => {
+                    this.saveCache.set(key, value);
+                });
+            }
+        }
     }
 
     /**

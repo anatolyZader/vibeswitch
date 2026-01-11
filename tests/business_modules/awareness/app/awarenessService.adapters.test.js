@@ -8,6 +8,12 @@ const AwarenessService = require('../../../../business_modules/awareness/app/awa
 const AwarenessController = require('../../../../business_modules/awareness/input/awarenessController');
 const AwarenessMockVSCodeAdapter = require('../../../../business_modules/awareness/infrastructure/adapters/awarenessMockVSCodeAdapter');
 const AwarenessMockPersistenceAdapter = require('../../../../business_modules/awareness/infrastructure/adapters/awarenessMockPersistenceAdapter');
+const AwarenessLoggerAdapter = require('../../../../business_modules/awareness/infrastructure/adapters/awarenessLoggerAdapter');
+const AwarenessFileSystemAdapter = require('../../../../business_modules/awareness/infrastructure/adapters/awarenessFileSystemAdapter');
+const AwarenessIdGeneratorAdapter = require('../../../../business_modules/awareness/infrastructure/adapters/awarenessIdGeneratorAdapter');
+const AwarenessHashGeneratorAdapter = require('../../../../business_modules/awareness/infrastructure/adapters/awarenessHashGeneratorAdapter');
+const EventSubscriptionDService = require('../../../../business_modules/awareness/domain/services/eventSubscriptionServiceD');
+const VSCodeWorkspaceDService = require('../../../../business_modules/awareness/domain/services/vscodeWorkspaceServiceD');
 const DIContainer = require('../../../../diContainer');
 
 suite('AwarenessService with Adapters', () => {
@@ -25,9 +31,26 @@ suite('AwarenessService with Adapters', () => {
             workspaceState: mockPersistenceAdapter
         };
         
+        // Create internal adapters (no dependencies, can use real adapters in tests)
+        const loggerAdapter = new AwarenessLoggerAdapter();
+        const fileSystemAdapter = new AwarenessFileSystemAdapter();
+        const idGeneratorAdapter = new AwarenessIdGeneratorAdapter();
+        const hashGeneratorAdapter = new AwarenessHashGeneratorAdapter();
+        
+        // Create domain services (no dependencies - ports passed as method parameters)
+        const eventSubscriptionDService = new EventSubscriptionDService();
+        const vscodeWorkspaceDService = new VSCodeWorkspaceDService();
+        
         awarenessService = new AwarenessService({
             vscodeAdapter: mockVSCodeAdapter,
-            persistenceAdapter: mockPersistenceAdapter
+            persistenceAdapter: mockPersistenceAdapter,
+            messagingAdapter: null,
+            loggerAdapter: loggerAdapter,
+            fileSystemAdapter: fileSystemAdapter,
+            idGeneratorAdapter: idGeneratorAdapter,
+            hashGeneratorAdapter: hashGeneratorAdapter,
+            eventSubscriptionDService: eventSubscriptionDService,
+            vscodeWorkspaceDService: vscodeWorkspaceDService
         });
         
         // Create controller for event listener
@@ -112,9 +135,26 @@ suite('AwarenessController with DI Container', () => {
         diContainer.setAdapter('awareness', 'vscodeAdapter', mockVSCodeAdapter);
         diContainer.setAdapter('awareness', 'persistenceAdapter', mockPersistenceAdapter);
         
+        // Create internal adapters (no dependencies, can use real adapters in tests)
+        const loggerAdapter = new AwarenessLoggerAdapter();
+        const fileSystemAdapter = new AwarenessFileSystemAdapter();
+        const idGeneratorAdapter = new AwarenessIdGeneratorAdapter();
+        const hashGeneratorAdapter = new AwarenessHashGeneratorAdapter();
+        
+        // Create domain services (no dependencies - ports passed as method parameters)
+        const eventSubscriptionDService = new EventSubscriptionDService();
+        const vscodeWorkspaceDService = new VSCodeWorkspaceDService();
+        
         const awarenessService = new AwarenessService({
             vscodeAdapter: mockVSCodeAdapter,
-            persistenceAdapter: mockPersistenceAdapter
+            persistenceAdapter: mockPersistenceAdapter,
+            messagingAdapter: null,
+            loggerAdapter: loggerAdapter,
+            fileSystemAdapter: fileSystemAdapter,
+            idGeneratorAdapter: idGeneratorAdapter,
+            hashGeneratorAdapter: hashGeneratorAdapter,
+            eventSubscriptionDService: eventSubscriptionDService,
+            vscodeWorkspaceDService: vscodeWorkspaceDService
         });
         diContainer.register('awarenessService', awarenessService);
         
