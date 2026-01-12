@@ -20,9 +20,8 @@ class AwarenessEventListener {
         
         this.controller = controller;
         
-        this.activeReviewSuggestion = new Map(); // document URI -> { suggestionId, reviewStarted, reviewTime, dwellTimer }
-        
         // Duplicate detection cache for file saves (primary key: uri + version)
+        // This is input-layer state for preventing duplicate save events
         this.saveCache = new Map(); // `${uri}:${version}` -> { hash: string, timestamp: number }
         
         // Track previous active document for flush on editor change
@@ -121,39 +120,14 @@ class AwarenessEventListener {
         // Emit with source='close' so downstream can filter if needed
         this.controller.flushChanges(document, { source: 'close' });
         
-        // Close any active review for this document
-        this._closeActiveReview(uri);
-    }
-
-    _closeActiveReview(uri) {
-        const activeReview = this.activeReviewSuggestion.get(uri);
-        if (!activeReview) return;
-        
-        // Fix: Clear dwell timer if it exists
-        if (activeReview.dwellTimer) {
-            clearTimeout(activeReview.dwellTimer);
-        }
-        
-        if (activeReview.reviewStarted) {
-            const suggestions = this.controller.getSuggestions();
-            const suggestion = suggestions.find(s => s.id === activeReview.suggestionId);
-            
-            if (suggestion) {
-                const reviewDuration = Date.now() - activeReview.reviewStarted;
-                // FIXED: Update review time in suggestion (for score calculation)
-                // But review state is stored separately (domain separation)
-                this.controller.updateSuggestionReviewTime(activeReview.suggestionId, (suggestion.reviewTime || 0) + reviewDuration);
-                // Fix: Only mark as reviewed if dwell time was met (handled by timer)
-                // Don't mark here - let the timer do it
-            }
-        }
-        
-        this.activeReviewSuggestion.delete(uri);
+        // Delegate review tracking cleanup to controller/service
+        this.controller.handleDocumentClose(uri);
     }
 
     /**
      * Track cursor activity in files being reviewed
-     * FIXED: Review state stored separately from suggestion objects
+     * FIXED: Delegates all review tracking to ReviewTrackingService (app layer)
+     * Input layer no longer mutates domain objects or manages timers
      * @param {vscode.TextEditorSelectionChangeEvent} event - Cursor move event
      */
     onCursorMove(event) {
@@ -163,68 +137,8 @@ class AwarenessEventListener {
         const position = event.selections[0].active;
         const uri = editor.document.uri.toString();
         
-        // Delegate to controller - returns helper functions for review tracking
-        const helpers = this.controller.handleCursorMove(uri, position);
-        if (!helpers) return;
-        
-        const { getPendingSuggestions, isPositionInRange } = helpers;
-        const pendingSuggestions = getPendingSuggestions();
-        const activeReview = this.activeReviewSuggestion.get(uri);
-        
-        // First, close any active review that's no longer valid
-        if (activeReview) {
-            const activeSuggestion = pendingSuggestions.find(s => s.id === activeReview.suggestionId);
-            if (activeSuggestion && activeSuggestion.document === uri) {
-                // Check if cursor is still in this suggestion
-                if (!isPositionInRange(position, activeSuggestion.range)) {
-                    // Cursor left the suggestion - close review
-                    this._closeActiveReview(uri);
-                } else {
-                    // Still in active suggestion - continue tracking
-                    return;
-                }
-            } else {
-                // Active suggestion no longer exists or is in different document
-                this.activeReviewSuggestion.delete(uri);
-            }
-        }
-        
-        // Now check if cursor entered a new suggestion
-        for (const suggestion of pendingSuggestions) {
-            if (suggestion.document !== uri) continue;
-            
-            // Check if cursor is within suggestion range
-            if (isPositionInRange(position, suggestion.range)) {
-                // Initialize review time if needed
-                if (!suggestion.reviewTime) {
-                    suggestion.reviewTime = 0;
-                }
-                
-                // Fix: Require dwell time (1000ms) before marking as reviewed
-                // This avoids marking accidental cursor touches as "reviewed"
-                const reviewStarted = Date.now();
-                const dwellTimer = setTimeout(() => {
-                    // Only mark as reviewed after dwell time
-                    const currentReview = this.activeReviewSuggestion.get(uri);
-                    if (currentReview && currentReview.suggestionId === suggestion.id) {
-                        this.controller.markSuggestionAsReviewed(suggestion.id);
-                        // Fix: Trigger status check and updates immediately after marking as reviewed
-                        // This prevents UX feeling delayed/stuck until next scheduled status check
-                        this.controller.checkSuggestionStatus(suggestion.id);
-                        // updateFileColorsInExplorer and updateScore are handled by checkSuggestionStatus
-                    }
-                }, 1000); // 1000ms dwell time
-                
-                // FIXED: Store review state separately (domain separation)
-                this.activeReviewSuggestion.set(uri, {
-                    suggestionId: suggestion.id,
-                    reviewStarted: reviewStarted,
-                    reviewTime: 0, // Track separately
-                    dwellTimer: dwellTimer // Store timer for cleanup
-                });
-                return; // Only track one suggestion at a time
-            }
-        }
+        // Delegate to controller - handles all review tracking logic
+        this.controller.handleCursorMove(uri, position);
     }
 
     /**
@@ -247,16 +161,11 @@ class AwarenessEventListener {
      * @param {vscode.TextEditor} editor - The active editor
      */
     onEditorChange(editor) {
-        // Delegate to controller - handles flushing previous document
+        // Delegate to controller - handles flushing previous document and review tracking cleanup
         this.controller.handleEditorChange(editor, this.previousActiveDocumentUri);
         
         // Store current document URI for next flush
         this.previousActiveDocumentUri = editor?.document?.uri.toString() || null;
-        
-        // Close all active reviews when switching editors
-        for (const uri of this.activeReviewSuggestion.keys()) {
-            this._closeActiveReview(uri);
-        }
         
         // Track as file opened if it has debt
         if (editor?.document) {
@@ -272,11 +181,7 @@ class AwarenessEventListener {
         // Flush all pending classifier changes (automatically handles classification results)
         this.controller.flushAllChanges();
         
-        // Close all active reviews (cleans up dwell timers)
-        for (const uri of this.activeReviewSuggestion.keys()) {
-            this._closeActiveReview(uri);
-        }
-        this.activeReviewSuggestion.clear();
+        // Review tracking cleanup is handled by ReviewTrackingService.dispose() in AwarenessService.stop()
         
         // Clear caches
         this.saveCache.clear();

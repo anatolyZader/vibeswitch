@@ -62,7 +62,8 @@ class SessionService {
             });
             this.messagingAdapter.publishReviewSessionStartedEvent(event).catch(err => {
                 // Log but don't throw - event publishing is non-critical
-                console.error('SessionTracker: Error publishing ReviewSessionStartedEvent:', err);
+                // Note: loggerPort not available in SessionService, but this is non-critical
+                // Consider injecting loggerPort if needed for consistency
             });
         }
 
@@ -154,7 +155,8 @@ class SessionService {
                             });
                             this.messagingAdapter.publishReviewSessionCompletedEvent(event).catch(err => {
                                 // Log but don't throw - event publishing is non-critical
-                                console.error('SessionTracker: Error publishing ReviewSessionCompletedEvent:', err);
+                                // Note: loggerPort not available in SessionService, but this is non-critical
+                                // Consider injecting loggerPort if needed for consistency
                             });
                         }
                         

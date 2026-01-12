@@ -7,6 +7,7 @@
 
 const path = require('path'); // Pure utility library, no I/O - acceptable
 const { CODE_EXTENSIONS, isNonCodeDocument } = require('../domain/utils/utils');
+const UriPathUtilities = require('./uriPathUtilities');
 
 class FileWatcherService {
     /**
@@ -195,9 +196,9 @@ class FileWatcherService {
                     
                     scanned++;
                     
-                    // Check if already in debt
-                    const normalizedPath = path.resolve(fullPath).replace(/\\/g, '/');
-                    if (this.debtService && this.debtService.getDebtMap().has(normalizedPath)) {
+                    // Check if already in debt - use canonical URI string
+                    const canonicalUri = UriPathUtilities.normalizeToUri(this.vscodePort, fullPath);
+                    if (this.debtService && this.debtService.getDebtMap().has(canonicalUri)) {
                         continue; // Already tracked
                     }
                     

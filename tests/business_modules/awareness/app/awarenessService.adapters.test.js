@@ -12,8 +12,13 @@ const AwarenessLoggerAdapter = require('../../../../business_modules/awareness/i
 const AwarenessFileSystemAdapter = require('../../../../business_modules/awareness/infrastructure/adapters/awarenessFileSystemAdapter');
 const AwarenessIdGeneratorAdapter = require('../../../../business_modules/awareness/infrastructure/adapters/awarenessIdGeneratorAdapter');
 const AwarenessHashGeneratorAdapter = require('../../../../business_modules/awareness/infrastructure/adapters/awarenessHashGeneratorAdapter');
-const EventSubscriptionDService = require('../../../../business_modules/awareness/domain/services/eventSubscriptionServiceD');
-const VSCodeWorkspaceDService = require('../../../../business_modules/awareness/domain/services/vscodeWorkspaceServiceD');
+const RangeOperationServiceD = require('../../../../business_modules/awareness/domain/services/rangeOperationServiceD');
+const UriPathOperationServiceD = require('../../../../business_modules/awareness/domain/services/uriPathOperationServiceD');
+const SuggestionLifecycleServiceD = require('../../../../business_modules/awareness/domain/services/suggestionLifecycleServiceD');
+const ChangeClassificationServiceD = require('../../../../business_modules/awareness/domain/services/changeClassificationServiceD');
+const ReviewSessionServiceD = require('../../../../business_modules/awareness/domain/services/reviewSessionServiceD');
+const DebtCalculationServiceD = require('../../../../business_modules/awareness/domain/services/debtCalculationServiceD');
+const SuggestionBatchServiceD = require('../../../../business_modules/awareness/domain/services/suggestionBatchServiceD');
 const DIContainer = require('../../../../diContainer');
 
 suite('AwarenessService with Adapters', () => {
@@ -38,8 +43,14 @@ suite('AwarenessService with Adapters', () => {
         const hashGeneratorAdapter = new AwarenessHashGeneratorAdapter();
         
         // Create domain services (no dependencies - ports passed as method parameters)
-        const eventSubscriptionDService = new EventSubscriptionDService();
-        const vscodeWorkspaceDService = new VSCodeWorkspaceDService();
+        // Note: EventSubscriptionDService and VSCodeWorkspaceDService moved to app layer (VSCodeUtilities)
+        const rangeOperationServiceD = new RangeOperationServiceD();
+        const uriPathOperationServiceD = new UriPathOperationServiceD();
+        const suggestionLifecycleServiceD = new SuggestionLifecycleServiceD();
+        const changeClassificationServiceD = new ChangeClassificationServiceD();
+        const reviewSessionServiceD = new ReviewSessionServiceD();
+        const debtCalculationServiceD = new DebtCalculationServiceD();
+        const suggestionBatchServiceD = new SuggestionBatchServiceD();
         
         awarenessService = new AwarenessService({
             vscodeAdapter: mockVSCodeAdapter,
@@ -49,8 +60,13 @@ suite('AwarenessService with Adapters', () => {
             fileSystemAdapter: fileSystemAdapter,
             idGeneratorAdapter: idGeneratorAdapter,
             hashGeneratorAdapter: hashGeneratorAdapter,
-            eventSubscriptionDService: eventSubscriptionDService,
-            vscodeWorkspaceDService: vscodeWorkspaceDService
+            rangeOperationServiceD: rangeOperationServiceD,
+            uriPathOperationServiceD: uriPathOperationServiceD,
+            suggestionLifecycleServiceD: suggestionLifecycleServiceD,
+            changeClassificationServiceD: changeClassificationServiceD,
+            reviewSessionServiceD: reviewSessionServiceD,
+            debtCalculationServiceD: debtCalculationServiceD,
+            suggestionBatchServiceD: suggestionBatchServiceD
         });
         
         // Create controller for event listener
@@ -142,8 +158,14 @@ suite('AwarenessController with DI Container', () => {
         const hashGeneratorAdapter = new AwarenessHashGeneratorAdapter();
         
         // Create domain services (no dependencies - ports passed as method parameters)
-        const eventSubscriptionDService = new EventSubscriptionDService();
-        const vscodeWorkspaceDService = new VSCodeWorkspaceDService();
+        // Note: EventSubscriptionDService and VSCodeWorkspaceDService moved to app layer (VSCodeUtilities)
+        const rangeOperationServiceD = new RangeOperationServiceD();
+        const uriPathOperationServiceD = new UriPathOperationServiceD();
+        const suggestionLifecycleServiceD = new SuggestionLifecycleServiceD();
+        const changeClassificationServiceD = new ChangeClassificationServiceD();
+        const reviewSessionServiceD = new ReviewSessionServiceD();
+        const debtCalculationServiceD = new DebtCalculationServiceD();
+        const suggestionBatchServiceD = new SuggestionBatchServiceD();
         
         const awarenessService = new AwarenessService({
             vscodeAdapter: mockVSCodeAdapter,
@@ -153,8 +175,13 @@ suite('AwarenessController with DI Container', () => {
             fileSystemAdapter: fileSystemAdapter,
             idGeneratorAdapter: idGeneratorAdapter,
             hashGeneratorAdapter: hashGeneratorAdapter,
-            eventSubscriptionDService: eventSubscriptionDService,
-            vscodeWorkspaceDService: vscodeWorkspaceDService
+            rangeOperationServiceD: rangeOperationServiceD,
+            uriPathOperationServiceD: uriPathOperationServiceD,
+            suggestionLifecycleServiceD: suggestionLifecycleServiceD,
+            changeClassificationServiceD: changeClassificationServiceD,
+            reviewSessionServiceD: reviewSessionServiceD,
+            debtCalculationServiceD: debtCalculationServiceD,
+            suggestionBatchServiceD: suggestionBatchServiceD
         });
         diContainer.register('awarenessService', awarenessService);
         

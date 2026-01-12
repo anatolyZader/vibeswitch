@@ -71,8 +71,12 @@ class DebtService {
                 }
             }
             
-            // Save cleaned up data
-            this.saveDebt();
+            // Save cleaned up data (fire-and-forget in sync context)
+            this.saveDebt().catch(err => {
+                if (this.loggerPort) {
+                    this.loggerPort.error('AwarenessMonitor: Error saving debt after cleanup', err);
+                }
+            });
         } catch (error) {
             if (this.loggerPort) {
                 this.loggerPort.error('AwarenessMonitor: Error loading debt', error);
@@ -82,9 +86,10 @@ class DebtService {
     }
 
     /**
-     * Save debt to workspace storage
+     * Save debt to workspace storage (async)
+     * @returns {Promise<void>}
      */
-    saveDebt() {
+    async saveDebt() {
         if (!this.persistencePort) return;
         
         // Convert Map of Debt entities to plain objects for storage
@@ -92,7 +97,7 @@ class DebtService {
         for (const [uri, debt] of this.debts.entries()) {
             debtObject[uri] = debt.toJSON();
         }
-        this.persistencePort.saveSync('debt', debtObject);
+        await this.persistencePort.save('debt', debtObject);
     }
 
     /**
@@ -115,7 +120,12 @@ class DebtService {
         // Use domain entity method
         debt.addChange(changeSize);
         
-        this.saveDebt();
+        // Save debt (fire-and-forget in sync context)
+        this.saveDebt().catch(err => {
+            if (this.loggerPort) {
+                this.loggerPort.error('AwarenessMonitor: Error saving debt after add', err);
+            }
+        });
         
         // Update file colors immediately when debt changes
         if (this.updateFileColorsInExplorer) {
@@ -151,7 +161,12 @@ class DebtService {
         if (debt) {
             // Use domain entity method
             debt.markAsReviewed(reviewTime);
-            this.saveDebt();
+            // Save debt (fire-and-forget in sync context)
+            this.saveDebt().catch(err => {
+                if (this.loggerPort) {
+                    this.loggerPort.error('AwarenessMonitor: Error saving debt after markAsReviewed', err);
+                }
+            });
             
             // Update file colors immediately when debt is cleared
             if (this.updateFileColorsInExplorer) {
@@ -172,7 +187,12 @@ class DebtService {
         if (debt) {
             // Use domain entity method
             debt.updateSession(sessionData);
-            this.saveDebt();
+            // Save debt (fire-and-forget in sync context)
+            this.saveDebt().catch(err => {
+                if (this.loggerPort) {
+                    this.loggerPort.error('AwarenessMonitor: Error saving debt after updateSession', err);
+                }
+            });
         }
     }
 
