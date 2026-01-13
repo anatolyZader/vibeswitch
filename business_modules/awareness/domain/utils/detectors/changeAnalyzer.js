@@ -65,6 +65,7 @@ function calculateMetrics(changes, eventTimestamps = [], eventRangeSets = [], fi
     
     // Calculate temporal metrics using event timestamps (not per-change timestamps)
     // Fix: Track events, not individual changes, for true "rapid scattered" detection
+    // Fix: Optimized from O(n²) to O(n) using sliding window two-pointer technique
     const timeWindow = config.rapidScatteredTimeWindow || 1000;
     let rapidEventCount = 0;
     let rapidRangeSet = new Set();
@@ -77,31 +78,44 @@ function calculateMetrics(changes, eventTimestamps = [], eventRangeSets = [], fi
         let maxRapidEventCount = 0;
         let maxRapidRanges = new Set();
         
-        // Find the window with the most events
-        for (let i = 0; i < eventTimestamps.length; i++) {
-            const windowStart = eventTimestamps[i];
-            const windowEnd = windowStart + timeWindow;
-            let windowEventCount = 0;
-            const windowRanges = new Set();
-            
-            // Count events in this window and aggregate their ranges
-            for (let j = i; j < eventTimestamps.length; j++) {
-                if (eventTimestamps[j] <= windowEnd) {
-                    windowEventCount++;
-                    // Aggregate ranges from this event
-                    if (j < eventRangeSets.length) {
-                        for (const rangeKey of eventRangeSets[j]) {
-                            windowRanges.add(rangeKey);
-                        }
+        // Optimized sliding window: O(n) instead of O(n²)
+        // Use two pointers: left (window start) and right (window end)
+        let left = 0;
+        let right = 0;
+        const windowRanges = new Set();
+        
+        while (right < eventTimestamps.length) {
+            // Expand window: move right pointer until window exceeds timeWindow
+            while (right < eventTimestamps.length && 
+                   eventTimestamps[right] - eventTimestamps[left] <= timeWindow) {
+                // Add ranges from this event
+                if (right < eventRangeSets.length) {
+                    for (const rangeKey of eventRangeSets[right]) {
+                        windowRanges.add(rangeKey);
                     }
-                } else {
-                    break;
                 }
+                right++;
             }
             
+            // Current window: [left, right) has all events within timeWindow
+            const windowEventCount = right - left;
             if (windowEventCount > maxRapidEventCount) {
                 maxRapidEventCount = windowEventCount;
-                maxRapidRanges = windowRanges;
+                // Create a copy of current window ranges
+                maxRapidRanges = new Set(windowRanges);
+            }
+            
+            // Shrink window: move left pointer and remove ranges from leftmost event
+            if (left < eventRangeSets.length) {
+                for (const rangeKey of eventRangeSets[left]) {
+                    windowRanges.delete(rangeKey);
+                }
+            }
+            left++;
+            
+            // If right didn't move, advance it to avoid infinite loop
+            if (right === left) {
+                right++;
             }
         }
         

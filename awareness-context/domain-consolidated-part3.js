@@ -4,8 +4,8 @@
  * This file contains part 3 of 3 of the domain layer code.
  * Generated automatically for ChatGPT context.
  * 
- * Files in this part: 15/49
- * Generated: 2026-01-13T15:56:48.088Z
+ * Files in this part: 18/50
+ * Generated: 2026-01-13T17:41:29.112Z
  */
 
 // ============================================================================
@@ -14,7 +14,343 @@
 
 
 // ============================================================================
-// FILE 35/49: domain/utils/detectors/formatterDetector.js
+// FILE 33/50: domain/utils/classificationScorer.js
+// ============================================================================
+
+(function() { // IIFE scope for domain/utils/classificationScorer.js
+/**
+ * Classification Scorer
+ * Accumulates detector scores and determines final classification label and confidence
+ */
+
+function accumulateScores(detectors) {
+    let aiScore = 0;
+    let formatterScore = 0;
+    let userScore = 0;
+    
+    // Fix: Store reasons as paired objects to prevent misalignment
+    // Some detectors may return reason without reasonTag (e.g., marker detection)
+    const reasonObjects = [];
+    
+    for (const detector of detectors) {
+        const result = detector();
+        if (!result) continue;
+        
+        if (result.label === 'formatter') {
+            formatterScore += result.score;
+        } else if (result.label === 'ai') {
+            aiScore += result.score;
+        } else if (result.label === 'user') {
+            userScore += result.score;
+        }
+        
+        if (result.reason) {
+            reasonObjects.push({ tag: result.reasonTag || null, text: result.reason });
+        }
+    }
+    
+    return { aiScore, formatterScore, userScore, reasonObjects };
+}
+
+function determineLabel(aiScore, formatterScore, userScore) {
+    let label = 'unknown';
+    let confidence = 0;
+    
+    if (formatterScore > aiScore && formatterScore > userScore && formatterScore > 0.5) {
+        label = 'formatter';
+        confidence = Math.min(formatterScore, 1.0);
+    } else if (aiScore > userScore && aiScore > 0.3) {
+        label = 'ai';
+        confidence = Math.min(aiScore, 1.0);
+    } else if (userScore > 0) {
+        // Fix: Only label 'user' when we have positive user evidence
+        label = 'user';
+        confidence = Math.max(0.3, Math.min(userScore, 1.0));
+    } else {
+        // Fix: If all scores are 0, return 'unknown' (not 'user')
+        // This matches the documented behavior where 'unknown' exists
+        label = 'unknown';
+        confidence = 0.2;
+    }
+    
+    return { label, confidence };
+}
+
+// module.exports = { // Commented for consolidation
+//     accumulateScores, // Commented for consolidation
+//     determineLabel // Commented for consolidation
+// }; // Commented for consolidation
+
+
+})(); // End IIFE for domain/utils/classificationScorer.js
+
+
+// ============================================================================
+// FILE 34/50: domain/utils/configManager.js
+// ============================================================================
+
+(function() { // IIFE scope for domain/utils/configManager.js
+/**
+ * Config Manager
+ * Manages classifier configuration: defaults, validation, and merging
+ */
+
+// const { getLogger } = require('../../../../logger'); // Commented for consolidation
+
+/**
+ * Get default classifier configuration
+ * @returns {Object} Default configuration object
+ */
+function getDefaultConfig() {
+    return {
+        // VIBE: more permissive (lower thresholds)
+        // DEV: more conservative (higher thresholds)
+        multiLineThreshold: 50,
+        pureInsertionCount: 3,
+        pureInsertionSize: 20,
+        largeInsertionThreshold: 100,
+        scatteredRangeCount: 5,
+        scatteredChangeCount: 5,
+        scatteredSizeThreshold: 200,
+        formatterRangeCount: 8,
+        formatterLineSpan: 50,
+        aiLineSpan: 30,
+        aiMultiLineSize: 50,
+        // Rapid scattered changes: AI agents often make many scattered edits quickly
+        rapidScatteredTimeWindow: 1000, // Time window in ms for rapid changes (1 second)
+        rapidScatteredEventCount: 8, // Minimum number of events in time window (renamed from ChangeCount for clarity)
+        rapidScatteredRangeCount: 6, // Minimum distinct line ranges for scattered pattern
+        rapidScatteredMinSize: 50, // Minimum total size to avoid false positives on tiny edits
+        rapidBurstChangeCount: 10, // Minimum number of changes for rapid burst branch (separate from event count)
+        // Marker-only mode: if true, only use @ai marker, ignore heuristics
+        // If false, use behavioral heuristics as primary with markers as strong signal when present
+        markerOnly: false  // Default: use behavioral inference (heuristics) as primary method
+    };
+}
+
+/**
+ * Validate and sanitize classifier configuration to prevent silent misclassification
+ * Fix: Sanitizes user config BEFORE merge to ensure defaults always win
+ * @param {Object} config - User configuration to validate (will be mutated)
+ * @param {Object} defaultConfig - Default configuration (for reference)
+ * @returns {{errors: string[], sanitized: string[]}} Validation result
+ */
+function validateConfig(config, defaultConfig = {}) {
+    const errors = [];
+    const sanitized = [];
+    
+    // Thresholds must be positive numbers
+    const thresholdKeys = [
+        'multiLineThreshold', 'pureInsertionCount', 'pureInsertionSize',
+        'largeInsertionThreshold', 'scatteredRangeCount', 'scatteredChangeCount',
+        'scatteredSizeThreshold', 'formatterRangeCount', 'formatterLineSpan',
+        'aiLineSpan', 'aiMultiLineSize', 'rapidScatteredTimeWindow',
+        'rapidScatteredEventCount', 'rapidScatteredRangeCount', 'rapidScatteredMinSize',
+        'rapidBurstChangeCount'
+    ];
+    
+    // Fix: Sanitize invalid values (delete them so defaults win) instead of just warning
+    for (const key of thresholdKeys) {
+        if (config[key] !== undefined && (typeof config[key] !== 'number' || config[key] < 0)) {
+            errors.push(`${key} must be a non-negative number, got: ${config[key]}`);
+            delete config[key]; // Remove invalid value so default wins
+            sanitized.push(key);
+        }
+    }
+    
+    // Boolean flags
+    if (config.markerOnly !== undefined && typeof config.markerOnly !== 'boolean') {
+        errors.push(`markerOnly must be a boolean, got: ${config.markerOnly}`);
+        delete config.markerOnly; // Remove invalid value so default wins
+        sanitized.push('markerOnly');
+    }
+    
+    if (errors.length > 0) {
+        // Production: Use logger instead of console.warn (rate-limited, visible to devs)
+        const logger = getLogger();
+        // Log once with sanitized keys and caller context
+        logger.log(`[ChangeClassifier] Invalid config sanitized: ${sanitized.join(', ')}. ${errors.length} invalid value(s) removed, defaults applied.`, true);
+        // Invalid values have been deleted, so defaults will be used via merge
+    }
+    
+    return { errors, sanitized };
+}
+
+/**
+ * Create and merge classifier configuration
+ * @param {Object|null} userConfig - User-provided configuration (optional)
+ * @returns {Object} Final frozen configuration object
+ */
+function createConfig(userConfig = null) {
+    const defaultConfig = getDefaultConfig();
+    
+    // Fix: Sanitize user config BEFORE merging to ensure defaults always win
+    // This prevents invalid values from overwriting defaults, then being deleted, leaving undefined
+    const sanitizedUserConfig = userConfig ? { ...userConfig } : {};
+    validateConfig(sanitizedUserConfig, defaultConfig);
+    
+    // Merge sanitized user config with defaults (defaults win for any missing/invalid keys)
+    const config = { ...defaultConfig, ...sanitizedUserConfig };
+    
+    // Freeze config to prevent accidental mutation
+    Object.freeze(config);
+    
+    return config;
+}
+
+// module.exports = { // Commented for consolidation
+//     getDefaultConfig, // Commented for consolidation
+//     validateConfig, // Commented for consolidation
+//     createConfig // Commented for consolidation
+// }; // Commented for consolidation
+
+
+})(); // End IIFE for domain/utils/configManager.js
+
+
+// ============================================================================
+// FILE 35/50: domain/utils/detectors/changeAnalyzer.js
+// ============================================================================
+
+(function() { // IIFE scope for domain/utils/detectors/changeAnalyzer.js
+/**
+ * Change Analyzer
+ * Analyzes text changes and calculates metrics for detector analysis
+ */
+
+/**
+ * Calculate metrics from changes for detector analysis
+ * @param {Array<vscode.TextDocumentContentChangeEvent>} changes - Aggregated changes
+ * @param {Array<number>} eventTimestamps - Timestamps for each event (for temporal analysis)
+ * @param {Array<Set>} eventRangeSets - Range sets for each event (for scattered pattern detection)
+ * @param {number} firstChangeTime - Timestamp of first change in batch
+ * @param {Object} config - Configuration with rapidScatteredTimeWindow
+ * @returns {Object} Metrics object
+ */
+function calculateMetrics(changes, eventTimestamps = [], eventRangeSets = [], firstChangeTime = null, config = {}) {
+    let totalInserted = 0;
+    let totalDeleted = 0;
+    let hasMultiLine = false;
+    let pureInsertionCount = 0;
+    let distinctRanges = new Set();
+    const startLines = [];
+    const endLines = [];
+    
+    for (const change of changes) {
+        const inserted = change.text.length;
+        const deleted = change.rangeLength;
+        
+        totalInserted += inserted;
+        totalDeleted += deleted;
+        
+        if (change.text.includes('\n')) {
+            hasMultiLine = true;
+        }
+        
+        if (deleted === 0 && inserted > 0) {
+            pureInsertionCount++;
+        }
+        
+        // Use line-based key for scatteredness detection (more stable than character-precise)
+        const lineKey = `${change.range.start.line}-${change.range.end.line}`;
+        distinctRanges.add(lineKey);
+        
+        startLines.push(change.range.start.line);
+        endLines.push(change.range.end.line);
+    }
+    
+    // Fix: maxLineSpan should consider both start and end lines
+    const allLines = [...startLines, ...endLines];
+    const maxLineSpan = allLines.length > 0 
+        ? Math.max(...allLines) - Math.min(...allLines)
+        : 0;
+    
+    // Fix: Count whitespace-only changes instead of whitespace ratio
+    // This avoids false positives on normal code (which naturally contains whitespace)
+    // Fix: Only count insertions of whitespace (deletions have empty text but aren't whitespace-only)
+    let whitespaceOnlyChangeCount = 0;
+    for (const change of changes) {
+        if (change.text.length > 0 && change.text.trim().length === 0) {
+            whitespaceOnlyChangeCount++;
+        }
+    }
+    const whitespaceOnlyChangeRatio = changes.length > 0 
+        ? whitespaceOnlyChangeCount / changes.length 
+        : 0;
+    
+    // Calculate temporal metrics using event timestamps (not per-change timestamps)
+    // Fix: Track events, not individual changes, for true "rapid scattered" detection
+    const timeWindow = config.rapidScatteredTimeWindow || 1000;
+    let rapidEventCount = 0;
+    let rapidRangeSet = new Set();
+    let burstDurationMs = 0;
+    
+    if (eventTimestamps.length > 0 && firstChangeTime) {
+        const lastEventTime = eventTimestamps[eventTimestamps.length - 1];
+        burstDurationMs = lastEventTime - firstChangeTime;
+        
+        let maxRapidEventCount = 0;
+        let maxRapidRanges = new Set();
+        
+        // Find the window with the most events
+        for (let i = 0; i < eventTimestamps.length; i++) {
+            const windowStart = eventTimestamps[i];
+            const windowEnd = windowStart + timeWindow;
+            let windowEventCount = 0;
+            const windowRanges = new Set();
+            
+            // Count events in this window and aggregate their ranges
+            for (let j = i; j < eventTimestamps.length; j++) {
+                if (eventTimestamps[j] <= windowEnd) {
+                    windowEventCount++;
+                    // Aggregate ranges from this event
+                    if (j < eventRangeSets.length) {
+                        for (const rangeKey of eventRangeSets[j]) {
+                            windowRanges.add(rangeKey);
+                        }
+                    }
+                } else {
+                    break;
+                }
+            }
+            
+            if (windowEventCount > maxRapidEventCount) {
+                maxRapidEventCount = windowEventCount;
+                maxRapidRanges = windowRanges;
+            }
+        }
+        
+        rapidEventCount = maxRapidEventCount;
+        rapidRangeSet = maxRapidRanges;
+    }
+    
+    return {
+        totalInserted,
+        totalDeleted,
+        hasMultiLine,
+        pureInsertionCount,
+        distinctRanges,
+        distinctRangeCount: distinctRanges.size,
+        maxLineSpan,
+        whitespaceOnlyChangeRatio,
+        rapidEventCount,
+        rapidRangeSet,
+        rapidRangeCount: rapidRangeSet.size,
+        burstDurationMs,
+        changeCount: changes.length
+    };
+}
+
+// module.exports = { // Commented for consolidation
+//     calculateMetrics // Commented for consolidation
+// }; // Commented for consolidation
+
+
+})(); // End IIFE for domain/utils/detectors/changeAnalyzer.js
+
+
+// ============================================================================
+// FILE 36/50: domain/utils/detectors/formatterDetector.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/utils/detectors/formatterDetector.js
@@ -71,7 +407,7 @@ function detectFormatter(metrics, config) {
 
 
 // ============================================================================
-// FILE 36/49: domain/utils/detectors/largeInsertionDetector.js
+// FILE 37/50: domain/utils/detectors/largeInsertionDetector.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/utils/detectors/largeInsertionDetector.js
@@ -107,7 +443,7 @@ function detectLargeInsertion(metrics, config) {
 
 
 // ============================================================================
-// FILE 37/49: domain/utils/detectors/markerDetector.js
+// FILE 38/50: domain/utils/detectors/markerDetector.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/utils/detectors/markerDetector.js
@@ -156,7 +492,7 @@ function hasAIMarker(changes) {
 
 
 // ============================================================================
-// FILE 38/49: domain/utils/detectors/multiLineDetector.js
+// FILE 39/50: domain/utils/detectors/multiLineDetector.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/utils/detectors/multiLineDetector.js
@@ -196,7 +532,7 @@ function detectMultiLineInsertion(metrics, config) {
 
 
 // ============================================================================
-// FILE 39/49: domain/utils/detectors/pureInsertionDetector.js
+// FILE 40/50: domain/utils/detectors/pureInsertionDetector.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/utils/detectors/pureInsertionDetector.js
@@ -234,7 +570,7 @@ function detectPureInsertions(metrics, config) {
 
 
 // ============================================================================
-// FILE 40/49: domain/utils/detectors/rapidScatteredDetector.js
+// FILE 41/50: domain/utils/detectors/rapidScatteredDetector.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/utils/detectors/rapidScatteredDetector.js
@@ -289,7 +625,7 @@ function detectRapidScattered(metrics, config) {
 
 
 // ============================================================================
-// FILE 41/49: domain/utils/detectors/scatteredEditsDetector.js
+// FILE 42/50: domain/utils/detectors/scatteredEditsDetector.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/utils/detectors/scatteredEditsDetector.js
@@ -328,7 +664,7 @@ function detectScatteredEdits(metrics, config) {
 
 
 // ============================================================================
-// FILE 42/49: domain/utils/detectors/smallEditsDetector.js
+// FILE 43/50: domain/utils/detectors/smallEditsDetector.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/utils/detectors/smallEditsDetector.js
@@ -363,7 +699,7 @@ function detectSmallEdits(metrics) {
 
 
 // ============================================================================
-// FILE 43/49: domain/utils/diffBulletBuilder.js
+// FILE 44/50: domain/utils/diffBulletBuilder.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/utils/diffBulletBuilder.js
@@ -607,7 +943,7 @@ function parseDiffBullets(text) {
 
 
 // ============================================================================
-// FILE 44/49: domain/utils/reasonFilter.js
+// FILE 45/50: domain/utils/reasonFilter.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/utils/reasonFilter.js
@@ -649,7 +985,7 @@ function filterReasons(reasonObjects, label) {
 
 
 // ============================================================================
-// FILE 45/49: domain/utils/utils.js
+// FILE 46/50: domain/utils/utils.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/utils/utils.js
@@ -819,7 +1155,7 @@ function rangesOverlap(range1, range2) {
 
 
 // ============================================================================
-// FILE 46/49: domain/utils/versionDriftHandler.js
+// FILE 47/50: domain/utils/versionDriftHandler.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/utils/versionDriftHandler.js
@@ -888,7 +1224,7 @@ function applyDriftCap(classification, document, lastSeenVersion, lastSeenTimest
 
 
 // ============================================================================
-// FILE 47/49: domain/value_objects/filePath.js
+// FILE 48/50: domain/value_objects/filePath.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/value_objects/filePath.js
@@ -944,7 +1280,7 @@ class FilePath {
 
 
 // ============================================================================
-// FILE 48/49: domain/value_objects/score.js
+// FILE 49/50: domain/value_objects/score.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/value_objects/score.js
@@ -1009,7 +1345,7 @@ class Score {
 
 
 // ============================================================================
-// FILE 49/49: domain/value_objects/suggestionId.js
+// FILE 50/50: domain/value_objects/suggestionId.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/value_objects/suggestionId.js

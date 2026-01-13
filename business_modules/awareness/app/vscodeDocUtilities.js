@@ -1,6 +1,10 @@
 /**
- * Awareness Monitor Utilities
- * Shared constants and utility functions used across awareness monitor modules
+ * VSCodeDocUtilities - Application layer utilities for VS Code document operations
+ * 
+ * Contains technical utilities for VS Code document/URI operations.
+ * These are technical/infrastructure operations - not domain business logic.
+ * 
+ * Moved from domain/utils/utils.js to fix hex boundary violations.
  */
 
 const vscode = require('vscode');
@@ -13,7 +17,6 @@ const CODE_EXTENSIONS = ['.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.cpp', '
 
 /**
  * Check if a document should be skipped (non-code documents)
- * FIXED: Consistent API - always accepts document
  * @param {vscode.TextDocument} document - The document to check
  * @returns {boolean} True if the document should be skipped
  */

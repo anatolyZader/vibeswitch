@@ -32,10 +32,18 @@ class AwarenessWorkspaceStateAdapter extends IAwarenessPersistencePort {
         await this.workspaceState.update(key, undefined);
     }
 
+    /**
+     * Save without awaiting (fire-and-forget)
+     * @deprecated This is not actually synchronous - use save() instead
+     * @param {string} key - Storage key
+     * @param {*} value - Value to save
+     */
     saveSync(key, value) {
-        // workspaceState.update is async, but we provide sync wrapper for compatibility
-        // Note: This will still be async under the hood, but matches the interface
-        this.workspaceState.update(key, value);
+        // Fix: This is not actually sync - workspaceState.update is async
+        // Fire-and-forget pattern (not recommended, but kept for backward compatibility)
+        this.workspaceState.update(key, value).catch(() => {
+            // Silently ignore errors in fire-and-forget mode
+        });
     }
 
     loadSync(key) {

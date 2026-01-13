@@ -18,7 +18,7 @@ const Change = require('../domain/entities/change');
 const KeepAllDetectorService = require('./keepAllDetectorService');
 
 // Import domain utilities
-const { rangesOverlap } = require('../domain/utils/utils');
+const { rangesOverlap } = require('./vscodeDocUtilities');
 
 // Import domain events
 const AISuggestionOutcomeEvent = require('../domain/events/aiSuggestionOutcomeEvent');
@@ -213,9 +213,8 @@ class SuggestionService {
             ...meta
         });
 
-        // Create/update batch for this suggestion
-        const batchId = this.suggestionAggregate.createOrUpdateBatch(uri, suggestion.id, mergedSize);
-        suggestion.batchId = batchId;
+        // Add suggestion to batch (aggregate sets batchId on entity)
+        const batchId = this.suggestionAggregate.addSuggestionToBatch(uri, suggestion.id, mergedSize);
 
         // Check if this is a new batch (first suggestion) for event publishing
         const batch = this.suggestionAggregate.getBatch(batchId);
@@ -359,7 +358,8 @@ class SuggestionService {
         for (const suggestion of pendingSuggestions) {
             for (const mergedRange of mergedRanges) {
                 if (rangesOverlap(mergedRange, suggestion.range)) {
-                    suggestion.recordUserEdit();
+                    // Delegate to aggregate - single authority for all suggestion mutations
+                    this.suggestionAggregate.recordUserEditOnSuggestion(suggestion.id);
 
                     const logKey = `userEditOverlap:${uri}:${suggestion.id}`;
                     if (this.loggerAdapter) {
@@ -450,7 +450,9 @@ class SuggestionService {
                     }
 
                     // Check for keep all pattern
-                    const batch = suggestion.batchId ? this.suggestionAggregate.getBatch(suggestion.batchId) : null;
+                    // Use aggregate's batch mapping (single source of truth)
+                    const batchId = this.suggestionAggregate.getBatchIdForSuggestion(suggestion.id);
+                    const batch = batchId ? this.suggestionAggregate.getBatch(batchId) : null;
                     if (batch && batch.isFullyResolved() && batch.isKeepAllPattern()) {
                         // Track each accepted suggestion individually (not batch-level)
                         // KeepAllDetector expects per-suggestion data: { id, document, size }
@@ -620,38 +622,34 @@ class SuggestionService {
     }
 
     /**
-     * Mark suggestion as reviewed (single authority for suggestion state)
-     * This method is the ONLY place that should mutate suggestion.reviewed
+     * Mark suggestion as reviewed (delegates to aggregate - single authority)
      * @param {string} suggestionId - Suggestion ID
-     * @param {number} reviewTime - Review time in milliseconds
+     * @param {number} reviewTime - Review time in milliseconds (accumulated)
      */
     markSuggestionAsReviewed(suggestionId, reviewTime = 0) {
         if (!this.suggestionAggregate) return;
         
-        const suggestion = this.suggestionAggregate.findSuggestion(suggestionId);
-        if (suggestion) {
-            // Single authority: only SuggestionService mutates suggestion.reviewed
-            suggestion.reviewed = true;
-            suggestion.reviewTime = (suggestion.reviewTime || 0) + reviewTime;
-            
-            if (this.loggerAdapter) {
-                this.loggerAdapter.debug(`Suggestion ${suggestionId} marked as reviewed (time: ${reviewTime}ms)`);
-            }
+        // Delegate to aggregate - single authority for all suggestion mutations
+        this.suggestionAggregate.markSuggestionReviewed(suggestionId, {
+            reviewTimeDeltaMs: reviewTime,
+            reviewStartedAt: null // Let aggregate handle default
+        });
+        
+        if (this.loggerAdapter) {
+            this.loggerAdapter.debug(`Suggestion ${suggestionId} marked as reviewed (time: ${reviewTime}ms)`);
         }
     }
     
     /**
-     * Update suggestion review time (used by ReviewTrackingService when closing reviews)
+     * Update suggestion review time (delegates to aggregate - accumulates)
      * @param {string} suggestionId - Suggestion ID
      * @param {number} reviewTime - Additional review time in milliseconds
      */
     updateSuggestionReviewTime(suggestionId, reviewTime) {
         if (!this.suggestionAggregate) return;
         
-        const suggestion = this.suggestionAggregate.findSuggestion(suggestionId);
-        if (suggestion) {
-            suggestion.reviewTime = (suggestion.reviewTime || 0) + reviewTime;
-        }
+        // Delegate to aggregate - single authority for all suggestion mutations
+        this.suggestionAggregate.addSuggestionReviewTime(suggestionId, reviewTime);
     }
     
     /**

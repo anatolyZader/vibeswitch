@@ -8,7 +8,7 @@
  * - Controller throws errors; composition root handles UI
  */
 
-const { isNonCodeDocument, isSkippableUri } = require('../domain/utils/utils');
+const { isNonCodeDocument, isSkippableUri } = require('../app/vscodeDocUtilities');
 
 class AwarenessController {
     /**

@@ -11,11 +11,16 @@ const IAwarenessMessagingPort = require('../../domain/ports/IAwarenessMessagingP
 const { getLogger } = require('../../../../logger');
 
 class AwarenessEventEmitterMessagingAdapter extends IAwarenessMessagingPort {
-    constructor(eventEmitter = null) {
+    /**
+     * @param {EventEmitter} eventEmitter - Event emitter instance (optional)
+     * @param {IIdGeneratorPort} idGeneratorPort - ID generator port (optional, for correlation IDs)
+     */
+    constructor(eventEmitter = null, idGeneratorPort = null) {
         super();
         // Use provided event emitter or create a new one
         this.eventEmitter = eventEmitter || new EventEmitter();
         this.logger = getLogger();
+        this.idGeneratorPort = idGeneratorPort; // Use IdGenerator for correlation IDs
     }
 
     /**
@@ -147,6 +152,15 @@ class AwarenessEventEmitterMessagingAdapter extends IAwarenessMessagingPort {
     }
 
     _generateCorrelationId() {
+        // Fix: Use IdGenerator if available (prevents collisions), otherwise fallback
+        if (this.idGeneratorPort) {
+            try {
+                return this.idGeneratorPort.generateUUID();
+            } catch (e) {
+                return this.idGeneratorPort.generateId();
+            }
+        }
+        // Fallback: timestamp + random (less collision-resistant but works)
         return `awareness-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
     }
 }

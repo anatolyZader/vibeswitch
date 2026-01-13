@@ -71,12 +71,14 @@ class Suggestion {
 
     /**
      * Mark suggestion as reviewed
-     * @param {number} reviewTime - Time spent reviewing in milliseconds
+     * @deprecated Use SuggestionAggregate.markSuggestionReviewed() instead
+     * This method is kept for backward compatibility but should not be called directly from app layer
+     * @param {number} reviewTime - Time spent reviewing in milliseconds (will overwrite, not accumulate)
      * @param {number} reviewStarted - Timestamp when review started (optional, defaults to now)
      */
     markAsReviewed(reviewTime = 0, reviewStarted = null) {
         this.reviewed = true;
-        this.reviewTime = reviewTime;
+        this.reviewTime = reviewTime; // Note: overwrites, not accumulates
         if (reviewStarted !== null) {
             this.reviewStarted = reviewStarted;
         } else if (!this.reviewStarted) {

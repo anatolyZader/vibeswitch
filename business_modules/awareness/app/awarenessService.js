@@ -9,30 +9,29 @@
 const DebtService = require('./debtService');
 const ChangeLedgerService = require('./changeLedgerService');
 const SessionService = require('./sessionService');
-const FileWatcherService = require('./fileWatcherService');
+// FileWatcherService removed - using VS Code events only
 const SuggestionService = require('./suggestionService');
 const ClassificationService = require('./classificationService');
 const ReviewTrackingService = require('./reviewTrackingService');
 const TimerRegistry = require('./timerRegistry');
 
 // Import app layer utilities (technical/infrastructure operations)
-const VSCodeUtilities = require('./vscodeUtilities');
 const RangeUtilities = require('./rangeUtilities');
 const UriPathUtilities = require('./uriPathUtilities');
+// VSCodeUtilities removed - using VS Code adapter directly
 
 // Import input layer
 const AwarenessEventListener = require('../input/awarenessEventListener');
 
 // Import app layer services
-const ScoreService = require('./scoreService');
 const KeepAllDetectorService = require('./keepAllDetectorService');
 
 // Import domain aggregates
 const SuggestionAggregate = require('../domain/aggregates/suggestionAggregate');
 
 // Import domain utilities
-const { rangesOverlap, isPositionInRange: checkPositionInRange } = require('../domain/utils/utils');
-const { buildDiffBullets } = require('../domain/utils/diffBulletBuilder');
+const { rangesOverlap, isPositionInRange: checkPositionInRange } = require('./vscodeDocUtilities');
+const { buildDiffBullets } = require('./diffBulletService');
 
 // Import domain events
 const AISuggestionEvent = require('../domain/events/aiSuggestionEvent');
@@ -163,12 +162,20 @@ class AwarenessService extends IAwarenessService {
         this.suggestionService = null; // Suggestion lifecycle management
         this.sessionTracker = null;
         this.reviewTrackingService = null; // Review tracking service
-        this.fileWatcher = null;
+        // FileWatcherService removed - using VS Code events only
         this.changeLedger = null;
         this.classificationService = null; // Classification service
         this.eventHandlers = null;
         this.keepAllDetectorService = null;
-        this.scoreService = null;
+        
+        // Score state (merged from ScoreService)
+        this.currentScore = 0;
+        this.scores = {
+            review: 0,      // 0-40 points
+            critical: 0,    // 0-30 points
+            adaptation: 0,  // 0-30 points
+            debt: 0         // 0-30 points
+        };
         
         // Centralized timer registry
         this.timerRegistry = new TimerRegistry();
@@ -232,7 +239,7 @@ class AwarenessService extends IAwarenessService {
         
         this.keepAllDetectorService = new KeepAllDetectorService(this.onKeepAll, this.loggerAdapter); // Adapter implements ILoggerPort
         
-        this.scoreService = new ScoreService(this.scoreCalculationServiceD, this.vscodeAdapter, this.loggerAdapter); // Domain service + adapters
+        // Score state initialized above in constructor
 
         // Create suggestion aggregate (replaces AgentSuggestionHandler)
         this.suggestionAggregate = new SuggestionAggregate(
@@ -309,15 +316,7 @@ class AwarenessService extends IAwarenessService {
             this.timerRegistry // Pass timer registry for centralized timer management
         );
         
-        // FileWatcherService no longer uses fs.watch - relies on VS Code events only
-        this.fileWatcher = new FileWatcherService(
-            this.suggestionService, // Pass suggestionService
-            this.debtService,
-            () => this.updateScore(),
-            this.onScoreUpdate,
-            this.vscodeAdapter, // Adapter implements IAwarenessVSCodePort
-            this.loggerAdapter // Adapter implements ILoggerPort (fileSystemAdapter no longer needed)
-        );
+        // FileWatcherService removed - VS Code events handle file detection
         
         this.changeLedger = new ChangeLedgerService(
             2000,
@@ -350,85 +349,56 @@ class AwarenessService extends IAwarenessService {
         );
         
         // Register event listeners using app layer utilities (technical operations)
+        // Subscribe to VS Code events directly (VSCodeUtilities removed)
         this.disposables.push(
-            VSCodeUtilities.subscribeToTextDocumentChanges(
-                this.vscodeAdapter,
-                (event) => {
-                    safe('onTextChange', () => this.eventHandlers.onTextChange(event));
-                }
-            )
+            this.vscodeAdapter.onDidChangeTextDocument((event) => {
+                safe('onTextChange', () => this.eventHandlers.onTextChange(event));
+            })
         );
         
         this.disposables.push(
-            VSCodeUtilities.subscribeToFileCreation(
-                this.vscodeAdapter,
-                (event) => {
-                    safe('onFilesCreated', () => this.eventHandlers.onFilesCreated(event));
-                }
-            )
+            this.vscodeAdapter.onDidCreateFiles((event) => {
+                safe('onFilesCreated', () => this.eventHandlers.onFilesCreated(event));
+            })
         );
         
         this.disposables.push(
-            VSCodeUtilities.subscribeToFileSave(
-                this.vscodeAdapter,
-                (document) => {
-                    safe('onFileSaved', () => this.eventHandlers.onFileSaved(document));
-                }
-            )
+            this.vscodeAdapter.onDidSaveTextDocument((document) => {
+                safe('onFileSaved', () => this.eventHandlers.onFileSaved(document));
+            })
         );
         
         this.disposables.push(
-            VSCodeUtilities.subscribeToFileOpen(
-                this.vscodeAdapter,
-                (document) => {
-                    safe('onFileOpened', () => this.eventHandlers.onFileOpened(document));
-                }
-            )
+            this.vscodeAdapter.onDidOpenTextDocument((document) => {
+                safe('onFileOpened', () => this.eventHandlers.onFileOpened(document));
+            })
         );
         
         this.disposables.push(
-            VSCodeUtilities.subscribeToFileClose(
-                this.vscodeAdapter,
-                (document) => {
-                    safe('onDocumentClose', () => this.eventHandlers.onDocumentClose(document));
-                }
-            )
+            this.vscodeAdapter.onDidCloseTextDocument((document) => {
+                safe('onDocumentClose', () => this.eventHandlers.onDocumentClose(document));
+            })
         );
         
         this.disposables.push(
-            VSCodeUtilities.subscribeToCursorMove(
-                this.vscodeAdapter,
-                (event) => {
-                    safe('onCursorMove', () => this.eventHandlers.onCursorMove(event));
-                }
-            )
+            this.vscodeAdapter.onDidChangeTextEditorSelection((event) => {
+                safe('onCursorMove', () => this.eventHandlers.onCursorMove(event));
+            })
         );
         
         this.disposables.push(
-            VSCodeUtilities.subscribeToScroll(
-                this.vscodeAdapter,
-                (event) => {
-                    safe('onScroll', () => this.eventHandlers.onScroll(event));
-                }
-            )
+            this.vscodeAdapter.onDidChangeTextEditorVisibleRanges((event) => {
+                safe('onScroll', () => this.eventHandlers.onScroll(event));
+            })
         );
         
         this.disposables.push(
-            VSCodeUtilities.subscribeToEditorChange(
-                this.vscodeAdapter,
-                (editor) => {
-                    safe('onEditorChange', () => this.eventHandlers.onEditorChange(editor));
-                }
-            )
+            this.vscodeAdapter.onDidChangeActiveTextEditor((editor) => {
+                safe('onEditorChange', () => this.eventHandlers.onEditorChange(editor));
+            })
         );
         
-        // FileWatcherService setup (NO-OP - fs.watch removed, using VS Code events only)
-        // VS Code events (onDidCreateFiles, onDidSaveTextDocument) handle file detection
-        if (this.fileWatcher) {
-            // setupFileSystemWatcher() and scanExistingFiles() are now NO-OPs
-            // They're kept for backward compatibility but do nothing
-            // File detection is handled by VS Code events in AwarenessEventListener
-        }
+        // File detection handled by VS Code events (onDidCreateFiles, onDidSaveTextDocument)
         
         // Initial score update
         this.updateScore();
@@ -502,11 +472,7 @@ class AwarenessService extends IAwarenessService {
         }
         
         // Clean up file system watcher
-        if (this.fileWatcher) {
-            safe('closeFileWatcher', () => {
-                this.fileWatcher.close();
-            });
-        }
+        // FileWatcherService removed - no cleanup needed
         
         // Clear all timers through registry (includes updateTimer and all other timers)
         this.timerRegistry.clear();
@@ -528,18 +494,18 @@ class AwarenessService extends IAwarenessService {
             });
         }
         
-        // Keep: suggestionAggregate, scoreService, debtService, keepAllDetectorService
+        // Keep: suggestionAggregate, debtService, keepAllDetectorService, score state
         // (preserve state for when monitoring restarts)
         
         getLogger().log('AwarenessService: Monitoring stopped');
     }
     
     /**
-     * Update awareness score and trigger callbacks
-     * Delegates to ScoreService.updateScore() to match AwarenessMonitor behavior
+     * Update awareness score and trigger callbacks/events
+     * Merged from ScoreService - handles score orchestration inline
      */
     updateScore() {
-        if (!this.isActive || !this.scoreService) {
+        if (!this.isActive) {
             return;
         }
         
@@ -560,52 +526,140 @@ class AwarenessService extends IAwarenessService {
             return this.debtService.getDebtSummary();
         };
         
-        this.scoreService.updateScore(
-            suggestions,
-            getDebtScore,
-            getReviewDebtSummary,
-            () => {
-                // Publish domain event
-                if (this.messagingAdapter) {
-                    safe('publishScoreUpdateEvent', async () => {
-                        const scoreData = this.scoreService.getScore(suggestions, getReviewDebtSummary);
-                        const event = new ScoreUpdateEvent({
-                            score: scoreData.total || 0,
-                            components: scoreData.components || {},
-                            suggestions: scoreData.suggestions || { total: 0, pending: 0, pendingFiles: [] },
-                            debt: scoreData.debt || { unreviewedFiles: 0, files: [] }
-                        });
-                        await this.messagingAdapter.publishScoreUpdateEvent(event);
-                    });
-                }
-                // Call legacy callback for backward compatibility
-                if (this.onScoreUpdate) {
-                    this.onScoreUpdate();
-                }
-                if (this.updateFileColorsInExplorer) {
-                    this.updateFileColorsInExplorer();
-                }
-            }
+        // Score calculation logic (merged from ScoreService)
+        const now = Date.now();
+        const TEN_SECONDS = 10 * 1000;
+        
+        // Filter suggestions from last 10 seconds for "recent activity" calculation
+        const recentSuggestions = suggestions.filter(
+            s => (now - s.timestamp) <= TEN_SECONDS
         );
+        
+        // BUT: If we have older suggestions but no recent ones, and we have review debt,
+        // preserve the score based on debt rather than resetting to zero
+        const hasOlderSuggestions = suggestions.length > 0 && recentSuggestions.length === 0;
+        const debtScore = getDebtScore();
+        const hasDebt = debtScore > 0;
+        
+        // Rate-limited debug logging via logger port
+        if (this.loggerAdapter) {
+            this.loggerAdapter.debug(`Updating score: ${recentSuggestions.length} recent, ${suggestions.length} total, debt: ${debtScore}`, 'awarenessService:updateScore');
+        }
+        
+        // Only calculate if we have suggestions in the last 10 seconds
+        if (recentSuggestions.length === 0) {
+            // Even with no recent suggestions, calculate debt score if there's review debt
+            if (debtScore > 0) {
+                // If there's review debt but no pending, show debt score
+                this.currentScore = Math.min(debtScore, 100); // Cap at 100
+                this.scores = { review: 0, critical: 0, adaptation: 0, debt: debtScore };
+            } else if (hasOlderSuggestions && hasDebt) {
+                // We have older suggestions and debt - preserve a minimum score based on debt
+                // This prevents the meter from dropping to zero when monitor restarts
+                this.currentScore = Math.max(debtScore, 20); // Minimum 20 to show activity
+                this.scores = { review: 0, critical: 0, adaptation: 0, debt: debtScore };
+            } else {
+                // No recent activity and no debt
+                // Use explicit state: score of 0 represents "no activity" (not magic value -1)
+                this.currentScore = 0;
+                this.scores = { review: 0, critical: 0, adaptation: 0, debt: 0 };
+            }
+            // Trigger callbacks
+            this._triggerScoreCallbacks(suggestions, getReviewDebtSummary);
+            return;
+        }
+        
+        // Include pending suggestions in score calculation (they count as activity)
+        // This ensures meter shows activity even when suggestions are still pending
+        const allRecent = recentSuggestions;
+        
+        // Filter to completed suggestions only for detailed scoring
+        const completed = recentSuggestions.filter(s => s.status !== 'pending');
+        const pending = recentSuggestions.filter(s => s.status === 'pending');
+        
+        if (completed.length === 0 && allRecent.length > 0) {
+            // Still pending, but we have activity - show partial score based on pending count
+            // This ensures meter shows activity instead of "No Activity"
+            this.currentScore = 50; // Neutral - pending activity detected
+            this.scores = { 
+                review: 0, 
+                critical: 0, 
+                adaptation: 0, 
+                debt: debtScore // Still calculate debt
+            };
+            
+            // Trigger callbacks
+            this._triggerScoreCallbacks(suggestions, getReviewDebtSummary);
+            return;
+        }
+        
+        if (completed.length === 0) {
+            // No suggestions at all
+            // Use explicit state: score of 0 represents "no activity" (not magic value -1)
+            this.currentScore = 0;
+            this.scores = { review: 0, critical: 0, adaptation: 0, debt: 0 };
+            this._triggerScoreCallbacks(suggestions, getReviewDebtSummary);
+            return;
+        }
+        
+        // Delegate to domain service for pure scoring calculations
+        // 1. Code Review Rate (40 points)
+        this.scores.review = this.scoreCalculationServiceD.calculateReviewScore(completed);
+        
+        // 2. Critical Evaluation (30 points)
+        this.scores.critical = this.scoreCalculationServiceD.calculateCriticalScore(completed);
+        
+        // 3. Code Adaptation (30 points)
+        this.scores.adaptation = this.scoreCalculationServiceD.calculateAdaptationScore(completed);
+        
+        // 4. Review Debt (30 points)
+        this.scores.debt = debtScore;
+        
+        // Total score (max 130, normalized to 100)
+        const rawScore = this.scores.review + 
+                        this.scores.critical + 
+                        this.scores.adaptation + 
+                        this.scores.debt;
+        
+        this.currentScore = Math.round(Math.min(rawScore, 100));
+        
+        // Trigger callbacks
+        this._triggerScoreCallbacks(suggestions, getReviewDebtSummary);
+    }
+    
+    /**
+     * Trigger score update callbacks and events (helper method)
+     * @private
+     */
+    _triggerScoreCallbacks(suggestions, getReviewDebtSummary) {
+        // Publish domain event
+        if (this.messagingAdapter) {
+            safe('publishScoreUpdateEvent', async () => {
+                const scoreData = this.getScore();
+                const event = new ScoreUpdateEvent({
+                    score: scoreData.total || 0,
+                    components: scoreData.components || {},
+                    suggestions: scoreData.suggestions || { total: 0, pending: 0, pendingFiles: [] },
+                    debt: scoreData.debt || { unreviewedFiles: 0, files: [] }
+                });
+                await this.messagingAdapter.publishScoreUpdateEvent(event);
+            });
+        }
+        // Call legacy callback for backward compatibility
+        if (this.onScoreUpdate) {
+            this.onScoreUpdate();
+        }
+        if (this.updateFileColorsInExplorer) {
+            this.updateFileColorsInExplorer();
+        }
     }
     
     /**
      * Get current awareness score
-     * Delegates to ScoreService to match the format expected by UI components
+     * Merged from ScoreService - returns score data with breakdown
      * @returns {Object} Score data with total, components, suggestions, debt, and debug info
      */
     getScore() {
-        if (!this.scoreService) {
-            // Return default score if service not initialized
-            return {
-                total: 0,
-                components: {},
-                suggestions: { total: 0, pending: 0, pendingFiles: [] },
-                debt: { unreviewedFiles: 0, files: [] },
-                debug: { monitoringActive: false, error: 'ScoreService not initialized' }
-            };
-        }
-        
         const suggestions = this.suggestionAggregate ? this.suggestionAggregate.getSuggestions() : [];
         const getReviewDebtSummary = () => {
             if (!this.debtService) {
@@ -614,14 +668,92 @@ class AwarenessService extends IAwarenessService {
             return this.debtService.getDebtSummary();
         };
         
-        const score = this.scoreService.getScore(suggestions, getReviewDebtSummary);
+        const debtSummary = getReviewDebtSummary();
+        const now = Date.now();
+        const TEN_SECONDS = 10 * 1000;
         
-        // Add monitoringActive to debug info
-        if (score.debug) {
-            score.debug.monitoringActive = this.updateTimer !== null;
-        }
+        // Filter suggestions from last 10 seconds for score calculation
+        const recentSuggestions = suggestions.filter(
+            s => (now - s.timestamp) <= TEN_SECONDS
+        );
         
-        return score;
+        // For display: show ALL suggestions (not just last 10 seconds) so meter shows activity
+        // But use recentSuggestions for actual score calculation
+        const allSuggestions = suggestions;
+        
+        // Get pending suggestions with file paths
+        const { getRelativePath } = require('./vscodeDocUtilities');
+        const pendingSuggestions = allSuggestions
+            .filter(s => s.status === 'pending')
+            .map(s => {
+                // Extract file path from document URI
+                let filePath = null;
+                if (s.document) {
+                    try {
+                        // Use VS Code adapter for URI creation
+                        const Uri = this.vscodeAdapter ? this.vscodeAdapter.Uri : null;
+                        if (!Uri) {
+                            return null; // Skip if no adapter available
+                        }
+                        const uri = Uri.parse(s.document);
+                        if (uri.scheme === 'file') {
+                            filePath = uri.fsPath;
+                        }
+                    } catch (err) {
+                        if (this.loggerAdapter) {
+                            this.loggerAdapter.error('AwarenessService: Error parsing document URI', err);
+                        }
+                    }
+                }
+                return {
+                    path: filePath ? getRelativePath(filePath) : 'Unknown',
+                    fullPath: filePath || '',
+                    ageMinutes: Math.round((now - s.timestamp) / (1000 * 60)),
+                    type: s.isFileCreation ? 'file creation' : 
+                          s.isExternalCreation ? 'external file' :
+                          s.isFileWrite ? 'file write' : 'text change'
+                };
+            })
+            .filter(Boolean); // Remove null entries
+        
+        return {
+            total: this.currentScore,
+            components: { ...this.scores },
+            suggestions: {
+                // Show all suggestions for meter display (so it doesn't disappear after 10s)
+                total: allSuggestions.length,
+                pending: allSuggestions.filter(s => s.status === 'pending').length,
+                accepted: allSuggestions.filter(s => s.status === 'accepted').length,
+                rejected: allSuggestions.filter(s => s.status === 'rejected').length,
+                adapted: allSuggestions.filter(s => s.status === 'adapted').length,
+                // Also include recent count for debugging
+                recentTotal: recentSuggestions.length,
+                // Include pending suggestions with file info
+                pendingFiles: pendingSuggestions
+            },
+            // Review debt information
+            debt: {
+                unreviewedFiles: debtSummary.total,
+                files: debtSummary.files.map(f => ({
+                    path: getRelativePath(f.path), // Relative path instead of just filename
+                    fullPath: f.path,
+                    ageMinutes: Math.round(f.age / (1000 * 60)),
+                    modifications: f.modificationCount
+                }))
+            },
+            // Add debug info for troubleshooting
+            debug: {
+                lastActivity: recentSuggestions.length > 0 ? 
+                    new Date(recentSuggestions[recentSuggestions.length - 1].timestamp).toLocaleTimeString() : 
+                    (suggestions.length > 0 ? 
+                    new Date(suggestions[suggestions.length - 1].timestamp).toLocaleTimeString() : 
+                        'None'),
+                monitoringActive: this.updateTimer !== null,
+                totalDebtEntries: debtSummary.total,
+                recentWindowCount: recentSuggestions.length,
+                totalTrackedCount: suggestions.length
+            }
+        };
     }
     
     /**
@@ -633,8 +765,20 @@ class AwarenessService extends IAwarenessService {
             throw new Error('handleExternallyCreatedFile() called with invalid filePath');
         }
         
-        if (this.fileWatcher) {
-            this.fileWatcher.handleExternallyCreatedFile(filePath);
+        // FileWatcherService removed - handle via VS Code events
+        // If needed, can call suggestionService.processFileAsSuggestion directly
+        if (this.suggestionService) {
+            const Uri = this.vscodeAdapter.Uri;
+            const fileUri = Uri.file(filePath);
+            this.suggestionService.processFileAsSuggestion(fileUri, {
+                isFileCreation: true,
+                isExternalCreation: true,
+                filePath: filePath
+            }).catch(err => {
+                if (this.loggerAdapter) {
+                    this.loggerAdapter.error('AwarenessService: Error processing externally created file', err);
+                }
+            });
         }
     }
 
@@ -773,12 +917,12 @@ class AwarenessService extends IAwarenessService {
             hasCallbacks: !!(this.onAISuggestion || this.onAISuggestionOutcome || this.onKeepAll || this.onDebtCleared),
             aiSuggestionsCount: suggestions.length,
             reviewDebtCount: this.debtService ? this.debtService.getDebtSize() : 0,
-            currentScore: this.scoreService ? this.scoreService.getCurrentScore() : 0,
-            scores: this.scoreService ? this.scoreService.getScoreComponents() : {},
-            hasFileSystemWatcher: this.fileWatcher ? this.fileWatcher.isActive() : false,
+            currentScore: this.currentScore,
+            scores: { ...this.scores },
+            hasFileSystemWatcher: false, // FileWatcherService removed - using VS Code events only
             hasUpdateTimer: !!this.updateTimer,
-            watchedDirectories: this.fileWatcher ? this.fileWatcher.getWatchedDirectories() : [],
-            workspaceFolders: VSCodeUtilities.getWorkspaceFolders(this.vscodeAdapter).map(f => f.uri.fsPath),
+            watchedDirectories: [], // FileWatcherService removed
+            workspaceFolders: (this.vscodeAdapter.workspaceFolders || []).map(f => f.uri.fsPath),
             recentAcceptances: this.keepAllDetectorService ? this.keepAllDetectorService.getRecentAcceptanceCount() : 0
         };
     }
@@ -1063,7 +1207,7 @@ class AwarenessService extends IAwarenessService {
      * @returns {string} Relative path
      */
     asRelativePath(uri) {
-        return VSCodeUtilities.asRelativePath(this.vscodeAdapter, uri);
+        return this.vscodeAdapter.asRelativePath(uri);
     }
     
     /**
@@ -1071,7 +1215,7 @@ class AwarenessService extends IAwarenessService {
      * @returns {Function} Range constructor
      */
     getRange() {
-        return VSCodeUtilities.getRange(this.vscodeAdapter);
+        return this.vscodeAdapter.Range;
     }
     
     /**
@@ -1079,7 +1223,7 @@ class AwarenessService extends IAwarenessService {
      * @returns {Array<vscode.TextDocument>} Array of text documents
      */
     getTextDocuments() {
-        return VSCodeUtilities.getTextDocuments(this.vscodeAdapter);
+        return this.vscodeAdapter.textDocuments || [];
     }
     
     /**

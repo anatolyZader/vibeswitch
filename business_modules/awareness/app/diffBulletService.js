@@ -1,6 +1,9 @@
 /**
- * DIFF Bullet Builder
- * Generates DIFF bullet skeletons from aggregated changes
+ * Diff Bullet Service
+ * Application layer service for generating DIFF bullet skeletons from aggregated changes
+ * 
+ * This is presentation/reporting logic, not domain business logic.
+ * Moved from domain/utils/diffBulletBuilder.js to application layer.
  * 
  * Format: - <path> :: <anchor> :: <action> (origin=<ai|human|tool|mixed>, impact=<functional|non-functional|refactor>)
  */
@@ -114,7 +117,7 @@ function findAnchor(docText, line) {
 /**
  * Guess impact from changes (heuristic)
  * @param {Array<vscode.TextDocumentContentChangeEvent>} aggregatedChanges - Changes
- * @returns {string} 'functional' or 'non-functional'
+ * @returns {string} 'functional', 'non-functional', or 'refactor'
  */
 function guessImpact(aggregatedChanges) {
     if (!aggregatedChanges || aggregatedChanges.length === 0) {
@@ -126,6 +129,36 @@ function guessImpact(aggregatedChanges) {
         const text = c.text || '';
         return sum + text.replace(/\s/g, '').length;
     }, 0);
+    
+    // Count deletions (non-whitespace)
+    const nonWsDeleted = aggregatedChanges.reduce((sum, c) => {
+        const deletedLength = c.rangeLength || 0;
+        // Approximate non-whitespace deleted (heuristic: assume 70% of deleted is non-ws)
+        return sum + Math.floor(deletedLength * 0.7);
+    }, 0);
+    
+    // Count distinct line ranges (scattered edits)
+    const lineRanges = new Set();
+    aggregatedChanges.forEach(c => {
+        if (c.range) {
+            const startLine = c.range.start?.line ?? 0;
+            const endLine = c.range.end?.line ?? 0;
+            lineRanges.add(`${startLine}-${endLine}`);
+        }
+    });
+    const distinctRanges = lineRanges.size;
+    
+    // Refactor heuristic: many small scattered edits with both insert and delete
+    // - Multiple distinct ranges (scattered)
+    // - Both insertions and deletions (restructuring)
+    // - Low non-ws insert ratio (not adding much new content)
+    const hasBothInsertAndDelete = nonWsInserted > 0 && nonWsDeleted > 0;
+    const isScattered = distinctRanges >= 3;
+    const isLowInsertRatio = nonWsInserted < 50; // Small additions
+    
+    if (isScattered && hasBothInsertAndDelete && isLowInsertRatio) {
+        return 'refactor';
+    }
     
     // If significant non-whitespace content, likely functional
     // Threshold: 30 characters (rough heuristic)
@@ -183,7 +216,8 @@ function buildDiffBullets(document, aggregatedChanges, classification = null, vs
     const impact = guessImpact(aggregatedChanges);
     
     // Infer origin from classification if available
-    let originHint = '<ai|human|tool|mixed>';
+    // Fix: Default to 'mixed' instead of placeholder (must match parser regex)
+    let originHint = 'mixed';
     if (classification) {
         if (classification.label === 'ai') {
             originHint = 'ai';
@@ -232,4 +266,3 @@ module.exports = {
     findAnchor,
     guessImpact
 };
-

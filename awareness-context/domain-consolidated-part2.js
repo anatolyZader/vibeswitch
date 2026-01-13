@@ -4,8 +4,8 @@
  * This file contains part 2 of 3 of the domain layer code.
  * Generated automatically for ChatGPT context.
  * 
- * Files in this part: 14/49
- * Generated: 2026-01-13T15:56:48.088Z
+ * Files in this part: 15/50
+ * Generated: 2026-01-13T17:41:29.112Z
  */
 
 // ============================================================================
@@ -14,7 +14,324 @@
 
 
 // ============================================================================
-// FILE 21/49: domain/ports/ILoggerPort.js
+// FILE 18/50: domain/ports/IAwarenessVSCodePort.js
+// ============================================================================
+
+(function() { // IIFE scope for domain/ports/IAwarenessVSCodePort.js
+/**
+ * IAwarenessVSCodePort - Interface for VS Code API operations used by the Awareness module
+ * 
+ * This port abstracts ONLY the VS Code operations that the awareness module requires.
+ * It is module-specific and does not include general-purpose VS Code methods.
+ * 
+ * This enables:
+ * - Testability without VS Code extension host
+ * - Flexibility to swap implementations
+ * - Clear separation between domain and infrastructure
+ * - Module-specific contracts (not general-purpose adapters)
+ * 
+ * Implementations should wrap the actual VS Code API.
+ */
+
+/**
+ * @interface IAwarenessVSCodePort
+ */
+class IAwarenessVSCodePort {
+    // ============================================================================
+    // Document Event Handlers (used by EventHandlers entity)
+    // ============================================================================
+    
+    /**
+     * Register a handler for text document changes
+     * @param {Function} handler - Handler function receiving TextDocumentChangeEvent
+     * @returns {Object} Disposable to unsubscribe
+     */
+    onDidChangeTextDocument(handler) {
+        throw new Error('onDidChangeTextDocument not implemented');
+    }
+
+    /**
+     * Register a handler for file creation events
+     * @param {Function} handler - Handler function receiving FileCreateEvent
+     * @returns {Object} Disposable to unsubscribe
+     */
+    onDidCreateFiles(handler) {
+        throw new Error('onDidCreateFiles not implemented');
+    }
+
+    /**
+     * Register a handler for file save events
+     * @param {Function} handler - Handler function receiving TextDocument
+     * @returns {Object} Disposable to unsubscribe
+     */
+    onDidSaveTextDocument(handler) {
+        throw new Error('onDidSaveTextDocument not implemented');
+    }
+
+    /**
+     * Register a handler for file open events
+     * @param {Function} handler - Handler function receiving TextDocument
+     * @returns {Object} Disposable to unsubscribe
+     */
+    onDidOpenTextDocument(handler) {
+        throw new Error('onDidOpenTextDocument not implemented');
+    }
+
+    /**
+     * Register a handler for file close events
+     * @param {Function} handler - Handler function receiving TextDocument
+     * @returns {Object} Disposable to unsubscribe
+     */
+    onDidCloseTextDocument(handler) {
+        throw new Error('onDidCloseTextDocument not implemented');
+    }
+
+    // ============================================================================
+    // Editor Event Handlers (used by EventHandlers entity)
+    // ============================================================================
+    
+    /**
+     * Register a handler for text editor selection changes
+     * @param {Function} handler - Handler function receiving TextEditorSelectionChangeEvent
+     * @returns {Object} Disposable to unsubscribe
+     */
+    onDidChangeTextEditorSelection(handler) {
+        throw new Error('onDidChangeTextEditorSelection not implemented');
+    }
+
+    /**
+     * Register a handler for text editor visible range changes
+     * @param {Function} handler - Handler function receiving TextEditorVisibleRangesChangeEvent
+     * @returns {Object} Disposable to unsubscribe
+     */
+    onDidChangeTextEditorVisibleRanges(handler) {
+        throw new Error('onDidChangeTextEditorVisibleRanges not implemented');
+    }
+
+    /**
+     * Register a handler for active text editor changes
+     * @param {Function} handler - Handler function receiving TextEditor | undefined
+     * @returns {Object} Disposable to unsubscribe
+     */
+    onDidChangeActiveTextEditor(handler) {
+        throw new Error('onDidChangeActiveTextEditor not implemented');
+    }
+
+    // ============================================================================
+    // Workspace Operations (used by FileWatcher, ScoreCalculator, EventHandlers)
+    // ============================================================================
+    
+    /**
+     * Convert a URI to a relative path string
+     * @param {Object} uri - VS Code URI object
+     * @returns {string} Relative path string
+     */
+    asRelativePath(uri) {
+        throw new Error('asRelativePath not implemented');
+    }
+
+    /**
+     * Get workspace folders
+     * @returns {Array|undefined} Array of workspace folders or undefined
+     */
+    get workspaceFolders() {
+        throw new Error('workspaceFolders getter not implemented');
+    }
+
+    /**
+     * Get all open text documents
+     * @returns {Array} Array of TextDocument instances
+     */
+    get textDocuments() {
+        throw new Error('textDocuments getter not implemented');
+    }
+
+    /**
+     * Open a text document
+     * @param {Object} uri - VS Code URI object
+     * @returns {Promise<Object>} TextDocument instance
+     */
+    openTextDocument(uri) {
+        throw new Error('openTextDocument not implemented');
+    }
+
+    // ============================================================================
+    // VS Code Types (used for constructing Range, Position, Uri objects)
+    // ============================================================================
+    
+    /**
+     * Get VS Code Range constructor
+     * @returns {Function} Range constructor
+     */
+    get Range() {
+        throw new Error('Range getter not implemented');
+    }
+
+    /**
+     * Get VS Code Position constructor
+     * @returns {Function} Position constructor
+     */
+    get Position() {
+        throw new Error('Position getter not implemented');
+    }
+
+    /**
+     * Get VS Code Uri constructor
+     * @returns {Function} Uri constructor
+     */
+    get Uri() {
+        throw new Error('Uri getter not implemented');
+    }
+}
+
+// module.exports = IAwarenessVSCodePort; // Commented for consolidation
+
+})(); // End IIFE for domain/ports/IAwarenessVSCodePort.js
+
+
+// ============================================================================
+// FILE 19/50: domain/ports/IFileSystemPort.js
+// ============================================================================
+
+(function() { // IIFE scope for domain/ports/IFileSystemPort.js
+/**
+ * IFileSystemPort - Port interface for filesystem operations
+ * 
+ * Defines the contract for filesystem access.
+ * Domain entities should use this port instead of directly importing fs module.
+ */
+
+class IFileSystemPort {
+    constructor() {
+        if (new.target === IFileSystemPort) {
+            throw new Error('Cannot instantiate an abstract class.');
+        }
+    }
+
+    /**
+     * Watch a directory for changes
+     * @param {string} path - Path to watch
+     * @param {Object} options - Watch options (recursive, etc.)
+     * @param {Function} callback - Callback function (eventType, filename)
+     * @returns {Object} Watcher object with close() method
+     */
+    watch(path, options, callback) {
+        throw new Error('Method not implemented.');
+    }
+
+    /**
+     * Get file stats asynchronously
+     * @param {string} path - File path
+     * @param {Function} callback - Callback function (err, stats)
+     */
+    stat(path, callback) {
+        throw new Error('Method not implemented.');
+    }
+
+    /**
+     * Read directory contents synchronously
+     * @param {string} path - Directory path
+     * @param {Object} options - Options (withFileTypes, etc.)
+     * @returns {Array} Array of directory entries
+     */
+    readdirSync(path, options) {
+        throw new Error('Method not implemented.');
+    }
+
+    /**
+     * Read file contents synchronously
+     * @param {string} path - File path
+     * @param {string} encoding - File encoding (default: 'utf8')
+     * @returns {string|Buffer} File contents
+     */
+    readFileSync(path, encoding = 'utf8') {
+        throw new Error('Method not implemented.');
+    }
+}
+
+// module.exports = IFileSystemPort; // Commented for consolidation
+
+})(); // End IIFE for domain/ports/IFileSystemPort.js
+
+
+// ============================================================================
+// FILE 20/50: domain/ports/IHashGeneratorPort.js
+// ============================================================================
+
+(function() { // IIFE scope for domain/ports/IHashGeneratorPort.js
+/**
+ * IHashGeneratorPort - Port interface for hashing operations
+ * 
+ * Defines the contract for generating hashes.
+ * Domain entities should use this port instead of directly using crypto module.
+ */
+
+class IHashGeneratorPort {
+    constructor() {
+        if (new.target === IHashGeneratorPort) {
+            throw new Error('Cannot instantiate an abstract class.');
+        }
+    }
+
+    /**
+     * Create a hash from data
+     * @param {string} algorithm - Hash algorithm (e.g., 'md5', 'sha256')
+     * @param {string|Buffer} data - Data to hash
+     * @returns {string} Hash string (hex)
+     */
+    createHash(algorithm, data) {
+        throw new Error('Method not implemented.');
+    }
+}
+
+// module.exports = IHashGeneratorPort; // Commented for consolidation
+
+})(); // End IIFE for domain/ports/IHashGeneratorPort.js
+
+
+// ============================================================================
+// FILE 21/50: domain/ports/IIdGeneratorPort.js
+// ============================================================================
+
+(function() { // IIFE scope for domain/ports/IIdGeneratorPort.js
+/**
+ * IIdGeneratorPort - Port interface for ID generation
+ * 
+ * Defines the contract for generating unique identifiers.
+ * Domain entities should use this port instead of directly using crypto or Date.now().
+ */
+
+class IIdGeneratorPort {
+    constructor() {
+        if (new.target === IIdGeneratorPort) {
+            throw new Error('Cannot instantiate an abstract class.');
+        }
+    }
+
+    /**
+     * Generate a UUID
+     * @returns {string} UUID string
+     */
+    generateUUID() {
+        throw new Error('Method not implemented.');
+    }
+
+    /**
+     * Generate a unique ID (fallback if UUID not available)
+     * @returns {string} Unique ID string
+     */
+    generateId() {
+        throw new Error('Method not implemented.');
+    }
+}
+
+// module.exports = IIdGeneratorPort; // Commented for consolidation
+
+})(); // End IIFE for domain/ports/IIdGeneratorPort.js
+
+
+// ============================================================================
+// FILE 22/50: domain/ports/ILoggerPort.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/ports/ILoggerPort.js
@@ -68,7 +385,7 @@ class ILoggerPort {
 
 
 // ============================================================================
-// FILE 22/49: domain/services/changeClassificationServiceD.js
+// FILE 23/50: domain/services/changeClassificationServiceD.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/services/changeClassificationServiceD.js
@@ -301,7 +618,7 @@ class ChangeClassificationServiceD {
 
 
 // ============================================================================
-// FILE 23/49: domain/services/debtCalculationServiceD.js
+// FILE 24/50: domain/services/debtCalculationServiceD.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/services/debtCalculationServiceD.js
@@ -318,19 +635,25 @@ class DebtCalculationServiceD {
     }
 
     /**
-     * Calculate debt score (0-30)
-     * @param {Map<string, Debt>} debts - Map of debt entities
-     * @param {Array<Suggestion>} pendingSuggestions - Pending suggestions
+     * Calculate debt score (0-30) - combines file-level and suggestion-level debt
+     * 
+     * Properly separates:
+     * - FileDebt: Unreviewed changes in files (file-level)
+     * - SuggestionDebt: Pending AI suggestions (suggestion-level)
+     * 
+     * @param {Map<string, FileDebt>} fileDebts - Map of file-level debt entities
+     * @param {Array<Suggestion>} pendingSuggestions - Pending suggestions (suggestion-level debt)
      * @returns {number} Debt score (0-30)
      */
-    calculateDebtScore(debts, pendingSuggestions) {
-        if (!debts) debts = new Map();
+    calculateDebtScore(fileDebts, pendingSuggestions) {
+        if (!fileDebts) fileDebts = new Map();
         if (!pendingSuggestions) pendingSuggestions = [];
 
-        const unreviewedFiles = Array.from(debts.values())
+        // File-level debt: unreviewed file changes
+        const unreviewedFiles = Array.from(fileDebts.values())
             .filter(d => d && !d.isReviewed());
 
-        // Pending suggestions are also debt - they represent unreviewed AI-generated code
+        // Suggestion-level debt: pending AI suggestions (tracked separately)
         const pending = pendingSuggestions.filter(s => s && s.status === 'pending');
 
         // If no debt at all, return 0
@@ -349,11 +672,11 @@ class DebtCalculationServiceD {
         // 2. Number of pending suggestions (0-10 points)
         debtScore += this.calculateDebtPendingScore(pending.length);
 
-        // 3. Age of oldest unreviewed file or pending suggestion (0-10 points)
-        const allDebtTimestamps = [
-            ...unreviewedFiles.map(d => d.modifiedAt || now),
-            ...pending.map(s => s.timestamp || now)
-        ];
+        // 3. Age of oldest unreviewed file OR pending suggestion (0-10 points)
+        // Combines both file-level and suggestion-level debt timestamps
+        const fileDebtTimestamps = unreviewedFiles.map(d => d.modifiedAt || now);
+        const suggestionDebtTimestamps = pending.map(s => s.timestamp || now);
+        const allDebtTimestamps = [...fileDebtTimestamps, ...suggestionDebtTimestamps];
 
         if (allDebtTimestamps.length > 0) {
             const oldestDebt = Math.min(...allDebtTimestamps);
@@ -397,14 +720,15 @@ class DebtCalculationServiceD {
     }
 
     /**
-     * Aggregate debt metrics
-     * @param {Map<string, Debt>} debts - Map of debt entities
+     * Aggregate file-level debt metrics
+     * Note: This aggregates file-level debt only. Suggestion debt is tracked separately.
+     * @param {Map<string, FileDebt>} fileDebts - Map of file-level debt entities
      * @returns {Object} Aggregated metrics
      */
-    aggregateDebtMetrics(debts) {
-        if (!debts) debts = new Map();
+    aggregateDebtMetrics(fileDebts) {
+        if (!fileDebts) fileDebts = new Map();
 
-        const debtArray = Array.from(debts.values()).filter(d => d);
+        const debtArray = Array.from(fileDebts.values()).filter(d => d);
         const unreviewed = debtArray.filter(d => !d.isReviewed());
 
         const totalChanges = debtArray.reduce((sum, d) => sum + (d.totalChanges || 0), 0);
@@ -434,15 +758,15 @@ class DebtCalculationServiceD {
     }
 
     /**
-     * Determine if debt should be evicted
-     * @param {Debt} debt - Debt entity
+     * Determine if file-level debt should be evicted
+     * @param {FileDebt} fileDebt - File-level debt entity
      * @param {number} evictionThreshold - Eviction threshold in milliseconds
      * @returns {boolean} True if should evict
      */
-    shouldEvictDebt(debt, evictionThreshold) {
-        if (!debt || !evictionThreshold) return false;
+    shouldEvictDebt(fileDebt, evictionThreshold) {
+        if (!fileDebt || !evictionThreshold) return false;
 
-        const age = Date.now() - (debt.modifiedAt || 0);
+        const age = Date.now() - (fileDebt.modifiedAt || 0);
         return age > evictionThreshold;
     }
 }
@@ -453,7 +777,7 @@ class DebtCalculationServiceD {
 
 
 // ============================================================================
-// FILE 24/49: domain/services/rangeOperationServiceD.js
+// FILE 25/50: domain/services/rangeOperationServiceD.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/services/rangeOperationServiceD.js
@@ -511,7 +835,7 @@ class RangeOperationServiceD {
 
 
 // ============================================================================
-// FILE 25/49: domain/services/reviewSessionServiceD.js
+// FILE 26/50: domain/services/reviewSessionServiceD.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/services/reviewSessionServiceD.js
@@ -612,7 +936,7 @@ class ReviewSessionServiceD {
 
 
 // ============================================================================
-// FILE 26/49: domain/services/scoreCalculationServiceD.js
+// FILE 27/50: domain/services/scoreCalculationServiceD.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/services/scoreCalculationServiceD.js
@@ -728,7 +1052,7 @@ class ScoreCalculationServiceD {
 
 
 // ============================================================================
-// FILE 27/49: domain/services/suggestionBatchServiceD.js
+// FILE 28/50: domain/services/suggestionBatchServiceD.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/services/suggestionBatchServiceD.js
@@ -905,7 +1229,7 @@ class SuggestionBatchServiceD {
 
 
 // ============================================================================
-// FILE 28/49: domain/services/suggestionLifecycleServiceD.js
+// FILE 29/50: domain/services/suggestionLifecycleServiceD.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/services/suggestionLifecycleServiceD.js
@@ -1048,7 +1372,7 @@ class SuggestionLifecycleServiceD {
 
 
 // ============================================================================
-// FILE 29/49: domain/services/uriPathOperationServiceD.js
+// FILE 30/50: domain/services/uriPathOperationServiceD.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/services/uriPathOperationServiceD.js
@@ -1130,7 +1454,7 @@ class UriPathOperationServiceD {
 
 
 // ============================================================================
-// FILE 30/49: domain/utils/changeAggregator.js
+// FILE 31/50: domain/utils/changeAggregator.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/utils/changeAggregator.js
@@ -1216,7 +1540,7 @@ function recordEventMetadata(pending, timestamp, eventRangeSet, changeCount) {
 
 
 // ============================================================================
-// FILE 31/49: domain/utils/changeClassifier.js
+// FILE 32/50: domain/utils/changeClassifier.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/utils/changeClassifier.js
@@ -1609,340 +1933,4 @@ class ChangeClassifier {
 // module.exports = ChangeClassifier; // Commented for consolidation
 
 })(); // End IIFE for domain/utils/changeClassifier.js
-
-
-// ============================================================================
-// FILE 32/49: domain/utils/classificationScorer.js
-// ============================================================================
-
-(function() { // IIFE scope for domain/utils/classificationScorer.js
-/**
- * Classification Scorer
- * Accumulates detector scores and determines final classification label and confidence
- */
-
-function accumulateScores(detectors) {
-    let aiScore = 0;
-    let formatterScore = 0;
-    let userScore = 0;
-    
-    // Fix: Store reasons as paired objects to prevent misalignment
-    // Some detectors may return reason without reasonTag (e.g., marker detection)
-    const reasonObjects = [];
-    
-    for (const detector of detectors) {
-        const result = detector();
-        if (!result) continue;
-        
-        if (result.label === 'formatter') {
-            formatterScore += result.score;
-        } else if (result.label === 'ai') {
-            aiScore += result.score;
-        } else if (result.label === 'user') {
-            userScore += result.score;
-        }
-        
-        if (result.reason) {
-            reasonObjects.push({ tag: result.reasonTag || null, text: result.reason });
-        }
-    }
-    
-    return { aiScore, formatterScore, userScore, reasonObjects };
-}
-
-function determineLabel(aiScore, formatterScore, userScore) {
-    let label = 'unknown';
-    let confidence = 0;
-    
-    if (formatterScore > aiScore && formatterScore > userScore && formatterScore > 0.5) {
-        label = 'formatter';
-        confidence = Math.min(formatterScore, 1.0);
-    } else if (aiScore > userScore && aiScore > 0.3) {
-        label = 'ai';
-        confidence = Math.min(aiScore, 1.0);
-    } else if (userScore > 0) {
-        // Fix: Only label 'user' when we have positive user evidence
-        label = 'user';
-        confidence = Math.max(0.3, Math.min(userScore, 1.0));
-    } else {
-        // Fix: If all scores are 0, return 'unknown' (not 'user')
-        // This matches the documented behavior where 'unknown' exists
-        label = 'unknown';
-        confidence = 0.2;
-    }
-    
-    return { label, confidence };
-}
-
-// module.exports = { // Commented for consolidation
-//     accumulateScores, // Commented for consolidation
-//     determineLabel // Commented for consolidation
-// }; // Commented for consolidation
-
-
-})(); // End IIFE for domain/utils/classificationScorer.js
-
-
-// ============================================================================
-// FILE 33/49: domain/utils/configManager.js
-// ============================================================================
-
-(function() { // IIFE scope for domain/utils/configManager.js
-/**
- * Config Manager
- * Manages classifier configuration: defaults, validation, and merging
- */
-
-// const { getLogger } = require('../../../../logger'); // Commented for consolidation
-
-/**
- * Get default classifier configuration
- * @returns {Object} Default configuration object
- */
-function getDefaultConfig() {
-    return {
-        // VIBE: more permissive (lower thresholds)
-        // DEV: more conservative (higher thresholds)
-        multiLineThreshold: 50,
-        pureInsertionCount: 3,
-        pureInsertionSize: 20,
-        largeInsertionThreshold: 100,
-        scatteredRangeCount: 5,
-        scatteredChangeCount: 5,
-        scatteredSizeThreshold: 200,
-        formatterRangeCount: 8,
-        formatterLineSpan: 50,
-        aiLineSpan: 30,
-        aiMultiLineSize: 50,
-        // Rapid scattered changes: AI agents often make many scattered edits quickly
-        rapidScatteredTimeWindow: 1000, // Time window in ms for rapid changes (1 second)
-        rapidScatteredEventCount: 8, // Minimum number of events in time window (renamed from ChangeCount for clarity)
-        rapidScatteredRangeCount: 6, // Minimum distinct line ranges for scattered pattern
-        rapidScatteredMinSize: 50, // Minimum total size to avoid false positives on tiny edits
-        rapidBurstChangeCount: 10, // Minimum number of changes for rapid burst branch (separate from event count)
-        // Marker-only mode: if true, only use @ai marker, ignore heuristics
-        // If false, use behavioral heuristics as primary with markers as strong signal when present
-        markerOnly: false  // Default: use behavioral inference (heuristics) as primary method
-    };
-}
-
-/**
- * Validate and sanitize classifier configuration to prevent silent misclassification
- * Fix: Sanitizes user config BEFORE merge to ensure defaults always win
- * @param {Object} config - User configuration to validate (will be mutated)
- * @param {Object} defaultConfig - Default configuration (for reference)
- * @returns {{errors: string[], sanitized: string[]}} Validation result
- */
-function validateConfig(config, defaultConfig = {}) {
-    const errors = [];
-    const sanitized = [];
-    
-    // Thresholds must be positive numbers
-    const thresholdKeys = [
-        'multiLineThreshold', 'pureInsertionCount', 'pureInsertionSize',
-        'largeInsertionThreshold', 'scatteredRangeCount', 'scatteredChangeCount',
-        'scatteredSizeThreshold', 'formatterRangeCount', 'formatterLineSpan',
-        'aiLineSpan', 'aiMultiLineSize', 'rapidScatteredTimeWindow',
-        'rapidScatteredEventCount', 'rapidScatteredRangeCount', 'rapidScatteredMinSize',
-        'rapidBurstChangeCount'
-    ];
-    
-    // Fix: Sanitize invalid values (delete them so defaults win) instead of just warning
-    for (const key of thresholdKeys) {
-        if (config[key] !== undefined && (typeof config[key] !== 'number' || config[key] < 0)) {
-            errors.push(`${key} must be a non-negative number, got: ${config[key]}`);
-            delete config[key]; // Remove invalid value so default wins
-            sanitized.push(key);
-        }
-    }
-    
-    // Boolean flags
-    if (config.markerOnly !== undefined && typeof config.markerOnly !== 'boolean') {
-        errors.push(`markerOnly must be a boolean, got: ${config.markerOnly}`);
-        delete config.markerOnly; // Remove invalid value so default wins
-        sanitized.push('markerOnly');
-    }
-    
-    if (errors.length > 0) {
-        // Production: Use logger instead of console.warn (rate-limited, visible to devs)
-        const logger = getLogger();
-        // Log once with sanitized keys and caller context
-        logger.log(`[ChangeClassifier] Invalid config sanitized: ${sanitized.join(', ')}. ${errors.length} invalid value(s) removed, defaults applied.`, true);
-        // Invalid values have been deleted, so defaults will be used via merge
-    }
-    
-    return { errors, sanitized };
-}
-
-/**
- * Create and merge classifier configuration
- * @param {Object|null} userConfig - User-provided configuration (optional)
- * @returns {Object} Final frozen configuration object
- */
-function createConfig(userConfig = null) {
-    const defaultConfig = getDefaultConfig();
-    
-    // Fix: Sanitize user config BEFORE merging to ensure defaults always win
-    // This prevents invalid values from overwriting defaults, then being deleted, leaving undefined
-    const sanitizedUserConfig = userConfig ? { ...userConfig } : {};
-    validateConfig(sanitizedUserConfig, defaultConfig);
-    
-    // Merge sanitized user config with defaults (defaults win for any missing/invalid keys)
-    const config = { ...defaultConfig, ...sanitizedUserConfig };
-    
-    // Freeze config to prevent accidental mutation
-    Object.freeze(config);
-    
-    return config;
-}
-
-// module.exports = { // Commented for consolidation
-//     getDefaultConfig, // Commented for consolidation
-//     validateConfig, // Commented for consolidation
-//     createConfig // Commented for consolidation
-// }; // Commented for consolidation
-
-
-})(); // End IIFE for domain/utils/configManager.js
-
-
-// ============================================================================
-// FILE 34/49: domain/utils/detectors/changeAnalyzer.js
-// ============================================================================
-
-(function() { // IIFE scope for domain/utils/detectors/changeAnalyzer.js
-/**
- * Change Analyzer
- * Analyzes text changes and calculates metrics for detector analysis
- */
-
-/**
- * Calculate metrics from changes for detector analysis
- * @param {Array<vscode.TextDocumentContentChangeEvent>} changes - Aggregated changes
- * @param {Array<number>} eventTimestamps - Timestamps for each event (for temporal analysis)
- * @param {Array<Set>} eventRangeSets - Range sets for each event (for scattered pattern detection)
- * @param {number} firstChangeTime - Timestamp of first change in batch
- * @param {Object} config - Configuration with rapidScatteredTimeWindow
- * @returns {Object} Metrics object
- */
-function calculateMetrics(changes, eventTimestamps = [], eventRangeSets = [], firstChangeTime = null, config = {}) {
-    let totalInserted = 0;
-    let totalDeleted = 0;
-    let hasMultiLine = false;
-    let pureInsertionCount = 0;
-    let distinctRanges = new Set();
-    const startLines = [];
-    const endLines = [];
-    
-    for (const change of changes) {
-        const inserted = change.text.length;
-        const deleted = change.rangeLength;
-        
-        totalInserted += inserted;
-        totalDeleted += deleted;
-        
-        if (change.text.includes('\n')) {
-            hasMultiLine = true;
-        }
-        
-        if (deleted === 0 && inserted > 0) {
-            pureInsertionCount++;
-        }
-        
-        // Use line-based key for scatteredness detection (more stable than character-precise)
-        const lineKey = `${change.range.start.line}-${change.range.end.line}`;
-        distinctRanges.add(lineKey);
-        
-        startLines.push(change.range.start.line);
-        endLines.push(change.range.end.line);
-    }
-    
-    // Fix: maxLineSpan should consider both start and end lines
-    const allLines = [...startLines, ...endLines];
-    const maxLineSpan = allLines.length > 0 
-        ? Math.max(...allLines) - Math.min(...allLines)
-        : 0;
-    
-    // Fix: Count whitespace-only changes instead of whitespace ratio
-    // This avoids false positives on normal code (which naturally contains whitespace)
-    // Fix: Only count insertions of whitespace (deletions have empty text but aren't whitespace-only)
-    let whitespaceOnlyChangeCount = 0;
-    for (const change of changes) {
-        if (change.text.length > 0 && change.text.trim().length === 0) {
-            whitespaceOnlyChangeCount++;
-        }
-    }
-    const whitespaceOnlyChangeRatio = changes.length > 0 
-        ? whitespaceOnlyChangeCount / changes.length 
-        : 0;
-    
-    // Calculate temporal metrics using event timestamps (not per-change timestamps)
-    // Fix: Track events, not individual changes, for true "rapid scattered" detection
-    const timeWindow = config.rapidScatteredTimeWindow || 1000;
-    let rapidEventCount = 0;
-    let rapidRangeSet = new Set();
-    let burstDurationMs = 0;
-    
-    if (eventTimestamps.length > 0 && firstChangeTime) {
-        const lastEventTime = eventTimestamps[eventTimestamps.length - 1];
-        burstDurationMs = lastEventTime - firstChangeTime;
-        
-        let maxRapidEventCount = 0;
-        let maxRapidRanges = new Set();
-        
-        // Find the window with the most events
-        for (let i = 0; i < eventTimestamps.length; i++) {
-            const windowStart = eventTimestamps[i];
-            const windowEnd = windowStart + timeWindow;
-            let windowEventCount = 0;
-            const windowRanges = new Set();
-            
-            // Count events in this window and aggregate their ranges
-            for (let j = i; j < eventTimestamps.length; j++) {
-                if (eventTimestamps[j] <= windowEnd) {
-                    windowEventCount++;
-                    // Aggregate ranges from this event
-                    if (j < eventRangeSets.length) {
-                        for (const rangeKey of eventRangeSets[j]) {
-                            windowRanges.add(rangeKey);
-                        }
-                    }
-                } else {
-                    break;
-                }
-            }
-            
-            if (windowEventCount > maxRapidEventCount) {
-                maxRapidEventCount = windowEventCount;
-                maxRapidRanges = windowRanges;
-            }
-        }
-        
-        rapidEventCount = maxRapidEventCount;
-        rapidRangeSet = maxRapidRanges;
-    }
-    
-    return {
-        totalInserted,
-        totalDeleted,
-        hasMultiLine,
-        pureInsertionCount,
-        distinctRanges,
-        distinctRangeCount: distinctRanges.size,
-        maxLineSpan,
-        whitespaceOnlyChangeRatio,
-        rapidEventCount,
-        rapidRangeSet,
-        rapidRangeCount: rapidRangeSet.size,
-        burstDurationMs,
-        changeCount: changes.length
-    };
-}
-
-// module.exports = { // Commented for consolidation
-//     calculateMetrics // Commented for consolidation
-// }; // Commented for consolidation
-
-
-})(); // End IIFE for domain/utils/detectors/changeAnalyzer.js
 

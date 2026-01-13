@@ -5,7 +5,7 @@
  * and publishes domain events. This is an application service.
  */
 
-const { normalizeToUri } = require('../domain/utils/utils');
+const { normalizeToUri } = require('./vscodeDocUtilities');
 const ReviewSession = require('../domain/entities/reviewSession');
 
 class SessionService {
@@ -176,10 +176,12 @@ class SessionService {
                 }
                 
                 // Mark all pending suggestions in this file as reviewed
+                // Use aggregate methods (single authority) instead of direct entity calls
                 if (hasPendingSuggestions && this.suggestionService) {
                     const pendingSuggestions = this.suggestionService.getPendingSuggestionsForFile(uri);
                     for (const suggestion of pendingSuggestions) {
-                        suggestion.markAsReviewed(session.reviewTime, session.sessionStart);
+                        // Delegate to SuggestionService which uses aggregate methods
+                        this.suggestionService.markSuggestionAsReviewed(suggestion.id, session.reviewTime);
                         needsScoreUpdate = true;
                     }
                 }

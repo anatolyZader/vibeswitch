@@ -6,7 +6,7 @@
  */
 
 const FileDebt = require('../domain/entities/fileDebt');
-const { normalizeToUri } = require('../domain/utils/utils');
+const { normalizeToUri } = require('./vscodeDocUtilities');
 
 class DebtService {
     /**

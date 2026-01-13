@@ -55,7 +55,7 @@ function createAwarenessComposition(context, diContainer) {
     const adapters = {
         vscodeAdapter: new AwarenessVSCodeAdapter(vscode),
         persistenceAdapter: new AwarenessWorkspaceStateAdapter(context),
-        messagingAdapter: new AwarenessEventEmitterMessagingAdapter(),
+        messagingAdapter: new AwarenessEventEmitterMessagingAdapter(null, adapters.idGeneratorAdapter),
         loggerAdapter: new AwarenessLoggerAdapter(),
         fileSystemAdapter: new AwarenessFileSystemAdapter(),
         idGeneratorAdapter: new AwarenessIdGeneratorAdapter(),

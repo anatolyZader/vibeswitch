@@ -52,8 +52,9 @@ class ChangeClassifier {
     /**
      * @param {number} debounceMs - Debounce window in milliseconds
      * @param {Object} config - Classification configuration (mode-specific thresholds)
+     * @param {ILoggerPort} loggerPort - Logger port (optional, for config validation warnings)
      */
-    constructor(debounceMs = 200, config = null) {
+    constructor(debounceMs = 200, config = null, loggerPort = null) {
         this.debounceMs = debounceMs;
         this.pendingChanges = new Map(); // document URI -> { changes: [], timer: null, lastChangeTime: 0, documentVersion: null, onClassified: null }
         this.maxChangesPerDocumentBatch = 200; // Cap changes per document batch (safety)
@@ -64,8 +65,8 @@ class ChangeClassifier {
             totalClassifications: 0
         };
         
-        // Create and merge configuration
-        this.config = createConfig(config);
+        // Create and merge configuration (pass logger for validation warnings)
+        this.config = createConfig(config, loggerPort);
         
         // Fix: Use strict boolean check (more explicit than || false)
         this.markerOnly = this.config.markerOnly === true;

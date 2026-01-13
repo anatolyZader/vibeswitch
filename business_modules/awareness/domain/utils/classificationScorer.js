@@ -4,9 +4,14 @@
  */
 
 function accumulateScores(detectors) {
-    let aiScore = 0;
-    let formatterScore = 0;
-    let userScore = 0;
+    // Fix: Use probabilistic OR instead of additive scoring
+    // Formula: combined = 1 - Π(1 - score_i) per label
+    // This prevents score inflation from multiple weak signals
+    // and is easier to calibrate than additive with capping
+    
+    const aiScores = [];
+    const formatterScores = [];
+    const userScores = [];
     
     // Fix: Store reasons as paired objects to prevent misalignment
     // Some detectors may return reason without reasonTag (e.g., marker detection)
@@ -17,17 +22,31 @@ function accumulateScores(detectors) {
         if (!result) continue;
         
         if (result.label === 'formatter') {
-            formatterScore += result.score;
+            formatterScores.push(result.score);
         } else if (result.label === 'ai') {
-            aiScore += result.score;
+            aiScores.push(result.score);
         } else if (result.label === 'user') {
-            userScore += result.score;
+            userScores.push(result.score);
         }
         
         if (result.reason) {
             reasonObjects.push({ tag: result.reasonTag || null, text: result.reason });
         }
     }
+    
+    // Probabilistic OR: 1 - Π(1 - score_i)
+    // If no scores, product is 1, so result is 0 (correct)
+    const aiScore = aiScores.length > 0
+        ? 1 - aiScores.reduce((product, score) => product * (1 - score), 1)
+        : 0;
+    
+    const formatterScore = formatterScores.length > 0
+        ? 1 - formatterScores.reduce((product, score) => product * (1 - score), 1)
+        : 0;
+    
+    const userScore = userScores.length > 0
+        ? 1 - userScores.reduce((product, score) => product * (1 - score), 1)
+        : 0;
     
     return { aiScore, formatterScore, userScore, reasonObjects };
 }

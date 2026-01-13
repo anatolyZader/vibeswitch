@@ -27,6 +27,14 @@ function applyDriftCap(classification, document, lastSeenVersion, lastSeenTimest
         return false;
     }
     
+    // Fix: Defensive guards for optional fields (domain code should never crash)
+    if (!classification.reasons) {
+        classification.reasons = [];
+    }
+    if (!classification.meta) {
+        classification.meta = {};
+    }
+    
     const originalConfidence = classification.confidence;
     classification.confidence = Math.min(classification.confidence, 0.6); // Cap at 0.6
     
@@ -42,9 +50,6 @@ function applyDriftCap(classification, document, lastSeenVersion, lastSeenTimest
         classification.reasons.push(`meta:version_drift document version ${document.version} vs last seen ${lastSeenVersion} (age: ${driftAge}ms, version changed after last captured event, confidence capped)`);
         
         // Production: Add meta flag for metrics/observability
-        if (!classification.meta) {
-            classification.meta = {};
-        }
         classification.meta.versionDrift = true;
         
         return true;

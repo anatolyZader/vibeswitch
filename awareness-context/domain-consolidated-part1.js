@@ -4,8 +4,8 @@
  * This file contains part 1 of 3 of the domain layer code.
  * Generated automatically for ChatGPT context.
  * 
- * Files in this part: 20/49
- * Generated: 2026-01-13T15:56:48.087Z
+ * Files in this part: 17/50
+ * Generated: 2026-01-13T17:41:29.111Z
  */
 
 // ============================================================================
@@ -14,7 +14,7 @@
 
 
 // ============================================================================
-// FILE 1/49: domain/aggregates/suggestionAggregate.js
+// FILE 1/50: domain/aggregates/suggestionAggregate.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/aggregates/suggestionAggregate.js
@@ -28,7 +28,9 @@
 - ✅ Only `SuggestionAggregate` can create `Suggestion` entities
 - ✅ Only `SuggestionAggregate` can create `SuggestionBatch` entities
 - ✅ Only `SuggestionAggregate` can modify suggestion status (via `updateSuggestionStatus()`)
-- ✅ Only `SuggestionAggregate` can add suggestions to batches
+- ✅ Only `SuggestionAggregate` can add suggestions to batches (via `addSuggestionToBatch()`)
+- ✅ Only `SuggestionAggregate` can mutate review state (via `markSuggestionReviewed()`, `addSuggestionReviewTime()`)
+- ✅ Only `SuggestionAggregate` can record user edits (via `recordUserEditOnSuggestion()`)
  */
 
 // const Suggestion = require('../entities/suggestion'); // Commented for consolidation
@@ -178,6 +180,60 @@ class SuggestionAggregate {
     }
 
     /**
+     * Mark suggestion as reviewed (single authority for review state)
+     * @param {string} suggestionId - Suggestion ID
+     * @param {Object} options - Review options
+     * @param {number} options.reviewTimeDeltaMs - Additional review time in milliseconds (accumulated)
+     * @param {number} options.reviewStartedAt - Timestamp when review started (optional)
+     */
+    markSuggestionReviewed(suggestionId, options = {}) {
+        const suggestion = this.suggestionsById.get(suggestionId);
+        if (!suggestion) {
+            return; // Suggestion not found
+        }
+
+        const { reviewTimeDeltaMs = 0, reviewStartedAt = null } = options;
+
+        // Accumulate review time (not overwrite)
+        suggestion.reviewed = true;
+        suggestion.reviewTime = (suggestion.reviewTime || 0) + reviewTimeDeltaMs;
+        
+        if (reviewStartedAt !== null) {
+            suggestion.reviewStarted = reviewStartedAt;
+        } else if (!suggestion.reviewStarted) {
+            suggestion.reviewStarted = Date.now();
+        }
+    }
+
+    /**
+     * Add review time to suggestion (accumulates)
+     * @param {string} suggestionId - Suggestion ID
+     * @param {number} deltaMs - Additional review time in milliseconds
+     */
+    addSuggestionReviewTime(suggestionId, deltaMs) {
+        const suggestion = this.suggestionsById.get(suggestionId);
+        if (!suggestion) {
+            return; // Suggestion not found
+        }
+
+        // Accumulate review time
+        suggestion.reviewTime = (suggestion.reviewTime || 0) + deltaMs;
+    }
+
+    /**
+     * Record user edit on suggestion (single authority)
+     * @param {string} suggestionId - Suggestion ID
+     */
+    recordUserEditOnSuggestion(suggestionId) {
+        const suggestion = this.suggestionsById.get(suggestionId);
+        if (!suggestion) {
+            return; // Suggestion not found
+        }
+
+        suggestion.recordUserEdit();
+    }
+
+    /**
      * Get all suggestions
      * @returns {Array<Suggestion>} Array of Suggestion entities
      */
@@ -230,13 +286,19 @@ class SuggestionAggregate {
     }
 
     /**
-     * Create or update a batch for a suggestion
+     * Add suggestion to batch (first-class aggregate operation)
+     * Sets batchId on suggestion entity and maintains batch mapping
      * @param {string} documentUri - Document URI
      * @param {string} suggestionId - Suggestion ID
      * @param {number} size - Size of the suggestion
      * @returns {string} Batch ID
      */
-    createOrUpdateBatch(documentUri, suggestionId, size) {
+    addSuggestionToBatch(documentUri, suggestionId, size) {
+        const suggestion = this.suggestionsById.get(suggestionId);
+        if (!suggestion) {
+            throw new Error(`Suggestion ${suggestionId} not found in aggregate`);
+        }
+
         // Check if suggestion is already in a batch
         let batchId = this.suggestionsToBatch.get(suggestionId);
         
@@ -245,6 +307,8 @@ class SuggestionAggregate {
             const batch = this.batchesById.get(batchId);
             if (batch) {
                 batch.addSuggestion(suggestionId, size);
+                // Ensure batchId is set on entity (invariant enforcement)
+                suggestion.batchId = batchId;
                 return batchId;
             }
         }
@@ -261,7 +325,31 @@ class SuggestionAggregate {
         this.batchesById.set(batchId, batch);
         this.suggestionsToBatch.set(suggestionId, batchId);
         
+        // Set batchId on entity (invariant enforcement - aggregate owns this)
+        suggestion.batchId = batchId;
+        
         return batchId;
+    }
+
+    /**
+     * Get batch ID for a suggestion
+     * @param {string} suggestionId - Suggestion ID
+     * @returns {string|null} Batch ID or null
+     */
+    getBatchIdForSuggestion(suggestionId) {
+        return this.suggestionsToBatch.get(suggestionId) || null;
+    }
+
+    /**
+     * Create or update a batch for a suggestion (deprecated - use addSuggestionToBatch)
+     * @deprecated Use addSuggestionToBatch instead
+     * @param {string} documentUri - Document URI
+     * @param {string} suggestionId - Suggestion ID
+     * @param {number} size - Size of the suggestion
+     * @returns {string} Batch ID
+     */
+    createOrUpdateBatch(documentUri, suggestionId, size) {
+        return this.addSuggestionToBatch(documentUri, suggestionId, size);
     }
 
     /**
@@ -275,12 +363,15 @@ class SuggestionAggregate {
 
     /**
      * Update batch outcome when suggestion status changes
+     * Uses aggregate's batch mapping (not suggestion.batchId) for consistency
      * @param {Suggestion} suggestion - Suggestion entity
      */
     updateBatchOutcome(suggestion) {
-        if (!suggestion.batchId) return;
+        // Use aggregate's mapping (single source of truth)
+        const batchId = this.suggestionsToBatch.get(suggestion.id);
+        if (!batchId) return;
         
-        const batch = this.batchesById.get(suggestion.batchId);
+        const batch = this.batchesById.get(batchId);
         if (!batch) return;
         
         batch.recordOutcome(suggestion.id, suggestion.status);
@@ -381,7 +472,7 @@ class SuggestionAggregate {
 
 
 // ============================================================================
-// FILE 2/49: domain/entities/change.js
+// FILE 2/50: domain/entities/change.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/entities/change.js
@@ -562,7 +653,7 @@ class Change {
 
 
 // ============================================================================
-// FILE 3/49: domain/entities/debt.js
+// FILE 3/50: domain/entities/debt.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/entities/debt.js
@@ -704,7 +795,157 @@ class Debt {
 
 
 // ============================================================================
-// FILE 4/49: domain/entities/reviewSession.js
+// FILE 4/50: domain/entities/fileDebt.js
+// ============================================================================
+
+(function() { // IIFE scope for domain/entities/fileDebt.js
+/**
+ * FileDebt - Domain entity representing review debt for a single file
+ * 
+ * Encapsulates the business concept of unreviewed code changes in a file.
+ * This is file-level debt - tracks changes to the file itself, not individual suggestions.
+ * 
+ * Suggestion-level debt is tracked separately via Suggestion entities (status === 'pending').
+ * 
+ * This is a domain entity with identity (file URI) that tracks file review state.
+ */
+
+class FileDebt {
+    /**
+     * @param {string} fileUri - Canonical URI string for the file
+     * @param {Object} options - Optional initial state
+     * @param {number} options.modifiedAt - Timestamp when debt was first created
+     * @param {number} options.totalChanges - Total size of changes
+     * @param {number} options.modificationCount - Number of modifications
+     * @param {boolean} options.reviewed - Whether file debt has been reviewed
+     * @param {number} options.reviewedAt - Timestamp when reviewed
+     * @param {number} options.totalReviewTime - Total time spent reviewing
+     * @param {number} options.firstOpenedAt - Timestamp when first opened
+     * @param {number} options.lastVisitedAt - Timestamp of last visit
+     * @param {number} options.reviewSessions - Number of review sessions
+     */
+    constructor(fileUri, options = {}) {
+        if (!fileUri) {
+            throw new Error('FileDebt requires a file URI');
+        }
+        
+        this.fileUri = fileUri;
+        const now = Date.now();
+        
+        this.modifiedAt = options.modifiedAt || now;
+        this.lastModifiedAt = options.lastModifiedAt || now;
+        this.totalChanges = options.totalChanges || 0;
+        this.modificationCount = options.modificationCount || 0;
+        this.reviewed = options.reviewed || false;
+        this.reviewedAt = options.reviewedAt || null;
+        this.totalReviewTime = options.totalReviewTime || 0;
+        this.firstOpenedAt = options.firstOpenedAt || null;
+        this.lastVisitedAt = options.lastVisitedAt || null;
+        this.reviewSessions = options.reviewSessions || 0;
+    }
+
+    /**
+     * Add a change to this file debt
+     * @param {number} changeSize - Size of the change
+     */
+    addChange(changeSize) {
+        if (this.reviewed) {
+            // File was reviewed but new changes came in - reset to unreviewed
+            const now = Date.now();
+            this.modifiedAt = now;
+            this.lastModifiedAt = now;
+            this.totalChanges = changeSize;
+            this.modificationCount = 1;
+            this.reviewed = false;
+            this.reviewedAt = null;
+        } else {
+            // Accumulate changes
+            this.totalChanges += changeSize;
+            this.lastModifiedAt = Date.now();
+            this.modificationCount++;
+        }
+    }
+
+    /**
+     * Mark file debt as reviewed
+     * Note: This only marks FILE-LEVEL debt as reviewed.
+     * Pending suggestions in this file are tracked separately.
+     * @param {number} reviewTime - Time spent reviewing in milliseconds
+     */
+    markAsReviewed(reviewTime = 0) {
+        this.reviewed = true;
+        this.reviewedAt = Date.now();
+        this.totalReviewTime += reviewTime;
+    }
+
+    /**
+     * Update session information
+     * @param {Object} sessionData - Session data
+     * @param {number} sessionData.sessionStart - Session start timestamp
+     */
+    updateSession(sessionData) {
+        if (!this.firstOpenedAt && sessionData.sessionStart) {
+            this.firstOpenedAt = sessionData.sessionStart;
+        }
+        this.lastVisitedAt = Date.now();
+        this.reviewSessions = (this.reviewSessions || 0) + 1;
+    }
+
+    /**
+     * Check if file debt is reviewed
+     * Note: This only checks FILE-LEVEL debt.
+     * Pending suggestions must be checked separately.
+     * @returns {boolean} True if file debt is reviewed
+     */
+    isReviewed() {
+        return this.reviewed;
+    }
+
+    /**
+     * Get age of file debt in milliseconds
+     * @returns {number} Age in ms
+     */
+    getAge() {
+        return Date.now() - this.modifiedAt;
+    }
+
+    /**
+     * Convert to plain object for persistence
+     * @returns {Object} Plain object representation
+     */
+    toJSON() {
+        return {
+            modifiedAt: this.modifiedAt,
+            lastModifiedAt: this.lastModifiedAt,
+            totalChanges: this.totalChanges,
+            modificationCount: this.modificationCount,
+            reviewed: this.reviewed,
+            reviewedAt: this.reviewedAt,
+            totalReviewTime: this.totalReviewTime,
+            firstOpenedAt: this.firstOpenedAt,
+            lastVisitedAt: this.lastVisitedAt,
+            reviewSessions: this.reviewSessions
+        };
+    }
+
+    /**
+     * Create from plain object (for loading from persistence)
+     * @param {string} fileUri - File URI
+     * @param {Object} data - Plain object data
+     * @returns {FileDebt} FileDebt instance
+     */
+    static fromJSON(fileUri, data) {
+        return new FileDebt(fileUri, data);
+    }
+}
+
+// module.exports = FileDebt; // Commented for consolidation
+
+})(); // End IIFE for domain/entities/fileDebt.js
+
+
+// ============================================================================
+// FILE 5/50: domain/entities/reviewSession.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/entities/reviewSession.js
@@ -836,7 +1077,7 @@ class ReviewSession {
 
 
 // ============================================================================
-// FILE 5/49: domain/entities/suggestion.js
+// FILE 6/50: domain/entities/suggestion.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/entities/suggestion.js
@@ -913,12 +1154,14 @@ class Suggestion {
 
     /**
      * Mark suggestion as reviewed
-     * @param {number} reviewTime - Time spent reviewing in milliseconds
+     * @deprecated Use SuggestionAggregate.markSuggestionReviewed() instead
+     * This method is kept for backward compatibility but should not be called directly from app layer
+     * @param {number} reviewTime - Time spent reviewing in milliseconds (will overwrite, not accumulate)
      * @param {number} reviewStarted - Timestamp when review started (optional, defaults to now)
      */
     markAsReviewed(reviewTime = 0, reviewStarted = null) {
         this.reviewed = true;
-        this.reviewTime = reviewTime;
+        this.reviewTime = reviewTime; // Note: overwrites, not accumulates
         if (reviewStarted !== null) {
             this.reviewStarted = reviewStarted;
         } else if (!this.reviewStarted) {
@@ -986,7 +1229,7 @@ class Suggestion {
 
 
 // ============================================================================
-// FILE 6/49: domain/entities/suggestionBatch.js
+// FILE 7/50: domain/entities/suggestionBatch.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/entities/suggestionBatch.js
@@ -1135,7 +1378,7 @@ class SuggestionBatch {
 
 
 // ============================================================================
-// FILE 7/49: domain/events/aiSuggestionEvent.js
+// FILE 8/50: domain/events/aiSuggestionEvent.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/events/aiSuggestionEvent.js
@@ -1176,7 +1419,7 @@ class AISuggestionEvent {
 
 
 // ============================================================================
-// FILE 8/49: domain/events/aiSuggestionOutcomeEvent.js
+// FILE 9/50: domain/events/aiSuggestionOutcomeEvent.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/events/aiSuggestionOutcomeEvent.js
@@ -1217,7 +1460,7 @@ class AISuggestionOutcomeEvent {
 
 
 // ============================================================================
-// FILE 9/49: domain/events/debtClearedEvent.js
+// FILE 10/50: domain/events/debtClearedEvent.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/events/debtClearedEvent.js
@@ -1252,7 +1495,7 @@ class DebtClearedEvent {
 
 
 // ============================================================================
-// FILE 10/49: domain/events/keepAllEvent.js
+// FILE 11/50: domain/events/keepAllEvent.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/events/keepAllEvent.js
@@ -1289,7 +1532,7 @@ class KeepAllEvent {
 
 
 // ============================================================================
-// FILE 11/49: domain/events/reviewSessionCompletedEvent.js
+// FILE 12/50: domain/events/reviewSessionCompletedEvent.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/events/reviewSessionCompletedEvent.js
@@ -1329,7 +1572,7 @@ class ReviewSessionCompletedEvent {
 
 
 // ============================================================================
-// FILE 12/49: domain/events/reviewSessionStartedEvent.js
+// FILE 13/50: domain/events/reviewSessionStartedEvent.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/events/reviewSessionStartedEvent.js
@@ -1363,7 +1606,7 @@ class ReviewSessionStartedEvent {
 
 
 // ============================================================================
-// FILE 13/49: domain/events/scoreUpdateEvent.js
+// FILE 14/50: domain/events/scoreUpdateEvent.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/events/scoreUpdateEvent.js
@@ -1402,7 +1645,7 @@ class ScoreUpdateEvent {
 
 
 // ============================================================================
-// FILE 14/49: domain/events/suggestionBatchCreatedEvent.js
+// FILE 15/50: domain/events/suggestionBatchCreatedEvent.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/events/suggestionBatchCreatedEvent.js
@@ -1440,7 +1683,7 @@ class SuggestionBatchCreatedEvent {
 
 
 // ============================================================================
-// FILE 15/49: domain/ports/IAwarenessMessagingPort.js
+// FILE 16/50: domain/ports/IAwarenessMessagingPort.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/ports/IAwarenessMessagingPort.js
@@ -1538,7 +1781,7 @@ class IAwarenessMessagingPort {
 
 
 // ============================================================================
-// FILE 16/49: domain/ports/IAwarenessPersistencePort.js
+// FILE 17/50: domain/ports/IAwarenessPersistencePort.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/ports/IAwarenessPersistencePort.js
@@ -1611,321 +1854,4 @@ class IAwarenessPersistencePort {
 
 
 })(); // End IIFE for domain/ports/IAwarenessPersistencePort.js
-
-
-// ============================================================================
-// FILE 17/49: domain/ports/IAwarenessVSCodePort.js
-// ============================================================================
-
-(function() { // IIFE scope for domain/ports/IAwarenessVSCodePort.js
-/**
- * IAwarenessVSCodePort - Interface for VS Code API operations used by the Awareness module
- * 
- * This port abstracts ONLY the VS Code operations that the awareness module requires.
- * It is module-specific and does not include general-purpose VS Code methods.
- * 
- * This enables:
- * - Testability without VS Code extension host
- * - Flexibility to swap implementations
- * - Clear separation between domain and infrastructure
- * - Module-specific contracts (not general-purpose adapters)
- * 
- * Implementations should wrap the actual VS Code API.
- */
-
-/**
- * @interface IAwarenessVSCodePort
- */
-class IAwarenessVSCodePort {
-    // ============================================================================
-    // Document Event Handlers (used by EventHandlers entity)
-    // ============================================================================
-    
-    /**
-     * Register a handler for text document changes
-     * @param {Function} handler - Handler function receiving TextDocumentChangeEvent
-     * @returns {Object} Disposable to unsubscribe
-     */
-    onDidChangeTextDocument(handler) {
-        throw new Error('onDidChangeTextDocument not implemented');
-    }
-
-    /**
-     * Register a handler for file creation events
-     * @param {Function} handler - Handler function receiving FileCreateEvent
-     * @returns {Object} Disposable to unsubscribe
-     */
-    onDidCreateFiles(handler) {
-        throw new Error('onDidCreateFiles not implemented');
-    }
-
-    /**
-     * Register a handler for file save events
-     * @param {Function} handler - Handler function receiving TextDocument
-     * @returns {Object} Disposable to unsubscribe
-     */
-    onDidSaveTextDocument(handler) {
-        throw new Error('onDidSaveTextDocument not implemented');
-    }
-
-    /**
-     * Register a handler for file open events
-     * @param {Function} handler - Handler function receiving TextDocument
-     * @returns {Object} Disposable to unsubscribe
-     */
-    onDidOpenTextDocument(handler) {
-        throw new Error('onDidOpenTextDocument not implemented');
-    }
-
-    /**
-     * Register a handler for file close events
-     * @param {Function} handler - Handler function receiving TextDocument
-     * @returns {Object} Disposable to unsubscribe
-     */
-    onDidCloseTextDocument(handler) {
-        throw new Error('onDidCloseTextDocument not implemented');
-    }
-
-    // ============================================================================
-    // Editor Event Handlers (used by EventHandlers entity)
-    // ============================================================================
-    
-    /**
-     * Register a handler for text editor selection changes
-     * @param {Function} handler - Handler function receiving TextEditorSelectionChangeEvent
-     * @returns {Object} Disposable to unsubscribe
-     */
-    onDidChangeTextEditorSelection(handler) {
-        throw new Error('onDidChangeTextEditorSelection not implemented');
-    }
-
-    /**
-     * Register a handler for text editor visible range changes
-     * @param {Function} handler - Handler function receiving TextEditorVisibleRangesChangeEvent
-     * @returns {Object} Disposable to unsubscribe
-     */
-    onDidChangeTextEditorVisibleRanges(handler) {
-        throw new Error('onDidChangeTextEditorVisibleRanges not implemented');
-    }
-
-    /**
-     * Register a handler for active text editor changes
-     * @param {Function} handler - Handler function receiving TextEditor | undefined
-     * @returns {Object} Disposable to unsubscribe
-     */
-    onDidChangeActiveTextEditor(handler) {
-        throw new Error('onDidChangeActiveTextEditor not implemented');
-    }
-
-    // ============================================================================
-    // Workspace Operations (used by FileWatcher, ScoreCalculator, EventHandlers)
-    // ============================================================================
-    
-    /**
-     * Convert a URI to a relative path string
-     * @param {Object} uri - VS Code URI object
-     * @returns {string} Relative path string
-     */
-    asRelativePath(uri) {
-        throw new Error('asRelativePath not implemented');
-    }
-
-    /**
-     * Get workspace folders
-     * @returns {Array|undefined} Array of workspace folders or undefined
-     */
-    get workspaceFolders() {
-        throw new Error('workspaceFolders getter not implemented');
-    }
-
-    /**
-     * Get all open text documents
-     * @returns {Array} Array of TextDocument instances
-     */
-    get textDocuments() {
-        throw new Error('textDocuments getter not implemented');
-    }
-
-    /**
-     * Open a text document
-     * @param {Object} uri - VS Code URI object
-     * @returns {Promise<Object>} TextDocument instance
-     */
-    openTextDocument(uri) {
-        throw new Error('openTextDocument not implemented');
-    }
-
-    // ============================================================================
-    // VS Code Types (used for constructing Range, Position, Uri objects)
-    // ============================================================================
-    
-    /**
-     * Get VS Code Range constructor
-     * @returns {Function} Range constructor
-     */
-    get Range() {
-        throw new Error('Range getter not implemented');
-    }
-
-    /**
-     * Get VS Code Position constructor
-     * @returns {Function} Position constructor
-     */
-    get Position() {
-        throw new Error('Position getter not implemented');
-    }
-
-    /**
-     * Get VS Code Uri constructor
-     * @returns {Function} Uri constructor
-     */
-    get Uri() {
-        throw new Error('Uri getter not implemented');
-    }
-}
-
-// module.exports = IAwarenessVSCodePort; // Commented for consolidation
-
-})(); // End IIFE for domain/ports/IAwarenessVSCodePort.js
-
-
-// ============================================================================
-// FILE 18/49: domain/ports/IFileSystemPort.js
-// ============================================================================
-
-(function() { // IIFE scope for domain/ports/IFileSystemPort.js
-/**
- * IFileSystemPort - Port interface for filesystem operations
- * 
- * Defines the contract for filesystem access.
- * Domain entities should use this port instead of directly importing fs module.
- */
-
-class IFileSystemPort {
-    constructor() {
-        if (new.target === IFileSystemPort) {
-            throw new Error('Cannot instantiate an abstract class.');
-        }
-    }
-
-    /**
-     * Watch a directory for changes
-     * @param {string} path - Path to watch
-     * @param {Object} options - Watch options (recursive, etc.)
-     * @param {Function} callback - Callback function (eventType, filename)
-     * @returns {Object} Watcher object with close() method
-     */
-    watch(path, options, callback) {
-        throw new Error('Method not implemented.');
-    }
-
-    /**
-     * Get file stats asynchronously
-     * @param {string} path - File path
-     * @param {Function} callback - Callback function (err, stats)
-     */
-    stat(path, callback) {
-        throw new Error('Method not implemented.');
-    }
-
-    /**
-     * Read directory contents synchronously
-     * @param {string} path - Directory path
-     * @param {Object} options - Options (withFileTypes, etc.)
-     * @returns {Array} Array of directory entries
-     */
-    readdirSync(path, options) {
-        throw new Error('Method not implemented.');
-    }
-
-    /**
-     * Read file contents synchronously
-     * @param {string} path - File path
-     * @param {string} encoding - File encoding (default: 'utf8')
-     * @returns {string|Buffer} File contents
-     */
-    readFileSync(path, encoding = 'utf8') {
-        throw new Error('Method not implemented.');
-    }
-}
-
-// module.exports = IFileSystemPort; // Commented for consolidation
-
-})(); // End IIFE for domain/ports/IFileSystemPort.js
-
-
-// ============================================================================
-// FILE 19/49: domain/ports/IHashGeneratorPort.js
-// ============================================================================
-
-(function() { // IIFE scope for domain/ports/IHashGeneratorPort.js
-/**
- * IHashGeneratorPort - Port interface for hashing operations
- * 
- * Defines the contract for generating hashes.
- * Domain entities should use this port instead of directly using crypto module.
- */
-
-class IHashGeneratorPort {
-    constructor() {
-        if (new.target === IHashGeneratorPort) {
-            throw new Error('Cannot instantiate an abstract class.');
-        }
-    }
-
-    /**
-     * Create a hash from data
-     * @param {string} algorithm - Hash algorithm (e.g., 'md5', 'sha256')
-     * @param {string|Buffer} data - Data to hash
-     * @returns {string} Hash string (hex)
-     */
-    createHash(algorithm, data) {
-        throw new Error('Method not implemented.');
-    }
-}
-
-// module.exports = IHashGeneratorPort; // Commented for consolidation
-
-})(); // End IIFE for domain/ports/IHashGeneratorPort.js
-
-
-// ============================================================================
-// FILE 20/49: domain/ports/IIdGeneratorPort.js
-// ============================================================================
-
-(function() { // IIFE scope for domain/ports/IIdGeneratorPort.js
-/**
- * IIdGeneratorPort - Port interface for ID generation
- * 
- * Defines the contract for generating unique identifiers.
- * Domain entities should use this port instead of directly using crypto or Date.now().
- */
-
-class IIdGeneratorPort {
-    constructor() {
-        if (new.target === IIdGeneratorPort) {
-            throw new Error('Cannot instantiate an abstract class.');
-        }
-    }
-
-    /**
-     * Generate a UUID
-     * @returns {string} UUID string
-     */
-    generateUUID() {
-        throw new Error('Method not implemented.');
-    }
-
-    /**
-     * Generate a unique ID (fallback if UUID not available)
-     * @returns {string} Unique ID string
-     */
-    generateId() {
-        throw new Error('Method not implemented.');
-    }
-}
-
-// module.exports = IIdGeneratorPort; // Commented for consolidation
-
-})(); // End IIFE for domain/ports/IIdGeneratorPort.js
 

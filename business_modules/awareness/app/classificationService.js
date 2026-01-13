@@ -13,7 +13,7 @@ const ChangeClassifier = require('../domain/utils/changeClassifier');
 const Change = require('../domain/entities/change');
 const IIdGeneratorPort = require('../domain/ports/IIdGeneratorPort');
 const ILoggerPort = require('../domain/ports/ILoggerPort');
-const { buildDiffBullets } = require('../domain/utils/diffBulletBuilder');
+const { buildDiffBullets } = require('./diffBulletService');
 
 class ClassificationService {
     /**
@@ -54,8 +54,8 @@ class ClassificationService {
         // Get classification configuration for mode
         const classifierConfig = this._getClassifierConfig(mode);
         
-        // Create change classifier
-        this.changeClassifier = new ChangeClassifier(debounceMs, classifierConfig);
+        // Create change classifier with logger port for config validation warnings
+        this.changeClassifier = new ChangeClassifier(debounceMs, classifierConfig, this.loggerPort);
     }
     
     /**

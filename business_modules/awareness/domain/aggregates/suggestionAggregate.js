@@ -8,7 +8,9 @@
 - ✅ Only `SuggestionAggregate` can create `Suggestion` entities
 - ✅ Only `SuggestionAggregate` can create `SuggestionBatch` entities
 - ✅ Only `SuggestionAggregate` can modify suggestion status (via `updateSuggestionStatus()`)
-- ✅ Only `SuggestionAggregate` can add suggestions to batches
+- ✅ Only `SuggestionAggregate` can add suggestions to batches (via `addSuggestionToBatch()`)
+- ✅ Only `SuggestionAggregate` can mutate review state (via `markSuggestionReviewed()`, `addSuggestionReviewTime()`)
+- ✅ Only `SuggestionAggregate` can record user edits (via `recordUserEditOnSuggestion()`)
  */
 
 const Suggestion = require('../entities/suggestion');
@@ -158,6 +160,60 @@ class SuggestionAggregate {
     }
 
     /**
+     * Mark suggestion as reviewed (single authority for review state)
+     * @param {string} suggestionId - Suggestion ID
+     * @param {Object} options - Review options
+     * @param {number} options.reviewTimeDeltaMs - Additional review time in milliseconds (accumulated)
+     * @param {number} options.reviewStartedAt - Timestamp when review started (optional)
+     */
+    markSuggestionReviewed(suggestionId, options = {}) {
+        const suggestion = this.suggestionsById.get(suggestionId);
+        if (!suggestion) {
+            return; // Suggestion not found
+        }
+
+        const { reviewTimeDeltaMs = 0, reviewStartedAt = null } = options;
+
+        // Accumulate review time (not overwrite)
+        suggestion.reviewed = true;
+        suggestion.reviewTime = (suggestion.reviewTime || 0) + reviewTimeDeltaMs;
+        
+        if (reviewStartedAt !== null) {
+            suggestion.reviewStarted = reviewStartedAt;
+        } else if (!suggestion.reviewStarted) {
+            suggestion.reviewStarted = Date.now();
+        }
+    }
+
+    /**
+     * Add review time to suggestion (accumulates)
+     * @param {string} suggestionId - Suggestion ID
+     * @param {number} deltaMs - Additional review time in milliseconds
+     */
+    addSuggestionReviewTime(suggestionId, deltaMs) {
+        const suggestion = this.suggestionsById.get(suggestionId);
+        if (!suggestion) {
+            return; // Suggestion not found
+        }
+
+        // Accumulate review time
+        suggestion.reviewTime = (suggestion.reviewTime || 0) + deltaMs;
+    }
+
+    /**
+     * Record user edit on suggestion (single authority)
+     * @param {string} suggestionId - Suggestion ID
+     */
+    recordUserEditOnSuggestion(suggestionId) {
+        const suggestion = this.suggestionsById.get(suggestionId);
+        if (!suggestion) {
+            return; // Suggestion not found
+        }
+
+        suggestion.recordUserEdit();
+    }
+
+    /**
      * Get all suggestions
      * @returns {Array<Suggestion>} Array of Suggestion entities
      */
@@ -210,13 +266,19 @@ class SuggestionAggregate {
     }
 
     /**
-     * Create or update a batch for a suggestion
+     * Add suggestion to batch (first-class aggregate operation)
+     * Sets batchId on suggestion entity and maintains batch mapping
      * @param {string} documentUri - Document URI
      * @param {string} suggestionId - Suggestion ID
      * @param {number} size - Size of the suggestion
      * @returns {string} Batch ID
      */
-    createOrUpdateBatch(documentUri, suggestionId, size) {
+    addSuggestionToBatch(documentUri, suggestionId, size) {
+        const suggestion = this.suggestionsById.get(suggestionId);
+        if (!suggestion) {
+            throw new Error(`Suggestion ${suggestionId} not found in aggregate`);
+        }
+
         // Check if suggestion is already in a batch
         let batchId = this.suggestionsToBatch.get(suggestionId);
         
@@ -225,6 +287,8 @@ class SuggestionAggregate {
             const batch = this.batchesById.get(batchId);
             if (batch) {
                 batch.addSuggestion(suggestionId, size);
+                // Ensure batchId is set on entity (invariant enforcement)
+                suggestion.batchId = batchId;
                 return batchId;
             }
         }
@@ -241,7 +305,31 @@ class SuggestionAggregate {
         this.batchesById.set(batchId, batch);
         this.suggestionsToBatch.set(suggestionId, batchId);
         
+        // Set batchId on entity (invariant enforcement - aggregate owns this)
+        suggestion.batchId = batchId;
+        
         return batchId;
+    }
+
+    /**
+     * Get batch ID for a suggestion
+     * @param {string} suggestionId - Suggestion ID
+     * @returns {string|null} Batch ID or null
+     */
+    getBatchIdForSuggestion(suggestionId) {
+        return this.suggestionsToBatch.get(suggestionId) || null;
+    }
+
+    /**
+     * Create or update a batch for a suggestion (deprecated - use addSuggestionToBatch)
+     * @deprecated Use addSuggestionToBatch instead
+     * @param {string} documentUri - Document URI
+     * @param {string} suggestionId - Suggestion ID
+     * @param {number} size - Size of the suggestion
+     * @returns {string} Batch ID
+     */
+    createOrUpdateBatch(documentUri, suggestionId, size) {
+        return this.addSuggestionToBatch(documentUri, suggestionId, size);
     }
 
     /**
@@ -255,12 +343,15 @@ class SuggestionAggregate {
 
     /**
      * Update batch outcome when suggestion status changes
+     * Uses aggregate's batch mapping (not suggestion.batchId) for consistency
      * @param {Suggestion} suggestion - Suggestion entity
      */
     updateBatchOutcome(suggestion) {
-        if (!suggestion.batchId) return;
+        // Use aggregate's mapping (single source of truth)
+        const batchId = this.suggestionsToBatch.get(suggestion.id);
+        if (!batchId) return;
         
-        const batch = this.batchesById.get(suggestion.batchId);
+        const batch = this.batchesById.get(batchId);
         if (!batch) return;
         
         batch.recordOutcome(suggestion.id, suggestion.status);

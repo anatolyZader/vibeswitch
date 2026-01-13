@@ -1,9 +1,10 @@
 /**
  * Config Manager
  * Manages classifier configuration: defaults, validation, and merging
+ * 
+ * Domain layer - no logging dependencies. Validation results are returned
+ * for application layer to handle logging.
  */
-
-const { getLogger } = require('../../../../logger');
 
 /**
  * Get default classifier configuration
@@ -73,29 +74,29 @@ function validateConfig(config, defaultConfig = {}) {
         sanitized.push('markerOnly');
     }
     
-    if (errors.length > 0) {
-        // Production: Use logger instead of console.warn (rate-limited, visible to devs)
-        const logger = getLogger();
-        // Log once with sanitized keys and caller context
-        logger.log(`[ChangeClassifier] Invalid config sanitized: ${sanitized.join(', ')}. ${errors.length} invalid value(s) removed, defaults applied.`, true);
-        // Invalid values have been deleted, so defaults will be used via merge
-    }
-    
+    // Fix: Domain layer doesn't log - return validation result for app layer to handle
+    // Invalid values have been deleted, so defaults will be used via merge
     return { errors, sanitized };
 }
 
 /**
  * Create and merge classifier configuration
  * @param {Object|null} userConfig - User-provided configuration (optional)
+ * @param {ILoggerPort} loggerPort - Logger port (optional, for validation warnings)
  * @returns {Object} Final frozen configuration object
  */
-function createConfig(userConfig = null) {
+function createConfig(userConfig = null, loggerPort = null) {
     const defaultConfig = getDefaultConfig();
     
     // Fix: Sanitize user config BEFORE merging to ensure defaults always win
     // This prevents invalid values from overwriting defaults, then being deleted, leaving undefined
     const sanitizedUserConfig = userConfig ? { ...userConfig } : {};
-    validateConfig(sanitizedUserConfig, defaultConfig);
+    const validationResult = validateConfig(sanitizedUserConfig, defaultConfig);
+    
+    // Log validation warnings at application layer (if logger provided)
+    if (validationResult.errors.length > 0 && loggerPort) {
+        loggerPort.log(`[ChangeClassifier] Invalid config sanitized: ${validationResult.sanitized.join(', ')}. ${validationResult.errors.length} invalid value(s) removed, defaults applied.`, true);
+    }
     
     // Merge sanitized user config with defaults (defaults win for any missing/invalid keys)
     const config = { ...defaultConfig, ...sanitizedUserConfig };
