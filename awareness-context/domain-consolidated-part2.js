@@ -1,11 +1,11 @@
 /**
- * DOMAIN LAYER - CONSOLIDATED (PART 2/4)
+ * DOMAIN LAYER - CONSOLIDATED (PART 2/3)
  * 
- * This file contains part 2 of 4 of the domain layer code.
+ * This file contains part 2 of 3 of the domain layer code.
  * Generated automatically for ChatGPT context.
  * 
- * Files in this part: 12/54
- * Generated: 2026-01-12T18:19:21.013Z
+ * Files in this part: 14/49
+ * Generated: 2026-01-13T15:56:48.088Z
  */
 
 // ============================================================================
@@ -14,7 +14,7 @@
 
 
 // ============================================================================
-// FILE 21/54: domain/ports/ILoggerPort.js
+// FILE 21/49: domain/ports/ILoggerPort.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/ports/ILoggerPort.js
@@ -68,7 +68,7 @@ class ILoggerPort {
 
 
 // ============================================================================
-// FILE 22/54: domain/services/changeClassificationServiceD.js
+// FILE 22/49: domain/services/changeClassificationServiceD.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/services/changeClassificationServiceD.js
@@ -301,7 +301,7 @@ class ChangeClassificationServiceD {
 
 
 // ============================================================================
-// FILE 23/54: domain/services/debtCalculationServiceD.js
+// FILE 23/49: domain/services/debtCalculationServiceD.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/services/debtCalculationServiceD.js
@@ -453,342 +453,7 @@ class DebtCalculationServiceD {
 
 
 // ============================================================================
-// FILE 24/54: domain/services/eventSubscriptionServiceD.js
-// ============================================================================
-
-(function() { // IIFE scope for domain/services/eventSubscriptionServiceD.js
-/**
- * EventSubscriptionServiceD - Domain service for VS Code event subscription
- * 
- * Encapsulates event subscription logic using VS Code port.
- * Service creates instances and passes adapters as ports to methods (following auth module pattern).
- */
-
-class EventSubscriptionServiceD {
-    constructor() {
-        // No constructor dependencies - ports passed as method parameters
-    }
-
-    /**
-     * Subscribe to text document change events
-     * @param {Function} handler - Event handler function
-     * @param {IAwarenessVSCodePort} vscodePort - VS Code port (interface)
-     * @returns {Object} Disposable to unsubscribe
-     */
-    subscribeToTextDocumentChanges(handler, vscodePort) {
-        return vscodePort.onDidChangeTextDocument(handler);
-    }
-
-    /**
-     * Subscribe to file creation events
-     * @param {Function} handler - Event handler function
-     * @param {IAwarenessVSCodePort} vscodePort - VS Code port (interface)
-     * @returns {Object} Disposable to unsubscribe
-     */
-    subscribeToFileCreation(handler, vscodePort) {
-        return vscodePort.onDidCreateFiles(handler);
-    }
-
-    /**
-     * Subscribe to file save events
-     * @param {Function} handler - Event handler function
-     * @param {IAwarenessVSCodePort} vscodePort - VS Code port (interface)
-     * @returns {Object} Disposable to unsubscribe
-     */
-    subscribeToFileSave(handler, vscodePort) {
-        return vscodePort.onDidSaveTextDocument(handler);
-    }
-
-    /**
-     * Subscribe to file open events
-     * @param {Function} handler - Event handler function
-     * @param {IAwarenessVSCodePort} vscodePort - VS Code port (interface)
-     * @returns {Object} Disposable to unsubscribe
-     */
-    subscribeToFileOpen(handler, vscodePort) {
-        return vscodePort.onDidOpenTextDocument(handler);
-    }
-
-    /**
-     * Subscribe to file close events
-     * @param {Function} handler - Event handler function
-     * @param {IAwarenessVSCodePort} vscodePort - VS Code port (interface)
-     * @returns {Object} Disposable to unsubscribe
-     */
-    subscribeToFileClose(handler, vscodePort) {
-        return vscodePort.onDidCloseTextDocument(handler);
-    }
-
-    /**
-     * Subscribe to cursor move events
-     * @param {Function} handler - Event handler function
-     * @param {IAwarenessVSCodePort} vscodePort - VS Code port (interface)
-     * @returns {Object} Disposable to unsubscribe
-     */
-    subscribeToCursorMove(handler, vscodePort) {
-        return vscodePort.onDidChangeTextEditorSelection(handler);
-    }
-
-    /**
-     * Subscribe to scroll events
-     * @param {Function} handler - Event handler function
-     * @param {IAwarenessVSCodePort} vscodePort - VS Code port (interface)
-     * @returns {Object} Disposable to unsubscribe
-     */
-    subscribeToScroll(handler, vscodePort) {
-        return vscodePort.onDidChangeTextEditorVisibleRanges(handler);
-    }
-
-    /**
-     * Subscribe to editor change events
-     * @param {Function} handler - Event handler function
-     * @param {IAwarenessVSCodePort} vscodePort - VS Code port (interface)
-     * @returns {Object} Disposable to unsubscribe
-     */
-    subscribeToEditorChange(handler, vscodePort) {
-        return vscodePort.onDidChangeActiveTextEditor(handler);
-    }
-}
-
-// module.exports = EventSubscriptionServiceD; // Commented for consolidation
-
-})(); // End IIFE for domain/services/eventSubscriptionServiceD.js
-
-
-// ============================================================================
-// FILE 25/54: domain/services/keepAllDetector.js
-// ============================================================================
-
-(function() { // IIFE scope for domain/services/keepAllDetector.js
-/**
- * KeepAllDetector - Domain service for detecting "Keep All" patterns
- * 
- * Encapsulates business logic for detecting when users rapidly accept
- * multiple AI suggestions. This is a domain service.
- */
-
-class KeepAllDetector {
-    /**
-     * @param {Function} onKeepAll - Callback when "keep all" pattern detected
-     * @param {ILoggerPort} loggerPort - Logger port (interface, optional)
-     */
-    constructor(onKeepAll, loggerPort = null) {
-        this.onKeepAll = onKeepAll;
-        this.loggerPort = loggerPort;
-        
-        // "Keep All" detection - track rapid acceptances
-        this.recentAcceptances = [];
-        this.keepAllDetectionWindow = 2000; // 2 seconds
-        this.keepAllThreshold = 3; // Minimum acceptances to trigger
-    }
-
-    /**
-     * Track suggestion acceptance and detect "Keep All" pattern
-     * 
-     * "Keep All" is detected when multiple suggestions are accepted rapidly
-     * (typically 3+ acceptances within 2 seconds)
-     * 
-     * @param {Object} suggestion - The accepted suggestion object
-     */
-    trackAcceptance(suggestion) {
-        const now = Date.now();
-        
-        // Add this acceptance to the tracking array
-        this.recentAcceptances.push({
-            timestamp: now,
-            suggestionId: suggestion.id,
-            document: suggestion.document,
-            size: suggestion.size
-        });
-        
-        // Clean old entries (outside detection window)
-        this.recentAcceptances = this.recentAcceptances.filter(
-            entry => (now - entry.timestamp) < this.keepAllDetectionWindow
-        );
-        
-        // Check for "Keep All" pattern
-        if (this.recentAcceptances.length >= this.keepAllThreshold) {
-            this.detectKeepAll();
-        }
-    }
-
-    /**
-     * Detect "Keep All" pattern and emit to usage statistics
-     * 
-     * Called when threshold is reached (multiple rapid acceptances)
-     */
-    detectKeepAll() {
-        const now = Date.now();
-        const recent = this.recentAcceptances.filter(
-            entry => (now - entry.timestamp) < this.keepAllDetectionWindow
-        );
-        
-        if (recent.length >= this.keepAllThreshold) {
-            // Get unique files affected
-            const uniqueFiles = new Set(recent.map(e => e.document));
-            const totalSize = recent.reduce((sum, e) => sum + e.size, 0);
-            
-            if (this.loggerPort) {
-                this.loggerPort.log(`AwarenessMonitor: "Keep All" detected - ${recent.length} suggestions accepted across ${uniqueFiles.size} files`);
-            }
-            
-            // Call optional callback (e.g., for UsageStats)
-            if (this.onKeepAll) {
-                this.onKeepAll({
-                    count: recent.length,
-                    fileCount: uniqueFiles.size,
-                    totalSize: totalSize,
-                    timestamp: now,
-                    window: this.keepAllDetectionWindow
-                });
-            }
-            
-            // Clear the tracking array to avoid duplicate detections
-            // (but keep the most recent one to allow for overlapping detections)
-            this.recentAcceptances = recent.slice(-1);
-        }
-    }
-
-    /**
-     * Get number of recent acceptances
-     * @returns {number} Number of recent acceptances
-     */
-    getRecentAcceptanceCount() {
-        return this.recentAcceptances.length;
-    }
-
-    /**
-     * Clear all tracked acceptances
-     */
-    clear() {
-        this.recentAcceptances = [];
-    }
-}
-
-// module.exports = KeepAllDetector; // Commented for consolidation
-
-
-})(); // End IIFE for domain/services/keepAllDetector.js
-
-
-// ============================================================================
-// FILE 26/54: domain/services/keepAllDetectorD.js
-// ============================================================================
-
-(function() { // IIFE scope for domain/services/keepAllDetectorD.js
-/**
- * KeepAllDetectorD - Domain service for detecting "Keep All" patterns
- * 
- * Encapsulates business logic for detecting when users rapidly accept
- * multiple AI suggestions. This is a domain service.
- */
-
-class KeepAllDetectorD {
-    /**
-     * @param {Function} onKeepAll - Callback when "keep all" pattern detected
-     * @param {ILoggerPort} loggerPort - Logger port (interface, optional)
-     */
-    constructor(onKeepAll, loggerPort = null) {
-        this.onKeepAll = onKeepAll;
-        this.loggerPort = loggerPort;
-        
-        // "Keep All" detection - track rapid acceptances
-        this.recentAcceptances = [];
-        this.keepAllDetectionWindow = 2000; // 2 seconds
-        this.keepAllThreshold = 3; // Minimum acceptances to trigger
-    }
-
-    /**
-     * Track suggestion acceptance and detect "Keep All" pattern
-     * 
-     * "Keep All" is detected when multiple suggestions are accepted rapidly
-     * (typically 3+ acceptances within 2 seconds)
-     * 
-     * @param {Object} suggestion - The accepted suggestion object
-     */
-    trackAcceptance(suggestion) {
-        const now = Date.now();
-        
-        // Add this acceptance to the tracking array
-        this.recentAcceptances.push({
-            timestamp: now,
-            suggestionId: suggestion.id,
-            document: suggestion.document,
-            size: suggestion.size
-        });
-        
-        // Clean old entries (outside detection window)
-        this.recentAcceptances = this.recentAcceptances.filter(
-            entry => (now - entry.timestamp) < this.keepAllDetectionWindow
-        );
-        
-        // Check for "Keep All" pattern
-        if (this.recentAcceptances.length >= this.keepAllThreshold) {
-            this.detectKeepAll();
-        }
-    }
-
-    /**
-     * Detect "Keep All" pattern and emit to usage statistics
-     * 
-     * Called when threshold is reached (multiple rapid acceptances)
-     */
-    detectKeepAll() {
-        const now = Date.now();
-        const recent = this.recentAcceptances.filter(
-            entry => (now - entry.timestamp) < this.keepAllDetectionWindow
-        );
-        
-        if (recent.length >= this.keepAllThreshold) {
-            // Get unique files affected
-            const uniqueFiles = new Set(recent.map(e => e.document));
-            const totalSize = recent.reduce((sum, e) => sum + e.size, 0);
-            
-            if (this.loggerPort) {
-                this.loggerPort.log(`AwarenessMonitor: "Keep All" detected - ${recent.length} suggestions accepted across ${uniqueFiles.size} files`);
-            }
-            
-            // Call optional callback (e.g., for UsageStats)
-            if (this.onKeepAll) {
-                this.onKeepAll({
-                    count: recent.length,
-                    fileCount: uniqueFiles.size,
-                    totalSize: totalSize,
-                    timestamp: now,
-                    window: this.keepAllDetectionWindow
-                });
-            }
-            
-            // Clear the tracking array to avoid duplicate detections
-            // (but keep the most recent one to allow for overlapping detections)
-            this.recentAcceptances = recent.slice(-1);
-        }
-    }
-
-    /**
-     * Get number of recent acceptances
-     * @returns {number} Number of recent acceptances
-     */
-    getRecentAcceptanceCount() {
-        return this.recentAcceptances.length;
-    }
-
-    /**
-     * Clear all tracked acceptances
-     */
-    clear() {
-        this.recentAcceptances = [];
-    }
-}
-
-// module.exports = KeepAllDetectorD; // Commented for consolidation
-
-
-})(); // End IIFE for domain/services/keepAllDetectorD.js
-
-
-// ============================================================================
-// FILE 27/54: domain/services/rangeOperationServiceD.js
+// FILE 24/49: domain/services/rangeOperationServiceD.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/services/rangeOperationServiceD.js
@@ -846,7 +511,7 @@ class RangeOperationServiceD {
 
 
 // ============================================================================
-// FILE 28/54: domain/services/reviewSessionServiceD.js
+// FILE 25/49: domain/services/reviewSessionServiceD.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/services/reviewSessionServiceD.js
@@ -947,157 +612,35 @@ class ReviewSessionServiceD {
 
 
 // ============================================================================
-// FILE 29/54: domain/services/scoreCalculator.js
+// FILE 26/49: domain/services/scoreCalculationServiceD.js
 // ============================================================================
 
-(function() { // IIFE scope for domain/services/scoreCalculator.js
+(function() { // IIFE scope for domain/services/scoreCalculationServiceD.js
 /**
- * ScoreCalculator - Domain service for calculating awareness scores
+ * ScoreCalculationServiceD - Domain service for calculating awareness score components
  * 
- * Encapsulates business logic for calculating awareness scores based on
- * user review behavior and AI suggestions. This is a domain service.
+ * Encapsulates pure domain business logic for calculating score components.
+ * This is a stateless domain service - no ports, no state, no orchestration.
+ * 
+ * Orchestration (time filtering, callbacks, state management) is in app layer.
  */
 
-// const { getRelativePath } = require('../utils/utils'); // Commented for consolidation
-
-class ScoreCalculator {
-    /**
-     * @param {IAwarenessVSCodePort} vscodePort - VS Code port (interface, optional)
-     * @param {ILoggerPort} loggerPort - Logger port (interface, optional)
-     */
-    constructor(vscodePort = null, loggerPort = null) {
-        this.vscodePort = vscodePort;
-        this.loggerPort = loggerPort;
-        this.currentScore = 0;
-        this.scores = {
-            review: 0,      // 0-40 points
-            critical: 0,    // 0-30 points
-            adaptation: 0,  // 0-30 points
-            debt: 0         // 0-30 points
-        };
-    }
-
-    /**
-     * Calculate awareness score based on suggestions and review debt
-     * @param {Array} aiSuggestions - Array of AI suggestions
-     * @param {Function} getDebtScore - Function to get debt score
-     * @param {Function} getReviewDebtSummary - Function to get debt summary
-     * @param {Function} onScoreUpdate - Callback when score updates
-     * @returns {Object} Score object with total and components
-     */
-    updateScore(aiSuggestions, getDebtScore, getReviewDebtSummary, onScoreUpdate) {
-        const now = Date.now();
-        const TEN_SECONDS = 10 * 1000;
-        
-        // Filter suggestions from last 10 seconds for "recent activity" calculation
-        const recentSuggestions = aiSuggestions.filter(
-            s => (now - s.timestamp) <= TEN_SECONDS
-        );
-        
-        // BUT: If we have older suggestions but no recent ones, and we have review debt,
-        // preserve the score based on debt rather than resetting to zero
-        const hasOlderSuggestions = aiSuggestions.length > 0 && recentSuggestions.length === 0;
-        const debtScore = getDebtScore();
-        const hasDebt = debtScore > 0;
-        
-        // Rate-limited debug logging via logger port
-        if (this.loggerPort) {
-            this.loggerPort.debug(`Updating score: ${recentSuggestions.length} recent, ${aiSuggestions.length} total, debt: ${debtScore}`, 'scoreCalculator:updateScore');
-        }
-        
-        // Only calculate if we have suggestions in the last 10 seconds
-        if (recentSuggestions.length === 0) {
-            // Even with no recent suggestions, calculate debt score if there's review debt
-            if (debtScore > 0) {
-                // If there's review debt but no pending, show debt score
-                this.currentScore = Math.min(debtScore, 100); // Cap at 100
-                this.scores = { review: 0, critical: 0, adaptation: 0, debt: debtScore };
-            } else if (hasOlderSuggestions && hasDebt) {
-                // We have older suggestions and debt - preserve a minimum score based on debt
-                // This prevents the meter from dropping to zero when monitor restarts
-                this.currentScore = Math.max(debtScore, 20); // Minimum 20 to show activity
-                this.scores = { review: 0, critical: 0, adaptation: 0, debt: debtScore };
-            } else {
-                // No recent activity and no debt
-                this.currentScore = -1; // Special value: no data yet
-                this.scores = { review: 0, critical: 0, adaptation: 0, debt: 0 };
-            }
-            // Trigger callback for meter update
-            if (onScoreUpdate) {
-                onScoreUpdate();
-            }
-            return;
-        }
-        
-        // Include pending suggestions in score calculation (they count as activity)
-        // This ensures meter shows activity even when suggestions are still pending
-        const allRecent = recentSuggestions;
-        
-        // Filter to completed suggestions only for detailed scoring
-        const completed = recentSuggestions.filter(s => s.status !== 'pending');
-        const pending = recentSuggestions.filter(s => s.status === 'pending');
-        
-        if (completed.length === 0 && allRecent.length > 0) {
-            // Still pending, but we have activity - show partial score based on pending count
-            // This ensures meter shows activity instead of "No Activity"
-            this.currentScore = 50; // Neutral - pending activity detected
-            this.scores = { 
-                review: 0, 
-                critical: 0, 
-                adaptation: 0, 
-                debt: debtScore // Still calculate debt
-            };
-            
-            // Trigger callback for meter update
-            if (onScoreUpdate) {
-                onScoreUpdate();
-            }
-            return;
-        }
-        
-        if (completed.length === 0) {
-            // No suggestions at all
-            this.currentScore = -1;
-            this.scores = { review: 0, critical: 0, adaptation: 0, debt: 0 };
-            if (onScoreUpdate) {
-                onScoreUpdate();
-            }
-            return;
-        }
-        
-        // 1. Code Review Rate (40 points)
-        this.scores.review = this.calculateReviewScore(completed);
-        
-        // 2. Critical Evaluation (30 points)
-        this.scores.critical = this.calculateCriticalScore(completed);
-        
-        // 3. Code Adaptation (30 points)
-        this.scores.adaptation = this.calculateAdaptationScore(completed);
-        
-        // 4. Review Debt (30 points)
-        this.scores.debt = debtScore;
-        
-        // Total score (max 130, normalized to 100)
-        const rawScore = this.scores.review + 
-                        this.scores.critical + 
-                        this.scores.adaptation + 
-                        this.scores.debt;
-        
-        this.currentScore = Math.round(Math.min(rawScore, 100));
-        
-        // Trigger callback for immediate meter update
-        if (onScoreUpdate) {
-            onScoreUpdate();
-        }
+class ScoreCalculationServiceD {
+    constructor() {
+        // No constructor dependencies - stateless domain service
     }
 
     /**
      * Calculate review score (0-40)
      * High score = user carefully reviewed code
+     * @param {Array<Suggestion>} suggestions - Array of suggestions
+     * @returns {number} Review score (0-40)
      */
     calculateReviewScore(suggestions) {
+        if (!suggestions || suggestions.length === 0) return 0;
+
         const reviewedCount = suggestions.filter(s => s.reviewed).length;
-        const totalReviewTime = suggestions.reduce((sum, s) => sum + s.reviewTime, 0);
+        const totalReviewTime = suggestions.reduce((sum, s) => sum + (s.reviewTime || 0), 0);
         const avgReviewTime = totalReviewTime / suggestions.length;
         
         // Review rate (0-20): % of suggestions reviewed
@@ -1116,8 +659,12 @@ class ScoreCalculator {
      * Calculate critical evaluation score (0-30)
      * High score = user is selective (accepts some, rejects some)
      * LOW SCORE = GOOD in DEV mode (means careful, not blind acceptance)
+     * @param {Array<Suggestion>} suggestions - Array of suggestions
+     * @returns {number} Critical score (0-30)
      */
     calculateCriticalScore(suggestions) {
+        if (!suggestions || suggestions.length === 0) return 0;
+
         const accepted = suggestions.filter(s => s.status === 'accepted').length;
         const rejected = suggestions.filter(s => s.status === 'rejected').length;
         const total = suggestions.length;
@@ -1149,13 +696,17 @@ class ScoreCalculator {
     /**
      * Calculate adaptation score (0-30)
      * High score = user customizes AI suggestions
+     * @param {Array<Suggestion>} suggestions - Array of suggestions
+     * @returns {number} Adaptation score (0-30)
      */
     calculateAdaptationScore(suggestions) {
+        if (!suggestions || suggestions.length === 0) return 0;
+
         const adapted = suggestions.filter(s => s.status === 'adapted').length;
         const adaptRate = adapted / suggestions.length;
         
         // Average edits per suggestion
-        const totalEdits = suggestions.reduce((sum, s) => sum + s.editCount, 0);
+        const totalEdits = suggestions.reduce((sum, s) => sum + (s.editCount || 0), 0);
         const avgEdits = totalEdits / suggestions.length;
         
         // Adaptation rate (0-15): % of suggestions user edited
@@ -1169,461 +720,15 @@ class ScoreCalculator {
         
         return Math.round(adaptationRate + adaptationDepth);
     }
-
-    /**
-     * Get current awareness score and breakdown
-     * @param {Array} aiSuggestions - Array of AI suggestions
-     * @param {Function} getReviewDebtSummary - Function to get debt summary
-     */
-    getScore(aiSuggestions, getReviewDebtSummary) {
-        const debtSummary = getReviewDebtSummary();
-        const now = Date.now();
-        const TEN_SECONDS = 10 * 1000;
-        
-        // Filter suggestions from last 10 seconds for score calculation
-        const recentSuggestions = aiSuggestions.filter(
-            s => (now - s.timestamp) <= TEN_SECONDS
-        );
-        
-        // For display: show ALL suggestions (not just last 10 seconds) so meter shows activity
-        // But use recentSuggestions for actual score calculation
-        const allSuggestions = aiSuggestions;
-        
-        // Get pending suggestions with file paths
-        const pendingSuggestions = allSuggestions
-            .filter(s => s.status === 'pending')
-            .map(s => {
-                // Extract file path from document URI
-                let filePath = null;
-                if (s.document) {
-                    try {
-                        // Use VS Code port for URI creation
-                        const Uri = this.vscodePort ? this.vscodePort.Uri : null;
-                        if (!Uri) {
-                            return null; // Skip if no port available
-                        }
-                        const uri = Uri.parse(s.document);
-                        if (uri.scheme === 'file') {
-                            filePath = uri.fsPath;
-                        }
-                    } catch (err) {
-                        if (this.loggerPort) {
-                            this.loggerPort.error('AwarenessMonitor: Error parsing document URI', err);
-                        }
-                    }
-                }
-                return {
-                    path: filePath ? getRelativePath(filePath) : 'Unknown',
-                    fullPath: filePath || '',
-                    ageMinutes: Math.round((now - s.timestamp) / (1000 * 60)),
-                    type: s.isFileCreation ? 'file creation' : 
-                          s.isExternalCreation ? 'external file' :
-                          s.isFileWrite ? 'file write' : 'text change'
-                };
-            })
-            .filter(Boolean); // Remove null entries
-        
-        return {
-            total: this.currentScore,
-            components: { ...this.scores },
-            suggestions: {
-                // Show all suggestions for meter display (so it doesn't disappear after 10s)
-                total: allSuggestions.length,
-                pending: allSuggestions.filter(s => s.status === 'pending').length,
-                accepted: allSuggestions.filter(s => s.status === 'accepted').length,
-                rejected: allSuggestions.filter(s => s.status === 'rejected').length,
-                adapted: allSuggestions.filter(s => s.status === 'adapted').length,
-                // Also include recent count for debugging
-                recentTotal: recentSuggestions.length,
-                // Include pending suggestions with file info
-                pendingFiles: pendingSuggestions
-            },
-            // Review debt information
-            debt: {
-                unreviewedFiles: debtSummary.total,
-                files: debtSummary.files.map(f => ({
-                    path: getRelativePath(f.path), // Relative path instead of just filename
-                    fullPath: f.path,
-                    ageMinutes: Math.round(f.age / (1000 * 60)),
-                    modifications: f.modificationCount
-                }))
-            },
-            // Add debug info for troubleshooting
-            debug: {
-                lastActivity: recentSuggestions.length > 0 ? 
-                    new Date(recentSuggestions[recentSuggestions.length - 1].timestamp).toLocaleTimeString() : 
-                    (aiSuggestions.length > 0 ? 
-                    new Date(aiSuggestions[aiSuggestions.length - 1].timestamp).toLocaleTimeString() : 
-                        'None'),
-                monitoringActive: true, // Will be set by main class
-                totalDebtEntries: debtSummary.total,
-                recentWindowCount: recentSuggestions.length,
-                totalTrackedCount: aiSuggestions.length
-            }
-        };
-    }
-
-    /**
-     * Get current score value
-     */
-    getCurrentScore() {
-        return this.currentScore;
-    }
-
-    /**
-     * Get score components
-     */
-    getScoreComponents() {
-        return { ...this.scores };
-    }
 }
 
-// module.exports = ScoreCalculator; // Commented for consolidation
+// module.exports = ScoreCalculationServiceD; // Commented for consolidation
 
-
-})(); // End IIFE for domain/services/scoreCalculator.js
-
-
-// ============================================================================
-// FILE 30/54: domain/services/scoreCalculatorD.js
-// ============================================================================
-
-(function() { // IIFE scope for domain/services/scoreCalculatorD.js
-/**
- * ScoreCalculatorD - Domain service for calculating awareness scores
- * 
- * Encapsulates business logic for calculating awareness scores based on
- * user review behavior and AI suggestions. This is a domain service.
- */
-
-// const { getRelativePath } = require('../utils/utils'); // Commented for consolidation
-
-class ScoreCalculatorD {
-    /**
-     * @param {IAwarenessVSCodePort} vscodePort - VS Code port (interface, optional)
-     * @param {ILoggerPort} loggerPort - Logger port (interface, optional)
-     */
-    constructor(vscodePort = null, loggerPort = null) {
-        this.vscodePort = vscodePort;
-        this.loggerPort = loggerPort;
-        this.currentScore = 0;
-        this.scores = {
-            review: 0,      // 0-40 points
-            critical: 0,    // 0-30 points
-            adaptation: 0,  // 0-30 points
-            debt: 0         // 0-30 points
-        };
-    }
-
-    /**
-     * Calculate awareness score based on suggestions and review debt
-     * @param {Array} aiSuggestions - Array of AI suggestions
-     * @param {Function} getDebtScore - Function to get debt score
-     * @param {Function} getReviewDebtSummary - Function to get debt summary
-     * @param {Function} onScoreUpdate - Callback when score updates
-     * @returns {Object} Score object with total and components
-     */
-    updateScore(aiSuggestions, getDebtScore, getReviewDebtSummary, onScoreUpdate) {
-        const now = Date.now();
-        const TEN_SECONDS = 10 * 1000;
-        
-        // Filter suggestions from last 10 seconds for "recent activity" calculation
-        const recentSuggestions = aiSuggestions.filter(
-            s => (now - s.timestamp) <= TEN_SECONDS
-        );
-        
-        // BUT: If we have older suggestions but no recent ones, and we have review debt,
-        // preserve the score based on debt rather than resetting to zero
-        const hasOlderSuggestions = aiSuggestions.length > 0 && recentSuggestions.length === 0;
-        const debtScore = getDebtScore();
-        const hasDebt = debtScore > 0;
-        
-        // Rate-limited debug logging via logger port
-        if (this.loggerPort) {
-            this.loggerPort.debug(`Updating score: ${recentSuggestions.length} recent, ${aiSuggestions.length} total, debt: ${debtScore}`, 'scoreCalculator:updateScore');
-        }
-        
-        // Only calculate if we have suggestions in the last 10 seconds
-        if (recentSuggestions.length === 0) {
-            // Even with no recent suggestions, calculate debt score if there's review debt
-            if (debtScore > 0) {
-                // If there's review debt but no pending, show debt score
-                this.currentScore = Math.min(debtScore, 100); // Cap at 100
-                this.scores = { review: 0, critical: 0, adaptation: 0, debt: debtScore };
-            } else if (hasOlderSuggestions && hasDebt) {
-                // We have older suggestions and debt - preserve a minimum score based on debt
-                // This prevents the meter from dropping to zero when monitor restarts
-                this.currentScore = Math.max(debtScore, 20); // Minimum 20 to show activity
-                this.scores = { review: 0, critical: 0, adaptation: 0, debt: debtScore };
-            } else {
-                // No recent activity and no debt
-                this.currentScore = -1; // Special value: no data yet
-                this.scores = { review: 0, critical: 0, adaptation: 0, debt: 0 };
-            }
-            // Trigger callback for meter update
-            if (onScoreUpdate) {
-                onScoreUpdate();
-            }
-            return;
-        }
-        
-        // Include pending suggestions in score calculation (they count as activity)
-        // This ensures meter shows activity even when suggestions are still pending
-        const allRecent = recentSuggestions;
-        
-        // Filter to completed suggestions only for detailed scoring
-        const completed = recentSuggestions.filter(s => s.status !== 'pending');
-        const pending = recentSuggestions.filter(s => s.status === 'pending');
-        
-        if (completed.length === 0 && allRecent.length > 0) {
-            // Still pending, but we have activity - show partial score based on pending count
-            // This ensures meter shows activity instead of "No Activity"
-            this.currentScore = 50; // Neutral - pending activity detected
-            this.scores = { 
-                review: 0, 
-                critical: 0, 
-                adaptation: 0, 
-                debt: debtScore // Still calculate debt
-            };
-            
-            // Trigger callback for meter update
-            if (onScoreUpdate) {
-                onScoreUpdate();
-            }
-            return;
-        }
-        
-        if (completed.length === 0) {
-            // No suggestions at all
-            this.currentScore = -1;
-            this.scores = { review: 0, critical: 0, adaptation: 0, debt: 0 };
-            if (onScoreUpdate) {
-                onScoreUpdate();
-            }
-            return;
-        }
-        
-        // 1. Code Review Rate (40 points)
-        this.scores.review = this.calculateReviewScore(completed);
-        
-        // 2. Critical Evaluation (30 points)
-        this.scores.critical = this.calculateCriticalScore(completed);
-        
-        // 3. Code Adaptation (30 points)
-        this.scores.adaptation = this.calculateAdaptationScore(completed);
-        
-        // 4. Review Debt (30 points)
-        this.scores.debt = debtScore;
-        
-        // Total score (max 130, normalized to 100)
-        const rawScore = this.scores.review + 
-                        this.scores.critical + 
-                        this.scores.adaptation + 
-                        this.scores.debt;
-        
-        this.currentScore = Math.round(Math.min(rawScore, 100));
-        
-        // Trigger callback for immediate meter update
-        if (onScoreUpdate) {
-            onScoreUpdate();
-        }
-    }
-
-    /**
-     * Calculate review score (0-40)
-     * High score = user carefully reviewed code
-     */
-    calculateReviewScore(suggestions) {
-        const reviewedCount = suggestions.filter(s => s.reviewed).length;
-        const totalReviewTime = suggestions.reduce((sum, s) => sum + s.reviewTime, 0);
-        const avgReviewTime = totalReviewTime / suggestions.length;
-        
-        // Review rate (0-20): % of suggestions reviewed
-        const reviewRate = (reviewedCount / suggestions.length) * 20;
-        
-        // Review depth (0-20): Average time spent reviewing
-        // Good: 10+ seconds per suggestion = 20 points
-        // Fair: 5-10 seconds = 10-20 points
-        // Poor: <5 seconds = 0-10 points
-        const reviewDepth = Math.min((avgReviewTime / 10000) * 20, 20);
-        
-        return Math.round(reviewRate + reviewDepth);
-    }
-
-    /**
-     * Calculate critical evaluation score (0-30)
-     * High score = user is selective (accepts some, rejects some)
-     * LOW SCORE = GOOD in DEV mode (means careful, not blind acceptance)
-     */
-    calculateCriticalScore(suggestions) {
-        const accepted = suggestions.filter(s => s.status === 'accepted').length;
-        const rejected = suggestions.filter(s => s.status === 'rejected').length;
-        const total = suggestions.length;
-        
-        const acceptRate = accepted / total;
-        const rejectRate = rejected / total;
-        
-        // INVERTED: In DEV mode, blind acceptance = HIGH score (bad)
-        // We want LOW scores (careful review, selective acceptance)
-        
-        if (acceptRate === 1.0) {
-            // Accepts everything blindly - WORST (high score = bad in DEV)
-            return 30;
-        } else if (rejectRate === 1.0) {
-            // Rejects everything (not using AI effectively)
-            return 20;
-        } else if (acceptRate >= 0.6 && acceptRate <= 0.8) {
-            // Moderate acceptance - not great, not terrible
-            return 15;
-        } else if (acceptRate < 0.5) {
-            // Low acceptance rate = careful review = BEST
-            return 0;
-        } else {
-            // Linear interpolation for other cases
-            return Math.round(acceptRate * 30);
-        }
-    }
-
-    /**
-     * Calculate adaptation score (0-30)
-     * High score = user customizes AI suggestions
-     */
-    calculateAdaptationScore(suggestions) {
-        const adapted = suggestions.filter(s => s.status === 'adapted').length;
-        const adaptRate = adapted / suggestions.length;
-        
-        // Average edits per suggestion
-        const totalEdits = suggestions.reduce((sum, s) => sum + s.editCount, 0);
-        const avgEdits = totalEdits / suggestions.length;
-        
-        // Adaptation rate (0-15): % of suggestions user edited
-        const adaptationRate = adaptRate * 15;
-        
-        // Adaptation depth (0-15): How much editing per suggestion
-        // Good: 2+ edits = 15 points
-        // Fair: 1 edit = 7.5 points
-        // Poor: 0 edits = 0 points
-        const adaptationDepth = Math.min((avgEdits / 2) * 15, 15);
-        
-        return Math.round(adaptationRate + adaptationDepth);
-    }
-
-    /**
-     * Get current awareness score and breakdown
-     * @param {Array} aiSuggestions - Array of AI suggestions
-     * @param {Function} getReviewDebtSummary - Function to get debt summary
-     */
-    getScore(aiSuggestions, getReviewDebtSummary) {
-        const debtSummary = getReviewDebtSummary();
-        const now = Date.now();
-        const TEN_SECONDS = 10 * 1000;
-        
-        // Filter suggestions from last 10 seconds for score calculation
-        const recentSuggestions = aiSuggestions.filter(
-            s => (now - s.timestamp) <= TEN_SECONDS
-        );
-        
-        // For display: show ALL suggestions (not just last 10 seconds) so meter shows activity
-        // But use recentSuggestions for actual score calculation
-        const allSuggestions = aiSuggestions;
-        
-        // Get pending suggestions with file paths
-        const pendingSuggestions = allSuggestions
-            .filter(s => s.status === 'pending')
-            .map(s => {
-                // Extract file path from document URI
-                let filePath = null;
-                if (s.document) {
-                    try {
-                        // Use VS Code port for URI creation
-                        const Uri = this.vscodePort ? this.vscodePort.Uri : null;
-                        if (!Uri) {
-                            return null; // Skip if no port available
-                        }
-                        const uri = Uri.parse(s.document);
-                        if (uri.scheme === 'file') {
-                            filePath = uri.fsPath;
-                        }
-                    } catch (err) {
-                        if (this.loggerPort) {
-                            this.loggerPort.error('AwarenessMonitor: Error parsing document URI', err);
-                        }
-                    }
-                }
-                return {
-                    path: filePath ? getRelativePath(filePath) : 'Unknown',
-                    fullPath: filePath || '',
-                    ageMinutes: Math.round((now - s.timestamp) / (1000 * 60)),
-                    type: s.isFileCreation ? 'file creation' : 
-                          s.isExternalCreation ? 'external file' :
-                          s.isFileWrite ? 'file write' : 'text change'
-                };
-            })
-            .filter(Boolean); // Remove null entries
-        
-        return {
-            total: this.currentScore,
-            components: { ...this.scores },
-            suggestions: {
-                // Show all suggestions for meter display (so it doesn't disappear after 10s)
-                total: allSuggestions.length,
-                pending: allSuggestions.filter(s => s.status === 'pending').length,
-                accepted: allSuggestions.filter(s => s.status === 'accepted').length,
-                rejected: allSuggestions.filter(s => s.status === 'rejected').length,
-                adapted: allSuggestions.filter(s => s.status === 'adapted').length,
-                // Also include recent count for debugging
-                recentTotal: recentSuggestions.length,
-                // Include pending suggestions with file info
-                pendingFiles: pendingSuggestions
-            },
-            // Review debt information
-            debt: {
-                unreviewedFiles: debtSummary.total,
-                files: debtSummary.files.map(f => ({
-                    path: getRelativePath(f.path), // Relative path instead of just filename
-                    fullPath: f.path,
-                    ageMinutes: Math.round(f.age / (1000 * 60)),
-                    modifications: f.modificationCount
-                }))
-            },
-            // Add debug info for troubleshooting
-            debug: {
-                lastActivity: recentSuggestions.length > 0 ? 
-                    new Date(recentSuggestions[recentSuggestions.length - 1].timestamp).toLocaleTimeString() : 
-                    (aiSuggestions.length > 0 ? 
-                    new Date(aiSuggestions[aiSuggestions.length - 1].timestamp).toLocaleTimeString() : 
-                        'None'),
-                monitoringActive: true, // Will be set by main class
-                totalDebtEntries: debtSummary.total,
-                recentWindowCount: recentSuggestions.length,
-                totalTrackedCount: aiSuggestions.length
-            }
-        };
-    }
-
-    /**
-     * Get current score value
-     */
-    getCurrentScore() {
-        return this.currentScore;
-    }
-
-    /**
-     * Get score components
-     */
-    getScoreComponents() {
-        return { ...this.scores };
-    }
-}
-
-// module.exports = ScoreCalculatorD; // Commented for consolidation
-
-
-})(); // End IIFE for domain/services/scoreCalculatorD.js
+})(); // End IIFE for domain/services/scoreCalculationServiceD.js
 
 
 // ============================================================================
-// FILE 31/54: domain/services/suggestionBatchServiceD.js
+// FILE 27/49: domain/services/suggestionBatchServiceD.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/services/suggestionBatchServiceD.js
@@ -1800,7 +905,7 @@ class SuggestionBatchServiceD {
 
 
 // ============================================================================
-// FILE 32/54: domain/services/suggestionLifecycleServiceD.js
+// FILE 28/49: domain/services/suggestionLifecycleServiceD.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/services/suggestionLifecycleServiceD.js
@@ -1940,4 +1045,904 @@ class SuggestionLifecycleServiceD {
 // module.exports = SuggestionLifecycleServiceD; // Commented for consolidation
 
 })(); // End IIFE for domain/services/suggestionLifecycleServiceD.js
+
+
+// ============================================================================
+// FILE 29/49: domain/services/uriPathOperationServiceD.js
+// ============================================================================
+
+(function() { // IIFE scope for domain/services/uriPathOperationServiceD.js
+/**
+ * UriPathOperationServiceD - Domain service for URI and path validation
+ * 
+ * Encapsulates core domain business rules for URI/path validation.
+ * Technical utilities (normalization, extraction) are in app layer.
+ */
+
+// const path = require('path'); // Commented for consolidation
+
+// Constants for file filtering (domain business rules)
+const NON_CODE_SCHEMES = ['output', 'vscode', 'vscode-notebook', 'debug', 'vscode-userdata', 'git'];
+const CODE_EXTENSIONS = ['.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.cpp', '.c', '.h', '.cs', '.go', '.rs', '.rb', '.php', '.swift', '.kt', '.scala', '.clj', '.sh', '.bash', '.zsh', '.fish'].map(ext => ext.toLowerCase());
+
+class UriPathOperationServiceD {
+    constructor() {
+        // No constructor dependencies - ports passed as method parameters
+    }
+
+    /**
+     * Check if document is a code document (domain business rule)
+     * @param {IAwarenessVSCodePort} vscodePort - VS Code port (interface)
+     * @param {TextDocument} document - Document to check
+     * @returns {boolean} True if code document
+     */
+    isCodeDocument(vscodePort, document) {
+        if (!document) return false;
+        
+        const scheme = document.uri?.scheme || '';
+        
+        // Scheme blacklist (always skip these)
+        if (NON_CODE_SCHEMES.includes(scheme)) {
+            return false;
+        }
+        
+        // Filter by file extension (only process code files)
+        const p = (document.uri?.path || document.fileName || '');
+        const clean = p.split('?')[0].split('#')[0]; // Strip query and fragment
+        const ext = path.extname(clean).toLowerCase();
+        
+        // If we have an extension and it's not in the code extensions list, skip it
+        if (ext && !CODE_EXTENSIONS.includes(ext)) {
+            return false;
+        }
+        
+        // Handle untitled documents (user-controlled)
+        // untitled can be code, so we don't skip it by default if no extension
+        
+        return true;
+    }
+
+    /**
+     * Check if URI should be skipped (domain business rule)
+     * @param {IAwarenessVSCodePort} vscodePort - VS Code port (interface)
+     * @param {Uri|string} uri - URI to check
+     * @returns {boolean} True if should skip
+     */
+    isSkippableUri(vscodePort, uri) {
+        if (!uri) return true;
+        
+        let scheme;
+        if (typeof uri === 'string') {
+            // Extract scheme from URI string
+            const match = uri.match(/^([^:]+):/);
+            scheme = match ? match[1] : '';
+        } else {
+            scheme = uri.scheme || '';
+        }
+        
+        return NON_CODE_SCHEMES.includes(scheme);
+    }
+}
+
+// module.exports = UriPathOperationServiceD; // Commented for consolidation
+
+})(); // End IIFE for domain/services/uriPathOperationServiceD.js
+
+
+// ============================================================================
+// FILE 30/49: domain/utils/changeAggregator.js
+// ============================================================================
+
+(function() { // IIFE scope for domain/utils/changeAggregator.js
+/**
+ * Change Aggregator
+ * Manages pending changes aggregation: tracking, capping, and event metadata
+ */
+
+function createPendingEntry() {
+    return {
+        changes: [],
+        eventTimestamps: [], // Track one timestamp per event (for rapid change detection)
+        eventRangeSets: [], // Track range set per event (for scattered pattern detection)
+        eventChangeCounts: [], // Track number of changes per event (for cleanup)
+        timer: null,
+        lastChangeTime: 0,
+        firstChangeTime: 0, // Track first change time for temporal analysis
+        documentVersion: null, // Track document version to detect drift (last seen version)
+        onClassified: null,
+        document: null, // Store document reference for flush
+        flushSource: null // Source of flush (for meta tracking)
+    };
+}
+
+function calculateEventRangeSet(contentChanges) {
+    const eventRangeSet = new Set();
+    for (const change of contentChanges) {
+        // Use line-based key to reduce noise from character-level variations
+        const lineKey = `${change.range.start.line}-${change.range.end.line}`;
+        eventRangeSet.add(lineKey);
+    }
+    return eventRangeSet;
+}
+
+function addChangesWithCapping(pending, contentChanges, maxChangesPerDocumentBatch, timestamp) {
+    // Track first change time if this is the first batch
+    if (pending.changes.length === 0) {
+        pending.firstChangeTime = timestamp;
+    }
+    
+    // Add all changes from event as one batch
+    for (const change of contentChanges) {
+        // Cap pending changes per document (safety)
+        if (pending.changes.length >= maxChangesPerDocumentBatch) {
+            // Drop oldest change
+            pending.changes.shift();
+            // Check if we've removed all changes from the first event
+            if (pending.eventChangeCounts.length > 0) {
+                pending.eventChangeCounts[0]--;
+                if (pending.eventChangeCounts[0] <= 0) {
+                    // Remove the first event's metadata
+                    pending.eventChangeCounts.shift();
+                    pending.eventTimestamps.shift();
+                    pending.eventRangeSets.shift();
+                    // Update first change time if we removed the first event
+                    if (pending.eventTimestamps.length > 0) {
+                        pending.firstChangeTime = pending.eventTimestamps[0];
+                    }
+                }
+            }
+        }
+        pending.changes.push(change);
+    }
+}
+
+function recordEventMetadata(pending, timestamp, eventRangeSet, changeCount) {
+    // Track one timestamp per event (not per change)
+    pending.eventTimestamps.push(timestamp);
+    pending.eventRangeSets.push(eventRangeSet);
+    pending.eventChangeCounts.push(changeCount);
+    pending.lastChangeTime = timestamp;
+}
+
+// module.exports = { // Commented for consolidation
+//     createPendingEntry, // Commented for consolidation
+//     calculateEventRangeSet, // Commented for consolidation
+//     addChangesWithCapping, // Commented for consolidation
+//     recordEventMetadata // Commented for consolidation
+// }; // Commented for consolidation
+
+
+})(); // End IIFE for domain/utils/changeAggregator.js
+
+
+// ============================================================================
+// FILE 31/49: domain/utils/changeClassifier.js
+// ============================================================================
+
+(function() { // IIFE scope for domain/utils/changeClassifier.js
+/**
+ * Change Classifier
+ * Debounced aggregation and AI/user classification for text changes
+ * 
+ * PRIMARY DETECTION: Behavioral inference via heuristics (edit patterns, batch characteristics, temporal patterns)
+ * - Aggregates rapid changes within a time window
+ * - Analyzes batch characteristics (total size, range count, distribution, scatteredness)
+ * - Detects AI-like patterns: large multi-line insertions, pure insertions, scattered edits
+ * - **Rapid scattered changes**: Measures many scattered edits within short time window (strong AI signal)
+ *   - AI agents often make many scattered edits very quickly (within seconds)
+ *   - Humans typically make more focused, sequential edits
+ *   - This temporal pattern is a key behavioral differentiator
+ * - Distinguishes formatters from AI edits (many scattered changes with deletes across wide span)
+ * - This is the reliable method since markers cannot be guaranteed to survive edit pipeline
+ * 
+ * SECONDARY SIGNAL: @ai marker (strong signal when present)
+ * - Checks for @ai marker in various comment formats (// @ai, # @ai, <!-- @ai -->, etc.)
+ * - When marker is present, it's a definitive signal (100% accurate)
+ * - When marker is absent, we cannot assume human origin - must use behavioral inference
+ * 
+ * Strategy: Behavioral heuristics are primary. Markers are helpful hints that strengthen
+ * confidence when present, but absence of marker does NOT mean human origin.
+ * 
+ * DESIGN IMPROVEMENT: Composable detector pipeline
+ * - Each detector returns {scoreDelta, reason, label}
+ * - Final classification combines scores to determine label with confidence
+ * - Returns {label: 'ai'|'user'|'formatter'|'unknown', confidence: 0..1, reasons: string[]}
+ * 
+ * FIXED: Stores callback once per document to prevent double recording
+ */
+
+
+// Import detectors
+// const { hasAIMarker } = require('./detectors/markerDetector'); // Commented for consolidation
+// const { calculateMetrics } = require('./detectors/changeAnalyzer'); // Commented for consolidation
+// const { detectFormatter } = require('./detectors/formatterDetector'); // Commented for consolidation
+// const { detectRapidScattered } = require('./detectors/rapidScatteredDetector'); // Commented for consolidation
+// const { detectMultiLineInsertion } = require('./detectors/multiLineDetector'); // Commented for consolidation
+// const { detectPureInsertions } = require('./detectors/pureInsertionDetector'); // Commented for consolidation
+// const { detectLargeInsertion } = require('./detectors/largeInsertionDetector'); // Commented for consolidation
+// const { detectScatteredEdits } = require('./detectors/scatteredEditsDetector'); // Commented for consolidation
+// const { detectSmallEdits } = require('./detectors/smallEditsDetector'); // Commented for consolidation
+
+// Import extracted modules
+// const { createConfig } = require('./configManager'); // Commented for consolidation
+// const { createPendingEntry, calculateEventRangeSet, addChangesWithCapping, recordEventMetadata } = require('./changeAggregator'); // Commented for consolidation
+// const { accumulateScores, determineLabel } = require('./classificationScorer'); // Commented for consolidation
+// const { applyDriftCap } = require('./versionDriftHandler'); // Commented for consolidation
+// const { filterReasons } = require('./reasonFilter'); // Commented for consolidation
+
+class ChangeClassifier {
+    /**
+     * @param {number} debounceMs - Debounce window in milliseconds
+     * @param {Object} config - Classification configuration (mode-specific thresholds)
+     */
+    constructor(debounceMs = 200, config = null) {
+        this.debounceMs = debounceMs;
+        this.pendingChanges = new Map(); // document URI -> { changes: [], timer: null, lastChangeTime: 0, documentVersion: null, onClassified: null }
+        this.maxChangesPerDocumentBatch = 200; // Cap changes per document batch (safety)
+        
+        // Production: Metrics for observability
+        this.metrics = {
+            versionDriftCount: 0, // Track how often drift happens
+            totalClassifications: 0
+        };
+        
+        // Create and merge configuration
+        this.config = createConfig(config);
+        
+        // Fix: Use strict boolean check (more explicit than || false)
+        this.markerOnly = this.config.markerOnly === true;
+    }
+    
+
+    /**
+     * Add a batch of changes from a TextDocumentChangeEvent
+     * FIXED: Accepts whole event, stores callback once per document
+     * @param {vscode.TextDocumentChangeEvent} event - Text document change event
+     * @param {Function} onClassified - Callback with (document, classification, aggregatedChanges)
+     *   - classification: {label: 'ai'|'user'|'formatter'|'unknown', confidence: 0..1, reasons: string[]}
+     */
+    addEvent(event, onClassified) {
+        if (!event || !event.contentChanges || event.contentChanges.length === 0) {
+            return;
+        }
+        
+        const uri = event.document.uri.toString();
+        const now = Date.now();
+        
+        if (!this.pendingChanges.has(uri)) {
+            this.pendingChanges.set(uri, createPendingEntry());
+        }
+        
+        const pending = this.pendingChanges.get(uri);
+        
+        // Store callback once per document (prevents double recording)
+        // Use latest callback if provided, otherwise keep existing
+        if (onClassified) {
+            pending.onClassified = onClassified;
+        }
+        pending.document = event.document; // Update document reference
+        pending.documentVersion = event.document.version;
+        
+        // Calculate event range set for scatteredness detection
+        const eventRangeSet = calculateEventRangeSet(event.contentChanges);
+        
+        // Add changes with capping
+        addChangesWithCapping(pending, event.contentChanges, this.maxChangesPerDocumentBatch, now);
+        
+        // Record event metadata
+        recordEventMetadata(pending, now, eventRangeSet, event.contentChanges.length);
+        
+        // Fix: Removed lastBatchFingerprint - fingerprint comparison was ineffective
+        // (compared same array to itself). Using version drift alone is the actual signal.
+        
+        // Clear existing timer
+        if (pending.timer) {
+            clearTimeout(pending.timer);
+            pending.timer = null; // Clear timer ref
+        }
+        
+        // Set new timer
+        pending.timer = setTimeout(() => {
+            this._classifyAndEmit(uri);
+        }, this.debounceMs);
+    }
+
+    _classifyAndEmit(uri) {
+        const pending = this.pendingChanges.get(uri);
+        if (!pending || pending.changes.length === 0) {
+            if (pending && pending.timer) {
+                clearTimeout(pending.timer);
+                pending.timer = null;
+            }
+            this.pendingChanges.delete(uri);
+            return;
+        }
+        
+        const changes = pending.changes;
+        const eventTimestamps = pending.eventTimestamps || [];
+        const eventRangeSets = pending.eventRangeSets || [];
+        const document = pending.document;
+        const onClassified = pending.onClassified;
+        const documentVersion = pending.documentVersion;
+        
+        // Classify changes
+        let classification = this._classify(changes, eventTimestamps, eventRangeSets, pending.firstChangeTime);
+        
+        // Fix: Ensure classification has meta object for source tracking
+        if (!classification.meta) {
+            classification.meta = {};
+        }
+        
+        // Fix: Add source meta from flush context (if available)
+        if (pending.flushSource) {
+            classification.meta.source = pending.flushSource;
+        }
+        
+        // Apply version drift cap if document changed externally
+        const lastSeenVersion = documentVersion;
+        const lastSeenTs = pending.lastChangeTime || pending.firstChangeTime;
+        applyDriftCap(classification, document, lastSeenVersion, lastSeenTs, this.metrics);
+        
+        // Production: Track total classifications
+        this.metrics.totalClassifications++;
+        
+        // Clear timer ref
+        if (pending.timer) {
+            clearTimeout(pending.timer);
+            pending.timer = null;
+        }
+        
+        // Clear pending
+        this.pendingChanges.delete(uri);
+        
+        // Emit classification (single callback, prevents double recording)
+        // ALWAYS use classification object format (single protocol)
+        if (onClassified && document) {
+            onClassified(document, classification, changes);
+        }
+    }
+
+    _hasAIMarker(changes) {
+        return hasAIMarker(changes);
+    }
+
+    _classify(changes, eventTimestamps = [], eventRangeSets = [], firstChangeTime = null) {
+        if (changes.length === 0) {
+            return { label: 'unknown', confidence: 0, reasons: ['no changes'] };
+        }
+        
+        // STRONG SIGNAL: Check for @ai marker (definitive when present)
+        // Fix: Use only reasons array (single contract), no reason field
+        if (this._hasAIMarker(changes)) {
+            return {
+                label: 'ai',
+                confidence: 1.0,
+                reasons: ['@ai marker found in changes']
+            };
+        }
+        
+        // If marker-only mode is enabled, skip heuristics entirely
+        // Fix: Return unknown (not user) when no marker found - "no marker" ≠ "user"
+        if (this.markerOnly) {
+            return {
+                label: 'unknown',
+                confidence: 0.2,
+                reasons: ['marker-only mode: no marker found']
+            };
+        }
+        
+        // PRIMARY DETECTION: Behavioral inference via heuristics
+        // This is the reliable method since markers cannot be guaranteed
+        // Aggregate metrics for all detectors
+        const metrics = calculateMetrics(changes, eventTimestamps, eventRangeSets, firstChangeTime, this.config);
+        
+        // Fix: Clean detector API - remove reasons parameter (detectors don't use it)
+        // Run composable detectors in pipeline
+        const detectors = [
+            () => detectFormatter(metrics, this.config),
+            () => detectRapidScattered(metrics, this.config),
+            () => detectLargeInsertion(metrics, this.config),
+            () => detectMultiLineInsertion(metrics, this.config),
+            () => detectPureInsertions(metrics, this.config),
+            () => detectScatteredEdits(metrics, this.config),
+            () => detectSmallEdits(metrics)
+        ];
+        
+        // Accumulate scores from detectors
+        const { aiScore, formatterScore, userScore, reasonObjects } = accumulateScores(detectors);
+        
+        // Determine final label and confidence
+        const { label, confidence } = determineLabel(aiScore, formatterScore, userScore);
+        
+        // Filter reasons by tag prefix
+        const filteredReasons = filterReasons(reasonObjects, label);
+        
+        return { label, confidence, reasons: filteredReasons };
+    }
+    
+    
+    _classifyAsAI(changes, eventTimestamps = [], eventRangeSets = [], firstChangeTime = null) {
+        const result = this._classify(changes, eventTimestamps, eventRangeSets, firstChangeTime);
+        return result.label === 'ai';
+    }
+    
+    /**
+     * Public method for testing - classifies changes and returns rich result
+     * @param {Array<vscode.TextDocumentContentChangeEvent>} changes - Aggregated changes
+     * @param {Array<number>} eventTimestamps - Timestamps for each event (optional)
+     * @param {Array<Set>} eventRangeSets - Range sets for each event (optional)
+     * @param {number} firstChangeTime - Timestamp of first change (optional)
+     * @returns {{label: 'ai'|'user'|'formatter'|'unknown', confidence: number, reasons: string[]}} Classification result
+     */
+    classify(changes, eventTimestamps = [], eventRangeSets = [], firstChangeTime = null) {
+        return this._classify(changes, eventTimestamps, eventRangeSets, firstChangeTime);
+    }
+
+    /**
+     * Force classification of pending changes for a document (for cleanup/flush)
+     * Fix: Support silent mode to prevent emission during cleanup
+     * @param {vscode.TextDocument} document - The document
+     * @param {Function|Object} onClassifiedOrOptions - Optional callback or options {emit: boolean}
+     *   - If Function: callback to use (uses stored if not provided)
+     *   - If Object: {emit: false} for silent flush (cleanup without recording)
+     */
+    flush(document, onClassifiedOrOptions) {
+        if (!document) return;
+        
+        const uri = document.uri.toString();
+        const pending = this.pendingChanges.get(uri);
+        if (pending) {
+            if (pending.timer) {
+                clearTimeout(pending.timer);
+                pending.timer = null;
+            }
+            
+            // Fix: Support silent mode and source meta for cleanup without emission
+            const options = typeof onClassifiedOrOptions === 'object' && onClassifiedOrOptions !== null ? onClassifiedOrOptions : null;
+            const onClassified = typeof onClassifiedOrOptions === 'function' ? onClassifiedOrOptions : null;
+            const shouldEmit = options ? (options.emit !== false) : true; // Default to true for backward compatibility
+            
+            // Fix: Store source meta if provided (for downstream filtering)
+            if (options && options.source) {
+                pending.flushSource = options.source;
+            }
+            
+            if (onClassified) {
+                pending.onClassified = onClassified;
+            }
+            
+            pending.document = document; // Update document reference
+            
+            if (shouldEmit) {
+                this._classifyAndEmit(uri);
+            } else {
+                // Silent flush: just clear without emitting
+                this.pendingChanges.delete(uri);
+            }
+        }
+    }
+
+    /**
+     * Flush all pending changes (for cleanup on extension stop)
+     * FIXED: Actually calls callbacks before clearing
+     * IMPORTANT: Callbacks should respect "formatter is neutral" rule - formatter classifications
+     * should not trigger user edit recording or suggestion adaptation marking.
+     * @param {Function} onClassified - Optional callback for all flushed documents
+     *   - Callback signature: (document, classification, changes)
+     *   - classification: {label: 'ai'|'user'|'formatter'|'unknown', confidence: 0..1, reasons: string[]}
+     *   - Callbacks should handle formatter classifications as neutral (do nothing)
+     */
+    flushAll(onClassified) {
+        const uris = Array.from(this.pendingChanges.keys());
+        for (const uri of uris) {
+            const pending = this.pendingChanges.get(uri);
+            if (pending) {
+                if (pending.timer) {
+                    clearTimeout(pending.timer);
+                    pending.timer = null;
+                }
+                // Use provided callback or stored callback
+                if (onClassified) {
+                    pending.onClassified = onClassified;
+                }
+                // Emit if we have document and callback
+                if (pending.document && pending.onClassified) {
+                    // Fix: Set source for flushAll (dispose context) if not already set
+                    // Then reuse _classifyAndEmit() for consistency (single code path for drift cap, meta.source, etc.)
+                    if (!pending.flushSource) {
+                        pending.flushSource = 'dispose';
+                    }
+                    
+                    // Fix: Reuse _classifyAndEmit() instead of duplicating logic
+                    // This ensures consistency: meta.source, drift cap, fingerprint check all use same code path
+                    // Less divergence = fewer future regressions
+                    this._classifyAndEmit(uri);
+                }
+            }
+        }
+        this.pendingChanges.clear();
+    }
+
+    /**
+     * Clear all pending changes (for cleanup)
+     */
+    clear() {
+        for (const pending of this.pendingChanges.values()) {
+            if (pending.timer) {
+                clearTimeout(pending.timer);
+                pending.timer = null;
+            }
+        }
+        this.pendingChanges.clear();
+    }
+
+    /**
+     * Calculate statistics about pending changes
+     * @returns {Object} Statistics object with counts and metrics
+     */
+    getStatistics() {
+        const stats = {
+            totalDocuments: this.pendingChanges.size,
+            totalPendingChanges: 0,
+            documentsWithTimers: 0,
+            averageChangesPerDocument: 0
+        };
+
+        for (const pending of this.pendingChanges.values()) {
+            stats.totalPendingChanges += pending.changes.length;
+            if (pending.timer) {
+                stats.documentsWithTimers++;
+            }
+        }
+
+        if (stats.totalDocuments > 0) {
+            stats.averageChangesPerDocument = Math.round(
+                stats.totalPendingChanges / stats.totalDocuments
+            );
+        }
+
+        return stats;
+    }
+
+}
+
+// module.exports = ChangeClassifier; // Commented for consolidation
+
+})(); // End IIFE for domain/utils/changeClassifier.js
+
+
+// ============================================================================
+// FILE 32/49: domain/utils/classificationScorer.js
+// ============================================================================
+
+(function() { // IIFE scope for domain/utils/classificationScorer.js
+/**
+ * Classification Scorer
+ * Accumulates detector scores and determines final classification label and confidence
+ */
+
+function accumulateScores(detectors) {
+    let aiScore = 0;
+    let formatterScore = 0;
+    let userScore = 0;
+    
+    // Fix: Store reasons as paired objects to prevent misalignment
+    // Some detectors may return reason without reasonTag (e.g., marker detection)
+    const reasonObjects = [];
+    
+    for (const detector of detectors) {
+        const result = detector();
+        if (!result) continue;
+        
+        if (result.label === 'formatter') {
+            formatterScore += result.score;
+        } else if (result.label === 'ai') {
+            aiScore += result.score;
+        } else if (result.label === 'user') {
+            userScore += result.score;
+        }
+        
+        if (result.reason) {
+            reasonObjects.push({ tag: result.reasonTag || null, text: result.reason });
+        }
+    }
+    
+    return { aiScore, formatterScore, userScore, reasonObjects };
+}
+
+function determineLabel(aiScore, formatterScore, userScore) {
+    let label = 'unknown';
+    let confidence = 0;
+    
+    if (formatterScore > aiScore && formatterScore > userScore && formatterScore > 0.5) {
+        label = 'formatter';
+        confidence = Math.min(formatterScore, 1.0);
+    } else if (aiScore > userScore && aiScore > 0.3) {
+        label = 'ai';
+        confidence = Math.min(aiScore, 1.0);
+    } else if (userScore > 0) {
+        // Fix: Only label 'user' when we have positive user evidence
+        label = 'user';
+        confidence = Math.max(0.3, Math.min(userScore, 1.0));
+    } else {
+        // Fix: If all scores are 0, return 'unknown' (not 'user')
+        // This matches the documented behavior where 'unknown' exists
+        label = 'unknown';
+        confidence = 0.2;
+    }
+    
+    return { label, confidence };
+}
+
+// module.exports = { // Commented for consolidation
+//     accumulateScores, // Commented for consolidation
+//     determineLabel // Commented for consolidation
+// }; // Commented for consolidation
+
+
+})(); // End IIFE for domain/utils/classificationScorer.js
+
+
+// ============================================================================
+// FILE 33/49: domain/utils/configManager.js
+// ============================================================================
+
+(function() { // IIFE scope for domain/utils/configManager.js
+/**
+ * Config Manager
+ * Manages classifier configuration: defaults, validation, and merging
+ */
+
+// const { getLogger } = require('../../../../logger'); // Commented for consolidation
+
+/**
+ * Get default classifier configuration
+ * @returns {Object} Default configuration object
+ */
+function getDefaultConfig() {
+    return {
+        // VIBE: more permissive (lower thresholds)
+        // DEV: more conservative (higher thresholds)
+        multiLineThreshold: 50,
+        pureInsertionCount: 3,
+        pureInsertionSize: 20,
+        largeInsertionThreshold: 100,
+        scatteredRangeCount: 5,
+        scatteredChangeCount: 5,
+        scatteredSizeThreshold: 200,
+        formatterRangeCount: 8,
+        formatterLineSpan: 50,
+        aiLineSpan: 30,
+        aiMultiLineSize: 50,
+        // Rapid scattered changes: AI agents often make many scattered edits quickly
+        rapidScatteredTimeWindow: 1000, // Time window in ms for rapid changes (1 second)
+        rapidScatteredEventCount: 8, // Minimum number of events in time window (renamed from ChangeCount for clarity)
+        rapidScatteredRangeCount: 6, // Minimum distinct line ranges for scattered pattern
+        rapidScatteredMinSize: 50, // Minimum total size to avoid false positives on tiny edits
+        rapidBurstChangeCount: 10, // Minimum number of changes for rapid burst branch (separate from event count)
+        // Marker-only mode: if true, only use @ai marker, ignore heuristics
+        // If false, use behavioral heuristics as primary with markers as strong signal when present
+        markerOnly: false  // Default: use behavioral inference (heuristics) as primary method
+    };
+}
+
+/**
+ * Validate and sanitize classifier configuration to prevent silent misclassification
+ * Fix: Sanitizes user config BEFORE merge to ensure defaults always win
+ * @param {Object} config - User configuration to validate (will be mutated)
+ * @param {Object} defaultConfig - Default configuration (for reference)
+ * @returns {{errors: string[], sanitized: string[]}} Validation result
+ */
+function validateConfig(config, defaultConfig = {}) {
+    const errors = [];
+    const sanitized = [];
+    
+    // Thresholds must be positive numbers
+    const thresholdKeys = [
+        'multiLineThreshold', 'pureInsertionCount', 'pureInsertionSize',
+        'largeInsertionThreshold', 'scatteredRangeCount', 'scatteredChangeCount',
+        'scatteredSizeThreshold', 'formatterRangeCount', 'formatterLineSpan',
+        'aiLineSpan', 'aiMultiLineSize', 'rapidScatteredTimeWindow',
+        'rapidScatteredEventCount', 'rapidScatteredRangeCount', 'rapidScatteredMinSize',
+        'rapidBurstChangeCount'
+    ];
+    
+    // Fix: Sanitize invalid values (delete them so defaults win) instead of just warning
+    for (const key of thresholdKeys) {
+        if (config[key] !== undefined && (typeof config[key] !== 'number' || config[key] < 0)) {
+            errors.push(`${key} must be a non-negative number, got: ${config[key]}`);
+            delete config[key]; // Remove invalid value so default wins
+            sanitized.push(key);
+        }
+    }
+    
+    // Boolean flags
+    if (config.markerOnly !== undefined && typeof config.markerOnly !== 'boolean') {
+        errors.push(`markerOnly must be a boolean, got: ${config.markerOnly}`);
+        delete config.markerOnly; // Remove invalid value so default wins
+        sanitized.push('markerOnly');
+    }
+    
+    if (errors.length > 0) {
+        // Production: Use logger instead of console.warn (rate-limited, visible to devs)
+        const logger = getLogger();
+        // Log once with sanitized keys and caller context
+        logger.log(`[ChangeClassifier] Invalid config sanitized: ${sanitized.join(', ')}. ${errors.length} invalid value(s) removed, defaults applied.`, true);
+        // Invalid values have been deleted, so defaults will be used via merge
+    }
+    
+    return { errors, sanitized };
+}
+
+/**
+ * Create and merge classifier configuration
+ * @param {Object|null} userConfig - User-provided configuration (optional)
+ * @returns {Object} Final frozen configuration object
+ */
+function createConfig(userConfig = null) {
+    const defaultConfig = getDefaultConfig();
+    
+    // Fix: Sanitize user config BEFORE merging to ensure defaults always win
+    // This prevents invalid values from overwriting defaults, then being deleted, leaving undefined
+    const sanitizedUserConfig = userConfig ? { ...userConfig } : {};
+    validateConfig(sanitizedUserConfig, defaultConfig);
+    
+    // Merge sanitized user config with defaults (defaults win for any missing/invalid keys)
+    const config = { ...defaultConfig, ...sanitizedUserConfig };
+    
+    // Freeze config to prevent accidental mutation
+    Object.freeze(config);
+    
+    return config;
+}
+
+// module.exports = { // Commented for consolidation
+//     getDefaultConfig, // Commented for consolidation
+//     validateConfig, // Commented for consolidation
+//     createConfig // Commented for consolidation
+// }; // Commented for consolidation
+
+
+})(); // End IIFE for domain/utils/configManager.js
+
+
+// ============================================================================
+// FILE 34/49: domain/utils/detectors/changeAnalyzer.js
+// ============================================================================
+
+(function() { // IIFE scope for domain/utils/detectors/changeAnalyzer.js
+/**
+ * Change Analyzer
+ * Analyzes text changes and calculates metrics for detector analysis
+ */
+
+/**
+ * Calculate metrics from changes for detector analysis
+ * @param {Array<vscode.TextDocumentContentChangeEvent>} changes - Aggregated changes
+ * @param {Array<number>} eventTimestamps - Timestamps for each event (for temporal analysis)
+ * @param {Array<Set>} eventRangeSets - Range sets for each event (for scattered pattern detection)
+ * @param {number} firstChangeTime - Timestamp of first change in batch
+ * @param {Object} config - Configuration with rapidScatteredTimeWindow
+ * @returns {Object} Metrics object
+ */
+function calculateMetrics(changes, eventTimestamps = [], eventRangeSets = [], firstChangeTime = null, config = {}) {
+    let totalInserted = 0;
+    let totalDeleted = 0;
+    let hasMultiLine = false;
+    let pureInsertionCount = 0;
+    let distinctRanges = new Set();
+    const startLines = [];
+    const endLines = [];
+    
+    for (const change of changes) {
+        const inserted = change.text.length;
+        const deleted = change.rangeLength;
+        
+        totalInserted += inserted;
+        totalDeleted += deleted;
+        
+        if (change.text.includes('\n')) {
+            hasMultiLine = true;
+        }
+        
+        if (deleted === 0 && inserted > 0) {
+            pureInsertionCount++;
+        }
+        
+        // Use line-based key for scatteredness detection (more stable than character-precise)
+        const lineKey = `${change.range.start.line}-${change.range.end.line}`;
+        distinctRanges.add(lineKey);
+        
+        startLines.push(change.range.start.line);
+        endLines.push(change.range.end.line);
+    }
+    
+    // Fix: maxLineSpan should consider both start and end lines
+    const allLines = [...startLines, ...endLines];
+    const maxLineSpan = allLines.length > 0 
+        ? Math.max(...allLines) - Math.min(...allLines)
+        : 0;
+    
+    // Fix: Count whitespace-only changes instead of whitespace ratio
+    // This avoids false positives on normal code (which naturally contains whitespace)
+    // Fix: Only count insertions of whitespace (deletions have empty text but aren't whitespace-only)
+    let whitespaceOnlyChangeCount = 0;
+    for (const change of changes) {
+        if (change.text.length > 0 && change.text.trim().length === 0) {
+            whitespaceOnlyChangeCount++;
+        }
+    }
+    const whitespaceOnlyChangeRatio = changes.length > 0 
+        ? whitespaceOnlyChangeCount / changes.length 
+        : 0;
+    
+    // Calculate temporal metrics using event timestamps (not per-change timestamps)
+    // Fix: Track events, not individual changes, for true "rapid scattered" detection
+    const timeWindow = config.rapidScatteredTimeWindow || 1000;
+    let rapidEventCount = 0;
+    let rapidRangeSet = new Set();
+    let burstDurationMs = 0;
+    
+    if (eventTimestamps.length > 0 && firstChangeTime) {
+        const lastEventTime = eventTimestamps[eventTimestamps.length - 1];
+        burstDurationMs = lastEventTime - firstChangeTime;
+        
+        let maxRapidEventCount = 0;
+        let maxRapidRanges = new Set();
+        
+        // Find the window with the most events
+        for (let i = 0; i < eventTimestamps.length; i++) {
+            const windowStart = eventTimestamps[i];
+            const windowEnd = windowStart + timeWindow;
+            let windowEventCount = 0;
+            const windowRanges = new Set();
+            
+            // Count events in this window and aggregate their ranges
+            for (let j = i; j < eventTimestamps.length; j++) {
+                if (eventTimestamps[j] <= windowEnd) {
+                    windowEventCount++;
+                    // Aggregate ranges from this event
+                    if (j < eventRangeSets.length) {
+                        for (const rangeKey of eventRangeSets[j]) {
+                            windowRanges.add(rangeKey);
+                        }
+                    }
+                } else {
+                    break;
+                }
+            }
+            
+            if (windowEventCount > maxRapidEventCount) {
+                maxRapidEventCount = windowEventCount;
+                maxRapidRanges = windowRanges;
+            }
+        }
+        
+        rapidEventCount = maxRapidEventCount;
+        rapidRangeSet = maxRapidRanges;
+    }
+    
+    return {
+        totalInserted,
+        totalDeleted,
+        hasMultiLine,
+        pureInsertionCount,
+        distinctRanges,
+        distinctRangeCount: distinctRanges.size,
+        maxLineSpan,
+        whitespaceOnlyChangeRatio,
+        rapidEventCount,
+        rapidRangeSet,
+        rapidRangeCount: rapidRangeSet.size,
+        burstDurationMs,
+        changeCount: changes.length
+    };
+}
+
+// module.exports = { // Commented for consolidation
+//     calculateMetrics // Commented for consolidation
+// }; // Commented for consolidation
+
+
+})(); // End IIFE for domain/utils/detectors/changeAnalyzer.js
 

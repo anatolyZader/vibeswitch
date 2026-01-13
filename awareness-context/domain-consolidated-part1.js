@@ -1,11 +1,11 @@
 /**
- * DOMAIN LAYER - CONSOLIDATED (PART 1/4)
+ * DOMAIN LAYER - CONSOLIDATED (PART 1/3)
  * 
- * This file contains part 1 of 4 of the domain layer code.
+ * This file contains part 1 of 3 of the domain layer code.
  * Generated automatically for ChatGPT context.
  * 
- * Files in this part: 20/54
- * Generated: 2026-01-12T18:19:21.012Z
+ * Files in this part: 20/49
+ * Generated: 2026-01-13T15:56:48.087Z
  */
 
 // ============================================================================
@@ -14,7 +14,7 @@
 
 
 // ============================================================================
-// FILE 1/54: domain/aggregates/suggestionAggregate.js
+// FILE 1/49: domain/aggregates/suggestionAggregate.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/aggregates/suggestionAggregate.js
@@ -381,7 +381,7 @@ class SuggestionAggregate {
 
 
 // ============================================================================
-// FILE 2/54: domain/entities/change.js
+// FILE 2/49: domain/entities/change.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/entities/change.js
@@ -562,7 +562,7 @@ class Change {
 
 
 // ============================================================================
-// FILE 3/54: domain/entities/debt.js
+// FILE 3/49: domain/entities/debt.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/entities/debt.js
@@ -704,7 +704,7 @@ class Debt {
 
 
 // ============================================================================
-// FILE 4/54: domain/entities/reviewSession.js
+// FILE 4/49: domain/entities/reviewSession.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/entities/reviewSession.js
@@ -836,7 +836,7 @@ class ReviewSession {
 
 
 // ============================================================================
-// FILE 5/54: domain/entities/suggestion.js
+// FILE 5/49: domain/entities/suggestion.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/entities/suggestion.js
@@ -986,7 +986,7 @@ class Suggestion {
 
 
 // ============================================================================
-// FILE 6/54: domain/entities/suggestionBatch.js
+// FILE 6/49: domain/entities/suggestionBatch.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/entities/suggestionBatch.js
@@ -1135,7 +1135,7 @@ class SuggestionBatch {
 
 
 // ============================================================================
-// FILE 7/54: domain/events/aiSuggestionEvent.js
+// FILE 7/49: domain/events/aiSuggestionEvent.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/events/aiSuggestionEvent.js
@@ -1176,7 +1176,7 @@ class AISuggestionEvent {
 
 
 // ============================================================================
-// FILE 8/54: domain/events/aiSuggestionOutcomeEvent.js
+// FILE 8/49: domain/events/aiSuggestionOutcomeEvent.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/events/aiSuggestionOutcomeEvent.js
@@ -1217,7 +1217,7 @@ class AISuggestionOutcomeEvent {
 
 
 // ============================================================================
-// FILE 9/54: domain/events/debtClearedEvent.js
+// FILE 9/49: domain/events/debtClearedEvent.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/events/debtClearedEvent.js
@@ -1252,7 +1252,7 @@ class DebtClearedEvent {
 
 
 // ============================================================================
-// FILE 10/54: domain/events/keepAllEvent.js
+// FILE 10/49: domain/events/keepAllEvent.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/events/keepAllEvent.js
@@ -1289,7 +1289,7 @@ class KeepAllEvent {
 
 
 // ============================================================================
-// FILE 11/54: domain/events/reviewSessionCompletedEvent.js
+// FILE 11/49: domain/events/reviewSessionCompletedEvent.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/events/reviewSessionCompletedEvent.js
@@ -1329,7 +1329,7 @@ class ReviewSessionCompletedEvent {
 
 
 // ============================================================================
-// FILE 12/54: domain/events/reviewSessionStartedEvent.js
+// FILE 12/49: domain/events/reviewSessionStartedEvent.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/events/reviewSessionStartedEvent.js
@@ -1363,7 +1363,7 @@ class ReviewSessionStartedEvent {
 
 
 // ============================================================================
-// FILE 13/54: domain/events/scoreUpdateEvent.js
+// FILE 13/49: domain/events/scoreUpdateEvent.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/events/scoreUpdateEvent.js
@@ -1402,7 +1402,7 @@ class ScoreUpdateEvent {
 
 
 // ============================================================================
-// FILE 14/54: domain/events/suggestionBatchCreatedEvent.js
+// FILE 14/49: domain/events/suggestionBatchCreatedEvent.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/events/suggestionBatchCreatedEvent.js
@@ -1440,7 +1440,7 @@ class SuggestionBatchCreatedEvent {
 
 
 // ============================================================================
-// FILE 15/54: domain/ports/IAwarenessMessagingPort.js
+// FILE 15/49: domain/ports/IAwarenessMessagingPort.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/ports/IAwarenessMessagingPort.js
@@ -1538,7 +1538,7 @@ class IAwarenessMessagingPort {
 
 
 // ============================================================================
-// FILE 16/54: domain/ports/IAwarenessPersistencePort.js
+// FILE 16/49: domain/ports/IAwarenessPersistencePort.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/ports/IAwarenessPersistencePort.js
@@ -1614,7 +1614,7 @@ class IAwarenessPersistencePort {
 
 
 // ============================================================================
-// FILE 17/54: domain/ports/IAwarenessVSCodePort.js
+// FILE 17/49: domain/ports/IAwarenessVSCodePort.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/ports/IAwarenessVSCodePort.js
@@ -1790,7 +1790,7 @@ class IAwarenessVSCodePort {
 
 
 // ============================================================================
-// FILE 18/54: domain/ports/IFileSystemPort.js
+// FILE 18/49: domain/ports/IFileSystemPort.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/ports/IFileSystemPort.js
@@ -1855,7 +1855,7 @@ class IFileSystemPort {
 
 
 // ============================================================================
-// FILE 19/54: domain/ports/IHashGeneratorPort.js
+// FILE 19/49: domain/ports/IHashGeneratorPort.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/ports/IHashGeneratorPort.js
@@ -1890,7 +1890,7 @@ class IHashGeneratorPort {
 
 
 // ============================================================================
-// FILE 20/54: domain/ports/IIdGeneratorPort.js
+// FILE 20/49: domain/ports/IIdGeneratorPort.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/ports/IIdGeneratorPort.js

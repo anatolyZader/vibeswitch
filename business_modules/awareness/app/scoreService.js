@@ -1,18 +1,28 @@
 /**
- * ScoreCalculatorD - Domain service for calculating awareness scores
+ * ScoreService - Application service for score orchestration
  * 
- * Encapsulates business logic for calculating awareness scores based on
- * user review behavior and AI suggestions. This is a domain service.
+ * Handles orchestration logic for score calculation:
+ * - Time-based filtering (recent activity window)
+ * - State management (current score, components)
+ * - Callback orchestration
+ * - Display formatting
+ * 
+ * Pure scoring calculations are delegated to ScoreCalculationServiceD (domain layer).
  */
 
-const { getRelativePath } = require('../utils/utils');
+const { getRelativePath } = require('../domain/utils/utils');
 
-class ScoreCalculatorD {
+class ScoreService {
     /**
+     * @param {ScoreCalculationServiceD} scoreCalculationServiceD - Domain service for score calculations
      * @param {IAwarenessVSCodePort} vscodePort - VS Code port (interface, optional)
      * @param {ILoggerPort} loggerPort - Logger port (interface, optional)
      */
-    constructor(vscodePort = null, loggerPort = null) {
+    constructor(scoreCalculationServiceD, vscodePort = null, loggerPort = null) {
+        if (!scoreCalculationServiceD) {
+            throw new Error('ScoreService requires scoreCalculationServiceD');
+        }
+        this.scoreCalculationServiceD = scoreCalculationServiceD;
         this.vscodePort = vscodePort;
         this.loggerPort = loggerPort;
         this.currentScore = 0;
@@ -25,12 +35,11 @@ class ScoreCalculatorD {
     }
 
     /**
-     * Calculate awareness score based on suggestions and review debt
+     * Update awareness score based on suggestions and review debt
      * @param {Array} aiSuggestions - Array of AI suggestions
      * @param {Function} getDebtScore - Function to get debt score
      * @param {Function} getReviewDebtSummary - Function to get debt summary
      * @param {Function} onScoreUpdate - Callback when score updates
-     * @returns {Object} Score object with total and components
      */
     updateScore(aiSuggestions, getDebtScore, getReviewDebtSummary, onScoreUpdate) {
         const now = Date.now();
@@ -49,7 +58,7 @@ class ScoreCalculatorD {
         
         // Rate-limited debug logging via logger port
         if (this.loggerPort) {
-            this.loggerPort.debug(`Updating score: ${recentSuggestions.length} recent, ${aiSuggestions.length} total, debt: ${debtScore}`, 'scoreCalculator:updateScore');
+            this.loggerPort.debug(`Updating score: ${recentSuggestions.length} recent, ${aiSuggestions.length} total, debt: ${debtScore}`, 'scoreService:updateScore');
         }
         
         // Only calculate if we have suggestions in the last 10 seconds
@@ -66,7 +75,8 @@ class ScoreCalculatorD {
                 this.scores = { review: 0, critical: 0, adaptation: 0, debt: debtScore };
             } else {
                 // No recent activity and no debt
-                this.currentScore = -1; // Special value: no data yet
+                // Use explicit state: score of 0 represents "no activity" (not magic value -1)
+                this.currentScore = 0;
                 this.scores = { review: 0, critical: 0, adaptation: 0, debt: 0 };
             }
             // Trigger callback for meter update
@@ -104,7 +114,8 @@ class ScoreCalculatorD {
         
         if (completed.length === 0) {
             // No suggestions at all
-            this.currentScore = -1;
+            // Use explicit state: score of 0 represents "no activity" (not magic value -1)
+            this.currentScore = 0;
             this.scores = { review: 0, critical: 0, adaptation: 0, debt: 0 };
             if (onScoreUpdate) {
                 onScoreUpdate();
@@ -112,14 +123,15 @@ class ScoreCalculatorD {
             return;
         }
         
+        // Delegate to domain service for pure scoring calculations
         // 1. Code Review Rate (40 points)
-        this.scores.review = this.calculateReviewScore(completed);
+        this.scores.review = this.scoreCalculationServiceD.calculateReviewScore(completed);
         
         // 2. Critical Evaluation (30 points)
-        this.scores.critical = this.calculateCriticalScore(completed);
+        this.scores.critical = this.scoreCalculationServiceD.calculateCriticalScore(completed);
         
         // 3. Code Adaptation (30 points)
-        this.scores.adaptation = this.calculateAdaptationScore(completed);
+        this.scores.adaptation = this.scoreCalculationServiceD.calculateAdaptationScore(completed);
         
         // 4. Review Debt (30 points)
         this.scores.debt = debtScore;
@@ -139,88 +151,10 @@ class ScoreCalculatorD {
     }
 
     /**
-     * Calculate review score (0-40)
-     * High score = user carefully reviewed code
-     */
-    calculateReviewScore(suggestions) {
-        const reviewedCount = suggestions.filter(s => s.reviewed).length;
-        const totalReviewTime = suggestions.reduce((sum, s) => sum + s.reviewTime, 0);
-        const avgReviewTime = totalReviewTime / suggestions.length;
-        
-        // Review rate (0-20): % of suggestions reviewed
-        const reviewRate = (reviewedCount / suggestions.length) * 20;
-        
-        // Review depth (0-20): Average time spent reviewing
-        // Good: 10+ seconds per suggestion = 20 points
-        // Fair: 5-10 seconds = 10-20 points
-        // Poor: <5 seconds = 0-10 points
-        const reviewDepth = Math.min((avgReviewTime / 10000) * 20, 20);
-        
-        return Math.round(reviewRate + reviewDepth);
-    }
-
-    /**
-     * Calculate critical evaluation score (0-30)
-     * High score = user is selective (accepts some, rejects some)
-     * LOW SCORE = GOOD in DEV mode (means careful, not blind acceptance)
-     */
-    calculateCriticalScore(suggestions) {
-        const accepted = suggestions.filter(s => s.status === 'accepted').length;
-        const rejected = suggestions.filter(s => s.status === 'rejected').length;
-        const total = suggestions.length;
-        
-        const acceptRate = accepted / total;
-        const rejectRate = rejected / total;
-        
-        // INVERTED: In DEV mode, blind acceptance = HIGH score (bad)
-        // We want LOW scores (careful review, selective acceptance)
-        
-        if (acceptRate === 1.0) {
-            // Accepts everything blindly - WORST (high score = bad in DEV)
-            return 30;
-        } else if (rejectRate === 1.0) {
-            // Rejects everything (not using AI effectively)
-            return 20;
-        } else if (acceptRate >= 0.6 && acceptRate <= 0.8) {
-            // Moderate acceptance - not great, not terrible
-            return 15;
-        } else if (acceptRate < 0.5) {
-            // Low acceptance rate = careful review = BEST
-            return 0;
-        } else {
-            // Linear interpolation for other cases
-            return Math.round(acceptRate * 30);
-        }
-    }
-
-    /**
-     * Calculate adaptation score (0-30)
-     * High score = user customizes AI suggestions
-     */
-    calculateAdaptationScore(suggestions) {
-        const adapted = suggestions.filter(s => s.status === 'adapted').length;
-        const adaptRate = adapted / suggestions.length;
-        
-        // Average edits per suggestion
-        const totalEdits = suggestions.reduce((sum, s) => sum + s.editCount, 0);
-        const avgEdits = totalEdits / suggestions.length;
-        
-        // Adaptation rate (0-15): % of suggestions user edited
-        const adaptationRate = adaptRate * 15;
-        
-        // Adaptation depth (0-15): How much editing per suggestion
-        // Good: 2+ edits = 15 points
-        // Fair: 1 edit = 7.5 points
-        // Poor: 0 edits = 0 points
-        const adaptationDepth = Math.min((avgEdits / 2) * 15, 15);
-        
-        return Math.round(adaptationRate + adaptationDepth);
-    }
-
-    /**
      * Get current awareness score and breakdown
      * @param {Array} aiSuggestions - Array of AI suggestions
      * @param {Function} getReviewDebtSummary - Function to get debt summary
+     * @returns {Object} Score data with total, components, suggestions, debt, and debug info
      */
     getScore(aiSuggestions, getReviewDebtSummary) {
         const debtSummary = getReviewDebtSummary();
@@ -255,7 +189,7 @@ class ScoreCalculatorD {
                         }
                     } catch (err) {
                         if (this.loggerPort) {
-                            this.loggerPort.error('AwarenessMonitor: Error parsing document URI', err);
+                            this.loggerPort.error('ScoreService: Error parsing document URI', err);
                         }
                     }
                 }
@@ -312,6 +246,7 @@ class ScoreCalculatorD {
 
     /**
      * Get current score value
+     * @returns {number} Current score
      */
     getCurrentScore() {
         return this.currentScore;
@@ -319,11 +254,11 @@ class ScoreCalculatorD {
 
     /**
      * Get score components
+     * @returns {Object} Score components
      */
     getScoreComponents() {
         return { ...this.scores };
     }
 }
 
-module.exports = ScoreCalculatorD;
-
+module.exports = ScoreService;

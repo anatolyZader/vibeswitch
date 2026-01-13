@@ -14,8 +14,8 @@ const SuggestionAggregate = require('../domain/aggregates/suggestionAggregate');
 // Import domain entities
 const Change = require('../domain/entities/change');
 
-// Import domain services
-const KeepAllDetector = require('../domain/services/keepAllDetector');
+// Import app layer services
+const KeepAllDetectorService = require('./keepAllDetectorService');
 
 // Import domain utilities
 const { rangesOverlap } = require('../domain/utils/utils');
@@ -31,7 +31,7 @@ class SuggestionService {
     /**
      * @param {SuggestionAggregate} suggestionAggregate - Suggestion aggregate (required)
      * @param {DebtService} debtService - Debt service (required)
-     * @param {KeepAllDetector} keepAllDetector - Keep all detector (optional)
+     * @param {KeepAllDetectorService} keepAllDetectorService - Keep all detector service (optional)
      * @param {IAwarenessVSCodePort} vscodeAdapter - VS Code adapter (required)
      * @param {ILoggerPort} loggerAdapter - Logger adapter (optional)
      * @param {IAwarenessMessagingPort} messagingAdapter - Messaging adapter (optional)
@@ -42,11 +42,12 @@ class SuggestionService {
      * @param {Function} onKeepAll - Keep all callback (optional)
      * @param {Set} activeStatusCheckTimers - Set to track status check timers (required)
      * @param {Function} isActive - Function to check if service is active (required)
+     * @param {string} instanceId - Instance ID for generation-based timer cancellation (required)
      */
     constructor({
         suggestionAggregate,
         debtService,
-        keepAllDetector = null,
+        keepAllDetectorService = null,
         vscodeAdapter,
         loggerAdapter = null,
         messagingAdapter = null,
@@ -56,7 +57,8 @@ class SuggestionService {
         onAISuggestionOutcome = null,
         onKeepAll = null,
         activeStatusCheckTimers,
-        isActive
+        isActive,
+        instanceId
     }) {
         if (!suggestionAggregate) {
             throw new Error('SuggestionService requires suggestionAggregate');
@@ -73,10 +75,13 @@ class SuggestionService {
         if (!isActive || typeof isActive !== 'function') {
             throw new Error('SuggestionService requires isActive function');
         }
+        if (!instanceId) {
+            throw new Error('SuggestionService requires instanceId for timer cancellation');
+        }
 
         this.suggestionAggregate = suggestionAggregate;
         this.debtService = debtService;
-        this.keepAllDetector = keepAllDetector;
+        this.keepAllDetectorService = keepAllDetectorService;
         this.vscodeAdapter = vscodeAdapter;
         this.loggerAdapter = loggerAdapter;
         this.messagingAdapter = messagingAdapter;
@@ -87,6 +92,7 @@ class SuggestionService {
         this.onKeepAll = onKeepAll;
         this.activeStatusCheckTimers = activeStatusCheckTimers;
         this.isActive = isActive;
+        this.instanceId = instanceId; // Store instance ID for generation-based cancellation
     }
 
     /**
@@ -446,16 +452,23 @@ class SuggestionService {
                     // Check for keep all pattern
                     const batch = suggestion.batchId ? this.suggestionAggregate.getBatch(suggestion.batchId) : null;
                     if (batch && batch.isFullyResolved() && batch.isKeepAllPattern()) {
+                        // Track each accepted suggestion individually (not batch-level)
+                        // KeepAllDetector expects per-suggestion data: { id, document, size }
+                        if (this.keepAllDetectorService && suggestion) {
+                            this.keepAllDetectorService.trackAcceptance({
+                                id: suggestion.id,
+                                document: suggestion.document,
+                                size: suggestion.size || 0
+                            });
+                        }
+                        
+                        // Batch-level result for events/callbacks (separate from KeepAll detection)
                         const result = {
                             batchId: batch.batchId,
                             suggestionIds: batch.getSuggestionIdStrings(),
                             filePath: batch.filePath.toString(),
                             acceptanceCount: batch.acceptedCount
                         };
-
-                        if (this.keepAllDetector) {
-                            this.keepAllDetector.trackAcceptance(result);
-                        }
 
                         if (this.messagingAdapter) {
                             safe('publishKeepAllEvent', async () => {
@@ -474,8 +487,13 @@ class SuggestionService {
                     }
                 } else {
                     // No user interaction yet - keep pending, schedule another check
+                    const instanceId = this.instanceId; // Capture instance ID at timer creation
                     const timer = setTimeout(() => {
                         this.activeStatusCheckTimers.delete(timer);
+                        // Generation-based cancellation: only execute if instance ID matches
+                        if (this.instanceId !== instanceId) {
+                            return; // Instance was restarted, ignore this timer
+                        }
                         if (this.isActive()) {
                             this.checkSuggestionStatus(suggestion.id);
                         }
@@ -565,8 +583,13 @@ class SuggestionService {
         }
 
         // Schedule status check after 5 seconds
+        const instanceId = this.instanceId; // Capture instance ID at timer creation
         const timer = setTimeout(() => {
             this.activeStatusCheckTimers.delete(timer);
+            // Generation-based cancellation: only execute if instance ID matches
+            if (this.instanceId !== instanceId) {
+                return; // Instance was restarted, ignore this timer
+            }
             if (this.isActive()) {
                 this.checkSuggestionStatus(suggestion.id);
             }
@@ -596,6 +619,50 @@ class SuggestionService {
         return this.suggestionAggregate ? this.suggestionAggregate.getSuggestionsByStatus(status) : [];
     }
 
+    /**
+     * Mark suggestion as reviewed (single authority for suggestion state)
+     * This method is the ONLY place that should mutate suggestion.reviewed
+     * @param {string} suggestionId - Suggestion ID
+     * @param {number} reviewTime - Review time in milliseconds
+     */
+    markSuggestionAsReviewed(suggestionId, reviewTime = 0) {
+        if (!this.suggestionAggregate) return;
+        
+        const suggestion = this.suggestionAggregate.findSuggestion(suggestionId);
+        if (suggestion) {
+            // Single authority: only SuggestionService mutates suggestion.reviewed
+            suggestion.reviewed = true;
+            suggestion.reviewTime = (suggestion.reviewTime || 0) + reviewTime;
+            
+            if (this.loggerAdapter) {
+                this.loggerAdapter.debug(`Suggestion ${suggestionId} marked as reviewed (time: ${reviewTime}ms)`);
+            }
+        }
+    }
+    
+    /**
+     * Update suggestion review time (used by ReviewTrackingService when closing reviews)
+     * @param {string} suggestionId - Suggestion ID
+     * @param {number} reviewTime - Additional review time in milliseconds
+     */
+    updateSuggestionReviewTime(suggestionId, reviewTime) {
+        if (!this.suggestionAggregate) return;
+        
+        const suggestion = this.suggestionAggregate.findSuggestion(suggestionId);
+        if (suggestion) {
+            suggestion.reviewTime = (suggestion.reviewTime || 0) + reviewTime;
+        }
+    }
+    
+    /**
+     * Get suggestion by ID
+     * @param {string} suggestionId - Suggestion ID
+     * @returns {Object|null} Suggestion or null
+     */
+    getSuggestionById(suggestionId) {
+        return this.suggestionAggregate ? this.suggestionAggregate.findSuggestion(suggestionId) : null;
+    }
+    
     /**
      * Check if file has pending suggestions
      * @param {string} documentUri - Document URI string

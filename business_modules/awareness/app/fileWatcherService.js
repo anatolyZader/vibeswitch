@@ -1,8 +1,15 @@
 /**
- * FileWatcherService - Application service for file system monitoring
+ * FileWatcherService - Application service for handling externally created files
  * 
- * Orchestrates file system watching, coordinates with suggestion handler and debt service.
- * This is an application service that handles infrastructure orchestration.
+ * Handles files created outside VS Code (terminal, etc.) that VS Code events might miss.
+ * 
+ * NOTE: This service NO LONGER uses fs.watch due to:
+ * - Platform inconsistencies (Linux issues)
+ * - Performance problems (recursive watching)
+ * - Duplicate events with VS Code's onDidCreateFiles
+ * 
+ * Instead, it provides utility methods that can be called from VS Code events
+ * or other sources. VS Code's onDidCreateFiles event is the primary mechanism.
  */
 
 const path = require('path'); // Pure utility library, no I/O - acceptable
@@ -16,15 +23,11 @@ class FileWatcherService {
      * @param {Function} updateScore - Score update callback
      * @param {Function} onScoreUpdate - Score update callback
      * @param {IAwarenessVSCodePort} vscodePort - VS Code port (interface)
-     * @param {IFileSystemPort} fileSystemPort - File system port (interface)
      * @param {ILoggerPort} loggerPort - Logger port (interface)
      */
-    constructor(suggestionService, debtService, updateScore, onScoreUpdate, vscodePort, fileSystemPort, loggerPort) {
+    constructor(suggestionService, debtService, updateScore, onScoreUpdate, vscodePort, loggerPort) {
         if (!vscodePort) {
             throw new Error('FileWatcherService requires vscodePort');
-        }
-        if (!fileSystemPort) {
-            throw new Error('FileWatcherService requires fileSystemPort');
         }
         if (!loggerPort) {
             throw new Error('FileWatcherService requires loggerPort');
@@ -35,91 +38,52 @@ class FileWatcherService {
         this.updateScore = updateScore;
         this.onScoreUpdate = onScoreUpdate;
         this.vscodePort = vscodePort;
-        this.fileSystemPort = fileSystemPort;
         this.loggerPort = loggerPort;
         
-        // File system watcher for externally created files
-        this.fileSystemWatcher = null;
-        this.watchedDirectories = new Set();
-        this.recentlyCreatedFiles = new Map(); // path -> timestamp (to avoid duplicate events)
+        // Duplicate detection for externally created files (to avoid processing same file twice)
+        this.recentlyCreatedFiles = new Map(); // path -> timestamp
     }
 
     /**
-     * Set up file system watcher to detect externally created files (terminal, etc.)
+     * Setup file watcher (NO-OP - fs.watch removed)
+     * 
+     * VS Code's onDidCreateFiles event is now the primary mechanism for file creation detection.
+     * This method is kept for backward compatibility but does nothing.
+     * 
+     * @deprecated File system watching removed - use VS Code events only
      */
     setupFileSystemWatcher() {
-        const workspaceFolders = this.vscodePort.workspaceFolders;
-        if (!workspaceFolders || workspaceFolders.length === 0) {
-            this.loggerPort.log('AwarenessMonitor: No workspace folders, skipping file system watcher');
-            return;
-        }
-
-        // Watch all workspace folders
-        for (const folder of workspaceFolders) {
-            const folderPath = folder.uri.fsPath;
-            if (this.watchedDirectories.has(folderPath)) {
-                continue; // Already watching
-            }
-
-            try {
-                this.loggerPort.log(`AwarenessMonitor: Setting up file system watcher for ${folderPath}`);
-                
-                // Watch for file creation events using file system adapter
-                const watcher = this.fileSystemPort.watch(folderPath, { recursive: true }, (eventType, filename) => {
-                    if (!filename) return;
-                    
-                    const filePath = path.join(folderPath, filename);
-                    
-                    // Only process 'rename' events (which includes file creation)
-                    if (eventType === 'rename') {
-                        // Check if file exists (it was created, not deleted) using file system adapter
-                        this.fileSystemPort.stat(filePath, (err, stats) => {
-                            if (err) {
-                                // File doesn't exist (was deleted), ignore
-                                return;
-                            }
-                            
-                            if (stats.isFile()) {
-                                // Avoid duplicate events (same file within 1 second)
-                                const now = Date.now();
-                                const lastSeen = this.recentlyCreatedFiles.get(filePath);
-                                if (lastSeen && (now - lastSeen) < 1000) {
-                                    return; // Already processed recently
-                                }
-                                this.recentlyCreatedFiles.set(filePath, now);
-                                
-                                // Clean up old entries (older than 5 seconds)
-                                for (const [path, timestamp] of this.recentlyCreatedFiles.entries()) {
-                                    if (now - timestamp > 5000) {
-                                        this.recentlyCreatedFiles.delete(path);
-                                    }
-                                }
-                                
-                                this.loggerPort.log(`AwarenessMonitor: Externally created file detected: ${filePath}`);
-                                this.handleExternallyCreatedFile(filePath);
-                            }
-                        });
-                    }
-                });
-
-                watcher.on('error', (err) => {
-                    this.loggerPort.error(`AwarenessMonitor: File system watcher error: ${err.message}`, err);
-                });
-
-                this.fileSystemWatcher = watcher;
-                this.watchedDirectories.add(folderPath);
-                this.loggerPort.log(`AwarenessMonitor: File system watcher active for ${folderPath}`);
-            } catch (error) {
-                this.loggerPort.error(`AwarenessMonitor: Failed to set up file system watcher for ${folderPath}`, error);
-            }
-        }
+        // NO-OP: fs.watch removed due to platform issues and performance problems
+        // VS Code's onDidCreateFiles event handles file creation detection
+        this.loggerPort.log('AwarenessMonitor: File system watcher setup skipped (using VS Code events only)');
     }
 
     /**
      * Handle a file that was created externally (via terminal, etc.)
+     * 
+     * This method is called from VS Code events (onDidCreateFiles) or other sources.
+     * It provides duplicate detection and processes the file as a suggestion.
+     * 
      * @param {string} filePath - Path to the file
      */
     handleExternallyCreatedFile(filePath) {
+        if (!filePath) return;
+        
+        // Duplicate detection (same file within 1 second)
+        const now = Date.now();
+        const lastSeen = this.recentlyCreatedFiles.get(filePath);
+        if (lastSeen && (now - lastSeen) < 1000) {
+            return; // Already processed recently
+        }
+        this.recentlyCreatedFiles.set(filePath, now);
+        
+        // Clean up old entries (older than 5 seconds)
+        for (const [path, timestamp] of this.recentlyCreatedFiles.entries()) {
+            if (now - timestamp > 5000) {
+                this.recentlyCreatedFiles.delete(path);
+            }
+        }
+        
         // Skip non-code files
         const ext = path.extname(filePath).toLowerCase();
         if (!CODE_EXTENSIONS.includes(ext)) {
@@ -154,122 +118,49 @@ class FileWatcherService {
     }
 
     /**
-     * Scan existing files in workspace and add them to debt if needed
-     * Called on startup to catch files that were created before the extension was active
+     * Scan existing files (NO-OP - removed due to performance issues)
+     * 
+     * Full workspace scans cause huge performance hits on startup.
+     * VS Code events (onDidCreateFiles, onDidSaveTextDocument) handle file detection.
+     * 
+     * Files created before extension activation will be detected when:
+     * - User opens them (onDidOpenTextDocument)
+     * - User saves them (onDidSaveTextDocument)
+     * - VS Code detects them (onDidCreateFiles)
+     * 
+     * @deprecated Full workspace scan removed - use VS Code events only
      */
     scanExistingFiles() {
-        const workspaceFolders = this.vscodePort.workspaceFolders;
-        if (!workspaceFolders || workspaceFolders.length === 0) {
-            this.loggerPort.log('AwarenessMonitor: No workspace folders found, skipping file scan');
-            return;
-        }
-
-        this.loggerPort.log('AwarenessMonitor: Scanning existing files for debt...');
-        
-        const ignoreDirs = ['node_modules', '.git', '.vscode', 'dist', 'build', 'out', 'target', '.next', '.cache'];
-        
-        let scanned = 0;
-        let added = 0;
-        
-        const scanDirectory = (dirPath) => {
-            try {
-                // Use file system adapter for directory reading
-                const entries = this.fileSystemPort.readdirSync(dirPath, { withFileTypes: true });
-                
-                for (const entry of entries) {
-                    const fullPath = path.join(dirPath, entry.name);
-                    
-                    // Skip ignored directories
-                    if (entry.isDirectory()) {
-                        if (ignoreDirs.includes(entry.name) || entry.name.startsWith('.')) {
-                            continue;
-                        }
-                        scanDirectory(fullPath);
-                        continue;
-                    }
-                    
-                    // Check if it's a code file
-                    const ext = path.extname(entry.name).toLowerCase();
-                    if (!CODE_EXTENSIONS.includes(ext)) {
-                        continue;
-                    }
-                    
-                    scanned++;
-                    
-                    // Check if already in debt - use canonical URI string
-                    const canonicalUri = UriPathUtilities.normalizeToUri(this.vscodePort, fullPath);
-                    if (this.debtService && this.debtService.getDebtMap().has(canonicalUri)) {
-                        continue; // Already tracked
-                    }
-                    
-                    // Check file content using file system adapter
-                    try {
-                        const content = this.fileSystemPort.readFileSync(fullPath, 'utf8');
-                        if (content.trim().length > 0) {
-                            // File has content and isn't in debt yet - add it
-                            this.loggerPort.log(`AwarenessMonitor: Found existing file to add to debt: ${fullPath}`);
-                            this.handleExternallyCreatedFile(fullPath);
-                            added++;
-                        }
-                    } catch (err) {
-                        // Skip files we can't read
-                        continue;
-                    }
-                }
-            } catch (err) {
-                // Skip directories we can't read
-                this.loggerPort.error(`AwarenessMonitor: Error scanning directory ${dirPath}`, err);
-            }
-        };
-        
-        // Scan each workspace folder
-        for (const folder of workspaceFolders) {
-            const folderPath = folder.uri.fsPath;
-            this.loggerPort.log(`AwarenessMonitor: Scanning workspace folder: ${folderPath}`);
-            scanDirectory(folderPath);
-        }
-        
-        this.loggerPort.log(`AwarenessMonitor: File scan complete: ${scanned} files scanned, ${added} files added to debt`);
-        
-        // Trigger score update after scan (even if no files added, to refresh UI)
-        setTimeout(() => {
-            if (this.updateScore) {
-                this.updateScore();
-            }
-            if (this.onScoreUpdate) {
-                this.loggerPort.log('AwarenessMonitor: Triggering score update callback after scan...');
-                this.onScoreUpdate();
-            }
-        }, added > 0 ? 2000 : 500); // Longer delay if files were added (to allow async file reading to complete)
+        // NO-OP: Full workspace scan removed due to performance issues
+        // VS Code events handle file detection when files are opened/saved/created
+        this.loggerPort.log('AwarenessMonitor: File scan skipped (using VS Code events only)');
     }
 
     /**
-     * Close file system watcher
+     * Close file watcher (cleanup)
      */
     close() {
-        if (this.fileSystemWatcher) {
-            this.fileSystemWatcher.close();
-            this.fileSystemWatcher = null;
-            this.loggerPort.log('AwarenessMonitor: File system watcher closed');
-        }
-        this.watchedDirectories.clear();
+        // Clean up duplicate detection cache
         this.recentlyCreatedFiles.clear();
+        this.loggerPort.log('AwarenessMonitor: File watcher service closed');
     }
 
     /**
-     * Get watched directories
-     * @returns {Array} Array of watched directory paths
+     * Get watched directories (NO-OP - fs.watch removed)
+     * @returns {Array} Empty array (no directories watched)
+     * @deprecated File system watching removed
      */
     getWatchedDirectories() {
-        return Array.from(this.watchedDirectories);
+        return []; // No directories watched (using VS Code events only)
     }
 
     /**
-     * Check if file system watcher is active
-     * @returns {boolean} True if watcher is active
+     * Check if file system watcher is active (always false - fs.watch removed)
+     * @returns {boolean} Always false (no fs.watch)
+     * @deprecated File system watching removed
      */
     isActive() {
-        return this.fileSystemWatcher !== null;
+        return false; // No fs.watch active (using VS Code events only)
     }
 }
 

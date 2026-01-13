@@ -1,11 +1,11 @@
 /**
- * KeepAllDetector - Domain service for detecting "Keep All" patterns
+ * KeepAllDetectorService - Application service for detecting "Keep All" patterns
  * 
- * Encapsulates business logic for detecting when users rapidly accept
- * multiple AI suggestions. This is a domain service.
+ * Handles stateful, time-based tracking of rapid suggestion acceptances.
+ * This is an application service (not domain) because it manages state and time windows.
  */
 
-class KeepAllDetector {
+class KeepAllDetectorService {
     /**
      * @param {Function} onKeepAll - Callback when "keep all" pattern detected
      * @param {ILoggerPort} loggerPort - Logger port (interface, optional)
@@ -103,5 +103,5 @@ class KeepAllDetector {
     }
 }
 
-module.exports = KeepAllDetector;
+module.exports = KeepAllDetectorService;
 

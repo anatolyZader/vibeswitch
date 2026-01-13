@@ -13,7 +13,7 @@ class ReviewTrackingService {
      * @param {Object} rangeOperationServiceD - Range operation domain service
      * @param {IAwarenessVSCodePort} vscodePort - VS Code port
      * @param {ILoggerPort} loggerPort - Logger port (optional)
-     * @param {Function} onSuggestionReviewed - Callback when suggestion is reviewed
+     * @param {Function} onSuggestionReviewed - Callback when suggestion is reviewed (suggestionId, reviewTime)
      * @param {Function} onStatusCheck - Callback to trigger status check
      * @param {Object} timerRegistry - Timer registry for managing timers (optional, falls back to setTimeout)
      */
@@ -128,12 +128,17 @@ class ReviewTrackingService {
         const dwellTimer = createTimer(() => {
             const currentReview = this.activeReviews.get(uri);
             if (currentReview && currentReview.suggestionId === suggestionId) {
-                // Mark suggestion as reviewed after dwell time
+                // Calculate review time (dwell time threshold)
+                const reviewTime = this.DWELL_TIME_MS;
+                
+                // Signal: suggestion was reviewed (dwell time reached)
+                // Pass review time to callback - SuggestionService will handle state mutation
                 if (this.onSuggestionReviewed) {
-                    this.onSuggestionReviewed(suggestionId);
+                    this.onSuggestionReviewed(suggestionId, reviewTime);
                 }
                 
-                // Trigger status check
+                // Signal: trigger status check (after review state updated)
+                // SuggestionService owns status determination
                 if (this.onStatusCheck) {
                     this.onStatusCheck(suggestionId);
                 }
@@ -167,17 +172,15 @@ class ReviewTrackingService {
         }
         
         // Update review time if requested
+        // SuggestionService owns all state mutations - delegate to it
         if (updateReviewTime && activeReview.reviewStarted) {
             const reviewDuration = now - activeReview.reviewStarted;
             if (reviewDuration > 0 && this.suggestionService) {
-                const suggestion = this.suggestionService.getSuggestionById(activeReview.suggestionId);
-                if (suggestion) {
-                    const currentReviewTime = suggestion.reviewTime || 0;
-                    this.suggestionService.updateSuggestionReviewTime(
-                        activeReview.suggestionId,
-                        currentReviewTime + reviewDuration
-                    );
-                }
+                // Delegate to SuggestionService - it handles accumulation internally
+                this.suggestionService.updateSuggestionReviewTime(
+                    activeReview.suggestionId,
+                    reviewDuration
+                );
             }
         }
         

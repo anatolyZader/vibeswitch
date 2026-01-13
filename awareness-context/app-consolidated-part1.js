@@ -4,8 +4,8 @@
  * This file contains part 1 of 3 of the app layer code.
  * Generated automatically for ChatGPT context.
  * 
- * Files in this part: 4/13
- * Generated: 2026-01-12T18:19:21.019Z
+ * Files in this part: 4/15
+ * Generated: 2026-01-13T15:56:48.097Z
  */
 
 // ============================================================================
@@ -14,7 +14,7 @@
 
 
 // ============================================================================
-// FILE 1/13: app/IAwarenessService.js
+// FILE 1/15: app/IAwarenessService.js
 // ============================================================================
 
 (function() { // IIFE scope for app/IAwarenessService.js
@@ -96,7 +96,7 @@ class IAwarenessService {
 
 
 // ============================================================================
-// FILE 2/13: app/awarenessService.js
+// FILE 2/15: app/awarenessService.js
 // ============================================================================
 
 (function() { // IIFE scope for app/awarenessService.js
@@ -125,10 +125,9 @@ class IAwarenessService {
 // Import input layer
 // const AwarenessEventListener = require('../input/awarenessEventListener'); // Commented for consolidation
 
-// Import domain services
-// const ScoreCalculator = require('../domain/services/scoreCalculator'); // Commented for consolidation
-// const KeepAllDetector = require('../domain/services/keepAllDetector'); // Commented for consolidation
-// EventSubscriptionDService and VSCodeWorkspaceDService are now injected via constructor (created in extension.js)
+// Import app layer services
+// const ScoreService = require('./scoreService'); // Commented for consolidation
+// const KeepAllDetectorService = require('./keepAllDetectorService'); // Commented for consolidation
 
 // Import domain aggregates
 // const SuggestionAggregate = require('../domain/aggregates/suggestionAggregate'); // Commented for consolidation
@@ -170,6 +169,7 @@ class AwarenessService extends IAwarenessService {
      * @param {Object} adapters.reviewSessionServiceD - Review session domain service
      * @param {Object} adapters.debtCalculationServiceD - Debt calculation domain service
      * @param {Object} adapters.suggestionBatchServiceD - Suggestion batch domain service
+     * @param {Object} adapters.scoreCalculationServiceD - Score calculation domain service
      */
     constructor({ 
         vscodeAdapter, 
@@ -185,7 +185,8 @@ class AwarenessService extends IAwarenessService {
         changeClassificationServiceD,
         reviewSessionServiceD,
         debtCalculationServiceD,
-        suggestionBatchServiceD
+        suggestionBatchServiceD,
+        scoreCalculationServiceD
     }) {
         // Validate required adapters
         if (!vscodeAdapter) {
@@ -227,6 +228,9 @@ class AwarenessService extends IAwarenessService {
         if (!suggestionBatchServiceD) {
             throw new Error('AwarenessService requires suggestionBatchServiceD');
         }
+        if (!scoreCalculationServiceD) {
+            throw new Error('AwarenessService requires scoreCalculationServiceD');
+        }
         
         // Store all injected adapters (Ports and Adapters pattern)
         this.vscodeAdapter = vscodeAdapter;
@@ -246,6 +250,7 @@ class AwarenessService extends IAwarenessService {
         this.reviewSessionServiceD = reviewSessionServiceD;
         this.debtCalculationServiceD = debtCalculationServiceD;
         this.suggestionBatchServiceD = suggestionBatchServiceD;
+        this.scoreCalculationServiceD = scoreCalculationServiceD;
         
         // Optional callbacks for external tracking (e.g., UsageStats)
         this.onAISuggestion = null;
@@ -264,8 +269,8 @@ class AwarenessService extends IAwarenessService {
         this.changeLedger = null;
         this.classificationService = null; // Classification service
         this.eventHandlers = null;
-        this.keepAllDetector = null;
-        this.scoreCalculator = null;
+        this.keepAllDetectorService = null;
+        this.scoreService = null;
         
         // Centralized timer registry
         this.timerRegistry = new TimerRegistry();
@@ -320,9 +325,9 @@ class AwarenessService extends IAwarenessService {
         );
         this.debtService.loadDebt();
         
-        this.keepAllDetector = new KeepAllDetector(this.onKeepAll, this.loggerAdapter); // Adapter implements ILoggerPort
+        this.keepAllDetectorService = new KeepAllDetectorService(this.onKeepAll, this.loggerAdapter); // Adapter implements ILoggerPort
         
-        this.scoreCalculator = new ScoreCalculator(this.vscodeAdapter, this.loggerAdapter); // Adapters implement ports
+        this.scoreService = new ScoreService(this.scoreCalculationServiceD, this.vscodeAdapter, this.loggerAdapter); // Domain service + adapters
 
         // Create suggestion aggregate (replaces AgentSuggestionHandler)
         this.suggestionAggregate = new SuggestionAggregate(
@@ -352,7 +357,7 @@ class AwarenessService extends IAwarenessService {
         this.suggestionService = new SuggestionService({
             suggestionAggregate: this.suggestionAggregate,
             debtService: this.debtService,
-            keepAllDetector: this.keepAllDetector,
+            keepAllDetectorService: this.keepAllDetectorService,
             vscodeAdapter: this.vscodeAdapter,
             loggerAdapter: this.loggerAdapter,
             messagingAdapter: this.messagingAdapter,
@@ -605,7 +610,7 @@ class AwarenessService extends IAwarenessService {
             });
         }
         
-        // Keep: suggestionAggregate, scoreCalculator, debtService, keepAllDetector
+        // Keep: suggestionAggregate, scoreService, debtService, keepAllDetectorService
         // (preserve state for when monitoring restarts)
         
         getLogger().log('AwarenessService: Monitoring stopped');
@@ -613,10 +618,10 @@ class AwarenessService extends IAwarenessService {
     
     /**
      * Update awareness score and trigger callbacks
-     * Delegates to ScoreCalculator.updateScore() to match AwarenessMonitor behavior
+     * Delegates to ScoreService.updateScore() to match AwarenessMonitor behavior
      */
     updateScore() {
-        if (!this.isActive || !this.scoreCalculator) {
+        if (!this.isActive || !this.scoreService) {
             return;
         }
         
@@ -632,7 +637,7 @@ class AwarenessService extends IAwarenessService {
             return this.debtService.getDebtSummary();
         };
         
-        this.scoreCalculator.updateScore(
+        this.scoreService.updateScore(
             suggestions,
             getDebtScore,
             getReviewDebtSummary,
@@ -640,7 +645,7 @@ class AwarenessService extends IAwarenessService {
                 // Publish domain event
                 if (this.messagingAdapter) {
                     safe('publishScoreUpdateEvent', async () => {
-                        const scoreData = this.scoreCalculator.getScore(suggestions, getReviewDebtSummary);
+                        const scoreData = this.scoreService.getScore(suggestions, getReviewDebtSummary);
                         const event = new ScoreUpdateEvent({
                             score: scoreData.total || 0,
                             components: scoreData.components || {},
@@ -663,18 +668,18 @@ class AwarenessService extends IAwarenessService {
     
     /**
      * Get current awareness score
-     * Delegates to ScoreCalculator to match the format expected by UI components
+     * Delegates to ScoreService to match the format expected by UI components
      * @returns {Object} Score data with total, components, suggestions, debt, and debug info
      */
     getScore() {
-        if (!this.scoreCalculator) {
-            // Return default score if calculator not initialized
+        if (!this.scoreService) {
+            // Return default score if service not initialized
             return {
                 total: 0,
                 components: {},
                 suggestions: { total: 0, pending: 0, pendingFiles: [] },
                 debt: { unreviewedFiles: 0, files: [] },
-                debug: { monitoringActive: false, error: 'ScoreCalculator not initialized' }
+                debug: { monitoringActive: false, error: 'ScoreService not initialized' }
             };
         }
         
@@ -686,7 +691,7 @@ class AwarenessService extends IAwarenessService {
             return this.debtService.getDebtSummary();
         };
         
-        const score = this.scoreCalculator.getScore(suggestions, getReviewDebtSummary);
+        const score = this.scoreService.getScore(suggestions, getReviewDebtSummary);
         
         // Add monitoringActive to debug info
         if (score.debug) {
@@ -845,13 +850,13 @@ class AwarenessService extends IAwarenessService {
             hasCallbacks: !!(this.onAISuggestion || this.onAISuggestionOutcome || this.onKeepAll || this.onDebtCleared),
             aiSuggestionsCount: suggestions.length,
             reviewDebtCount: this.debtService ? this.debtService.getDebtSize() : 0,
-            currentScore: this.scoreCalculator ? this.scoreCalculator.getCurrentScore() : 0,
-            scores: this.scoreCalculator ? this.scoreCalculator.getScoreComponents() : {},
+            currentScore: this.scoreService ? this.scoreService.getCurrentScore() : 0,
+            scores: this.scoreService ? this.scoreService.getScoreComponents() : {},
             hasFileSystemWatcher: this.fileWatcher ? this.fileWatcher.isActive() : false,
             hasUpdateTimer: !!this.updateTimer,
             watchedDirectories: this.fileWatcher ? this.fileWatcher.getWatchedDirectories() : [],
             workspaceFolders: VSCodeUtilities.getWorkspaceFolders(this.vscodeAdapter).map(f => f.uri.fsPath),
-            recentAcceptances: this.keepAllDetector ? this.keepAllDetector.getRecentAcceptanceCount() : 0
+            recentAcceptances: this.keepAllDetectorService ? this.keepAllDetectorService.getRecentAcceptanceCount() : 0
         };
     }
     
@@ -1186,7 +1191,7 @@ class AwarenessService extends IAwarenessService {
 
 
 // ============================================================================
-// FILE 3/13: app/changeLedgerService.js
+// FILE 3/15: app/changeLedgerService.js
 // ============================================================================
 
 (function() { // IIFE scope for app/changeLedgerService.js
@@ -1431,7 +1436,7 @@ class ChangeLedgerService {
 
 
 // ============================================================================
-// FILE 4/13: app/classificationService.js
+// FILE 4/15: app/classificationService.js
 // ============================================================================
 
 (function() { // IIFE scope for app/classificationService.js

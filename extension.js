@@ -167,7 +167,8 @@ async function activate(context) {
             changeClassificationServiceD: domainServices.changeClassificationServiceD,
             reviewSessionServiceD: domainServices.reviewSessionServiceD,
             debtCalculationServiceD: domainServices.debtCalculationServiceD,
-            suggestionBatchServiceD: domainServices.suggestionBatchServiceD
+            suggestionBatchServiceD: domainServices.suggestionBatchServiceD,
+            scoreCalculationServiceD: domainServices.scoreCalculationServiceD
         });
         
         // Register service in DI container (before creating controller)

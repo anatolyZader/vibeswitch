@@ -47,6 +47,7 @@ function createAwarenessComposition(context, diContainer) {
     const ReviewSessionServiceD = require('../business_modules/awareness/domain/services/reviewSessionServiceD');
     const DebtCalculationServiceD = require('../business_modules/awareness/domain/services/debtCalculationServiceD');
     const SuggestionBatchServiceD = require('../business_modules/awareness/domain/services/suggestionBatchServiceD');
+    const ScoreCalculationServiceD = require('../business_modules/awareness/domain/services/scoreCalculationServiceD');
 
     // ============================================
     // Create Adapters (Infrastructure Layer)
@@ -100,7 +101,8 @@ function createAwarenessComposition(context, diContainer) {
         changeClassificationServiceD: new ChangeClassificationServiceD(),
         reviewSessionServiceD: new ReviewSessionServiceD(),
         debtCalculationServiceD: new DebtCalculationServiceD(),
-        suggestionBatchServiceD: new SuggestionBatchServiceD()
+        suggestionBatchServiceD: new SuggestionBatchServiceD(),
+        scoreCalculationServiceD: new ScoreCalculationServiceD()
     };
 
     // ============================================

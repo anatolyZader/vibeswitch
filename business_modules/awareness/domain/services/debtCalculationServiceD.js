@@ -11,19 +11,25 @@ class DebtCalculationServiceD {
     }
 
     /**
-     * Calculate debt score (0-30)
-     * @param {Map<string, Debt>} debts - Map of debt entities
-     * @param {Array<Suggestion>} pendingSuggestions - Pending suggestions
+     * Calculate debt score (0-30) - combines file-level and suggestion-level debt
+     * 
+     * Properly separates:
+     * - FileDebt: Unreviewed changes in files (file-level)
+     * - SuggestionDebt: Pending AI suggestions (suggestion-level)
+     * 
+     * @param {Map<string, FileDebt>} fileDebts - Map of file-level debt entities
+     * @param {Array<Suggestion>} pendingSuggestions - Pending suggestions (suggestion-level debt)
      * @returns {number} Debt score (0-30)
      */
-    calculateDebtScore(debts, pendingSuggestions) {
-        if (!debts) debts = new Map();
+    calculateDebtScore(fileDebts, pendingSuggestions) {
+        if (!fileDebts) fileDebts = new Map();
         if (!pendingSuggestions) pendingSuggestions = [];
 
-        const unreviewedFiles = Array.from(debts.values())
+        // File-level debt: unreviewed file changes
+        const unreviewedFiles = Array.from(fileDebts.values())
             .filter(d => d && !d.isReviewed());
 
-        // Pending suggestions are also debt - they represent unreviewed AI-generated code
+        // Suggestion-level debt: pending AI suggestions (tracked separately)
         const pending = pendingSuggestions.filter(s => s && s.status === 'pending');
 
         // If no debt at all, return 0
@@ -42,11 +48,11 @@ class DebtCalculationServiceD {
         // 2. Number of pending suggestions (0-10 points)
         debtScore += this.calculateDebtPendingScore(pending.length);
 
-        // 3. Age of oldest unreviewed file or pending suggestion (0-10 points)
-        const allDebtTimestamps = [
-            ...unreviewedFiles.map(d => d.modifiedAt || now),
-            ...pending.map(s => s.timestamp || now)
-        ];
+        // 3. Age of oldest unreviewed file OR pending suggestion (0-10 points)
+        // Combines both file-level and suggestion-level debt timestamps
+        const fileDebtTimestamps = unreviewedFiles.map(d => d.modifiedAt || now);
+        const suggestionDebtTimestamps = pending.map(s => s.timestamp || now);
+        const allDebtTimestamps = [...fileDebtTimestamps, ...suggestionDebtTimestamps];
 
         if (allDebtTimestamps.length > 0) {
             const oldestDebt = Math.min(...allDebtTimestamps);
@@ -90,14 +96,15 @@ class DebtCalculationServiceD {
     }
 
     /**
-     * Aggregate debt metrics
-     * @param {Map<string, Debt>} debts - Map of debt entities
+     * Aggregate file-level debt metrics
+     * Note: This aggregates file-level debt only. Suggestion debt is tracked separately.
+     * @param {Map<string, FileDebt>} fileDebts - Map of file-level debt entities
      * @returns {Object} Aggregated metrics
      */
-    aggregateDebtMetrics(debts) {
-        if (!debts) debts = new Map();
+    aggregateDebtMetrics(fileDebts) {
+        if (!fileDebts) fileDebts = new Map();
 
-        const debtArray = Array.from(debts.values()).filter(d => d);
+        const debtArray = Array.from(fileDebts.values()).filter(d => d);
         const unreviewed = debtArray.filter(d => !d.isReviewed());
 
         const totalChanges = debtArray.reduce((sum, d) => sum + (d.totalChanges || 0), 0);
@@ -127,15 +134,15 @@ class DebtCalculationServiceD {
     }
 
     /**
-     * Determine if debt should be evicted
-     * @param {Debt} debt - Debt entity
+     * Determine if file-level debt should be evicted
+     * @param {FileDebt} fileDebt - File-level debt entity
      * @param {number} evictionThreshold - Eviction threshold in milliseconds
      * @returns {boolean} True if should evict
      */
-    shouldEvictDebt(debt, evictionThreshold) {
-        if (!debt || !evictionThreshold) return false;
+    shouldEvictDebt(fileDebt, evictionThreshold) {
+        if (!fileDebt || !evictionThreshold) return false;
 
-        const age = Date.now() - (debt.modifiedAt || 0);
+        const age = Date.now() - (fileDebt.modifiedAt || 0);
         return age > evictionThreshold;
     }
 }
