@@ -251,22 +251,6 @@ class DebtService {
         return Math.round(Math.min(debtScore, 30));
     }
     
-    /**
-     * Calculate debt score using domain service (delegates to DebtCalculationServiceD)
-     * This properly separates file-level and suggestion-level debt.
-     * @param {Array} aiSuggestions - Array of AI suggestions (for suggestion-level debt)
-     * @param {DebtCalculationServiceD} debtCalculationServiceD - Domain service for debt calculations
-     * @returns {number} Debt score (0-30)
-     */
-    calculateDebtScoreWithDomainService(aiSuggestions, debtCalculationServiceD) {
-        if (!debtCalculationServiceD) {
-            // Fallback to app-level calculation if domain service not provided
-            return this.calculateDebtScore(aiSuggestions);
-        }
-        
-        // Delegate to domain service with proper separation
-        return debtCalculationServiceD.calculateDebtScore(this.fileDebts, aiSuggestions);
-    }
 
     /**
      * Get file-level debt summary for UI

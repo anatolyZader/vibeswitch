@@ -4,8 +4,8 @@
  * This file contains part 1 of 3 of the domain layer code.
  * Generated automatically for ChatGPT context.
  * 
- * Files in this part: 17/50
- * Generated: 2026-01-13T17:41:29.111Z
+ * Files in this part: 17/43
+ * Generated: 2026-01-14T18:13:49.745Z
  */
 
 // ============================================================================
@@ -14,7 +14,7 @@
 
 
 // ============================================================================
-// FILE 1/50: domain/aggregates/suggestionAggregate.js
+// FILE 1/43: domain/aggregates/suggestionAggregate.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/aggregates/suggestionAggregate.js
@@ -472,7 +472,7 @@ class SuggestionAggregate {
 
 
 // ============================================================================
-// FILE 2/50: domain/entities/change.js
+// FILE 2/43: domain/entities/change.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/entities/change.js
@@ -653,7 +653,7 @@ class Change {
 
 
 // ============================================================================
-// FILE 3/50: domain/entities/debt.js
+// FILE 3/43: domain/entities/debt.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/entities/debt.js
@@ -795,7 +795,7 @@ class Debt {
 
 
 // ============================================================================
-// FILE 4/50: domain/entities/fileDebt.js
+// FILE 4/43: domain/entities/fileDebt.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/entities/fileDebt.js
@@ -945,7 +945,7 @@ class FileDebt {
 
 
 // ============================================================================
-// FILE 5/50: domain/entities/reviewSession.js
+// FILE 5/43: domain/entities/reviewSession.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/entities/reviewSession.js
@@ -1077,7 +1077,7 @@ class ReviewSession {
 
 
 // ============================================================================
-// FILE 6/50: domain/entities/suggestion.js
+// FILE 6/43: domain/entities/suggestion.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/entities/suggestion.js
@@ -1229,7 +1229,7 @@ class Suggestion {
 
 
 // ============================================================================
-// FILE 7/50: domain/entities/suggestionBatch.js
+// FILE 7/43: domain/entities/suggestionBatch.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/entities/suggestionBatch.js
@@ -1378,7 +1378,7 @@ class SuggestionBatch {
 
 
 // ============================================================================
-// FILE 8/50: domain/events/aiSuggestionEvent.js
+// FILE 8/43: domain/events/aiSuggestionEvent.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/events/aiSuggestionEvent.js
@@ -1419,7 +1419,7 @@ class AISuggestionEvent {
 
 
 // ============================================================================
-// FILE 9/50: domain/events/aiSuggestionOutcomeEvent.js
+// FILE 9/43: domain/events/aiSuggestionOutcomeEvent.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/events/aiSuggestionOutcomeEvent.js
@@ -1460,7 +1460,7 @@ class AISuggestionOutcomeEvent {
 
 
 // ============================================================================
-// FILE 10/50: domain/events/debtClearedEvent.js
+// FILE 10/43: domain/events/debtClearedEvent.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/events/debtClearedEvent.js
@@ -1495,7 +1495,7 @@ class DebtClearedEvent {
 
 
 // ============================================================================
-// FILE 11/50: domain/events/keepAllEvent.js
+// FILE 11/43: domain/events/keepAllEvent.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/events/keepAllEvent.js
@@ -1532,7 +1532,7 @@ class KeepAllEvent {
 
 
 // ============================================================================
-// FILE 12/50: domain/events/reviewSessionCompletedEvent.js
+// FILE 12/43: domain/events/reviewSessionCompletedEvent.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/events/reviewSessionCompletedEvent.js
@@ -1572,7 +1572,7 @@ class ReviewSessionCompletedEvent {
 
 
 // ============================================================================
-// FILE 13/50: domain/events/reviewSessionStartedEvent.js
+// FILE 13/43: domain/events/reviewSessionStartedEvent.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/events/reviewSessionStartedEvent.js
@@ -1606,7 +1606,7 @@ class ReviewSessionStartedEvent {
 
 
 // ============================================================================
-// FILE 14/50: domain/events/scoreUpdateEvent.js
+// FILE 14/43: domain/events/scoreUpdateEvent.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/events/scoreUpdateEvent.js
@@ -1645,7 +1645,7 @@ class ScoreUpdateEvent {
 
 
 // ============================================================================
-// FILE 15/50: domain/events/suggestionBatchCreatedEvent.js
+// FILE 15/43: domain/events/suggestionBatchCreatedEvent.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/events/suggestionBatchCreatedEvent.js
@@ -1683,7 +1683,7 @@ class SuggestionBatchCreatedEvent {
 
 
 // ============================================================================
-// FILE 16/50: domain/ports/IAwarenessMessagingPort.js
+// FILE 16/43: domain/ports/IAwarenessMessagingPort.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/ports/IAwarenessMessagingPort.js
@@ -1781,7 +1781,7 @@ class IAwarenessMessagingPort {
 
 
 // ============================================================================
-// FILE 17/50: domain/ports/IAwarenessPersistencePort.js
+// FILE 17/43: domain/ports/IAwarenessPersistencePort.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/ports/IAwarenessPersistencePort.js

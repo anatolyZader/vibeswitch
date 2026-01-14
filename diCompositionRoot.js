@@ -39,15 +39,11 @@ function createAwarenessComposition(context, diContainer) {
     // ============================================
     // Import Domain Service Classes (Core Domain Logic Only)
     // ============================================
-    // Note: Technical utilities (EventSubscription, VSCodeWorkspace) are now in app layer
+    // Note: Score and debt calculations moved to app layer as pure functions
+    // Only keep domain services that protect invariants or contain domain logic
     const RangeOperationServiceD = require('../business_modules/awareness/domain/services/rangeOperationServiceD');
     const UriPathOperationServiceD = require('../business_modules/awareness/domain/services/uriPathOperationServiceD');
-    const SuggestionLifecycleServiceD = require('../business_modules/awareness/domain/services/suggestionLifecycleServiceD');
     const ChangeClassificationServiceD = require('../business_modules/awareness/domain/services/changeClassificationServiceD');
-    const ReviewSessionServiceD = require('../business_modules/awareness/domain/services/reviewSessionServiceD');
-    const DebtCalculationServiceD = require('../business_modules/awareness/domain/services/debtCalculationServiceD');
-    const SuggestionBatchServiceD = require('../business_modules/awareness/domain/services/suggestionBatchServiceD');
-    const ScoreCalculationServiceD = require('../business_modules/awareness/domain/services/scoreCalculationServiceD');
 
     // ============================================
     // Create Adapters (Infrastructure Layer)
@@ -93,16 +89,12 @@ function createAwarenessComposition(context, diContainer) {
     // ============================================
     // Domain services are stateless - no constructor dependencies
     // Ports are passed as method parameters
-    // Note: Technical utilities moved to app layer (VSCodeUtilities, RangeUtilities, UriPathUtilities)
+    // Note: Score and debt calculations moved to app layer as pure functions
+    // Only keep domain services that protect invariants or contain domain logic
     const domainServices = {
-        rangeOperationServiceD: new RangeOperationServiceD(), // Only domain logic: rangesOverlap, isPositionInRange
-        uriPathOperationServiceD: new UriPathOperationServiceD(), // Only domain validation: isCodeDocument, isSkippableUri
-        suggestionLifecycleServiceD: new SuggestionLifecycleServiceD(),
-        changeClassificationServiceD: new ChangeClassificationServiceD(),
-        reviewSessionServiceD: new ReviewSessionServiceD(),
-        debtCalculationServiceD: new DebtCalculationServiceD(),
-        suggestionBatchServiceD: new SuggestionBatchServiceD(),
-        scoreCalculationServiceD: new ScoreCalculationServiceD()
+        rangeOperationServiceD: new RangeOperationServiceD(), // Domain logic: rangesOverlap, isPositionInRange
+        uriPathOperationServiceD: new UriPathOperationServiceD(), // Domain validation: isCodeDocument, isSkippableUri
+        changeClassificationServiceD: new ChangeClassificationServiceD() // Change classification heuristics
     };
 
     // ============================================

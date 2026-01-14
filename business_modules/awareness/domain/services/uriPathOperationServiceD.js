@@ -18,11 +18,10 @@ class UriPathOperationServiceD {
 
     /**
      * Check if document is a code document (domain business rule)
-     * @param {IAwarenessVSCodePort} vscodePort - VS Code port (interface)
      * @param {TextDocument} document - Document to check
      * @returns {boolean} True if code document
      */
-    isCodeDocument(vscodePort, document) {
+    isCodeDocument(document) {
         if (!document) return false;
         
         const scheme = document.uri?.scheme || '';
@@ -50,11 +49,10 @@ class UriPathOperationServiceD {
 
     /**
      * Check if URI should be skipped (domain business rule)
-     * @param {IAwarenessVSCodePort} vscodePort - VS Code port (interface)
      * @param {Uri|string} uri - URI to check
      * @returns {boolean} True if should skip
      */
-    isSkippableUri(vscodePort, uri) {
+    isSkippableUri(uri) {
         if (!uri) return true;
         
         let scheme;

@@ -17,6 +17,11 @@
  * @interface IAwarenessVSCodePort
  */
 class IAwarenessVSCodePort {
+    constructor() {
+        if (new.target === IAwarenessVSCodePort) {
+            throw new Error('Cannot instantiate an abstract class.');
+        }
+    }
     // ============================================================================
     // Document Event Handlers (used by EventHandlers entity)
     // ============================================================================

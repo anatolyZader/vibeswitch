@@ -5,7 +5,7 @@
  * Generated automatically for ChatGPT context.
  * 
  * Files included: 7
- * Generated: 2026-01-13T17:41:29.119Z
+ * Generated: 2026-01-14T18:13:49.753Z
  */
 
 // ============================================================================
@@ -31,11 +31,16 @@
 // const { getLogger } = require('../../../../logger'); // Commented for consolidation
 
 class AwarenessEventEmitterMessagingAdapter extends IAwarenessMessagingPort {
-    constructor(eventEmitter = null) {
+    /**
+     * @param {EventEmitter} eventEmitter - Event emitter instance (optional)
+     * @param {IIdGeneratorPort} idGeneratorPort - ID generator port (optional, for correlation IDs)
+     */
+    constructor(eventEmitter = null, idGeneratorPort = null) {
         super();
         // Use provided event emitter or create a new one
         this.eventEmitter = eventEmitter || new EventEmitter();
         this.logger = getLogger();
+        this.idGeneratorPort = idGeneratorPort; // Use IdGenerator for correlation IDs
     }
 
     /**
@@ -167,6 +172,15 @@ class AwarenessEventEmitterMessagingAdapter extends IAwarenessMessagingPort {
     }
 
     _generateCorrelationId() {
+        // Fix: Use IdGenerator if available (prevents collisions), otherwise fallback
+        if (this.idGeneratorPort) {
+            try {
+                return this.idGeneratorPort.generateUUID();
+            } catch (e) {
+                return this.idGeneratorPort.generateId();
+            }
+        }
+        // Fallback: timestamp + random (less collision-resistant but works)
         return `awareness-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
     }
 }
@@ -541,10 +555,18 @@ class AwarenessWorkspaceStateAdapter extends IAwarenessPersistencePort {
         await this.workspaceState.update(key, undefined);
     }
 
+    /**
+     * Save without awaiting (fire-and-forget)
+     * @deprecated This is not actually synchronous - use save() instead
+     * @param {string} key - Storage key
+     * @param {*} value - Value to save
+     */
     saveSync(key, value) {
-        // workspaceState.update is async, but we provide sync wrapper for compatibility
-        // Note: This will still be async under the hood, but matches the interface
-        this.workspaceState.update(key, value);
+        // Fix: This is not actually sync - workspaceState.update is async
+        // Fire-and-forget pattern (not recommended, but kept for backward compatibility)
+        this.workspaceState.update(key, value).catch(() => {
+            // Silently ignore errors in fire-and-forget mode
+        });
     }
 
     loadSync(key) {

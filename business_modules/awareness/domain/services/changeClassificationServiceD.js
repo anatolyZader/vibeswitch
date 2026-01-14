@@ -54,56 +54,26 @@ class ChangeClassificationServiceD {
 
     /**
      * Calculate classification scores from detectors
-     * @param {Object} detectors - Classification detectors
-     * @param {Change} change - Change entity
-     * @returns {Object} Scores {aiScore, formatterScore, userScore, reasons, meta}
+     * NOTE: This service has API mismatch with actual detector pipeline.
+     * The real classification happens in ChangeClassifier which uses:
+     * - detectors as array of functions: [() => detectFormatter(metrics, config), ...]
+     * - accumulateScores expects array of detector functions, not object map
+     * 
+     * This service appears unused. If needed, it should match ChangeClassifier's API.
+     * 
+     * @param {Array<Function>} detectors - Array of detector functions (() => DetectionResult|null)
+     * @param {Object} metrics - Calculated metrics (from calculateMetrics)
+     * @param {Object} config - Classification configuration
+     * @returns {Object} Scores {aiScore, formatterScore, userScore, reasonObjects}
      */
-    calculateClassificationScore(detectors, change) {
-        if (!detectors || !change) {
-            return { aiScore: 0, formatterScore: 0, userScore: 0, reasons: [] };
+    calculateClassificationScore(detectors, metrics, config) {
+        if (!detectors || !Array.isArray(detectors)) {
+            return { aiScore: 0, formatterScore: 0, userScore: 0, reasonObjects: [] };
         }
 
-        // Use accumulateScores utility if available
-        if (typeof accumulateScores === 'function') {
-            return accumulateScores(detectors);
-        }
-
-        // Fallback: manual accumulation
-        let aiScore = 0;
-        let formatterScore = 0;
-        let userScore = 0;
-        const reasons = [];
-        const meta = {};
-
-        // Run each detector and accumulate scores
-        for (const [name, detector] of Object.entries(detectors)) {
-            if (typeof detector === 'function') {
-                try {
-                    const result = detector(change);
-                    if (result) {
-                        if (result.label === 'ai') {
-                            aiScore += result.scoreDelta || 0;
-                        } else if (result.label === 'formatter') {
-                            formatterScore += result.scoreDelta || 0;
-                        } else if (result.label === 'user') {
-                            userScore += result.scoreDelta || 0;
-                        }
-                        
-                        if (result.reason) {
-                            reasons.push(result.reason);
-                        }
-                        
-                        if (result.meta) {
-                            meta[name] = result.meta;
-                        }
-                    }
-                } catch (error) {
-                    // Skip detector on error
-                }
-            }
-        }
-
-        return { aiScore, formatterScore, userScore, reasons, meta };
+        // Use accumulateScores utility (expects array of detector functions)
+        // Detectors are closures: () => detectX(metrics, config)
+        return accumulateScores(detectors);
     }
 
     /**

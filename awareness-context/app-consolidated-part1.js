@@ -4,8 +4,8 @@
  * This file contains part 1 of 3 of the app layer code.
  * Generated automatically for ChatGPT context.
  * 
- * Files in this part: 4/12
- * Generated: 2026-01-13T17:41:29.118Z
+ * Files in this part: 4/14
+ * Generated: 2026-01-14T18:13:49.751Z
  */
 
 // ============================================================================
@@ -14,7 +14,7 @@
 
 
 // ============================================================================
-// FILE 1/12: app/IAwarenessService.js
+// FILE 1/14: app/IAwarenessService.js
 // ============================================================================
 
 (function() { // IIFE scope for app/IAwarenessService.js
@@ -96,7 +96,7 @@ class IAwarenessService {
 
 
 // ============================================================================
-// FILE 2/12: app/awarenessService.js
+// FILE 2/14: app/awarenessService.js
 // ============================================================================
 
 (function() { // IIFE scope for app/awarenessService.js
@@ -114,7 +114,6 @@ class IAwarenessService {
 // FileWatcherService removed - using VS Code events only
 // const SuggestionService = require('./suggestionService'); // Commented for consolidation
 // const ClassificationService = require('./classificationService'); // Commented for consolidation
-// const ReviewTrackingService = require('./reviewTrackingService'); // Commented for consolidation
 // const TimerRegistry = require('./timerRegistry'); // Commented for consolidation
 
 // Import app layer utilities (technical/infrastructure operations)
@@ -125,15 +124,15 @@ class IAwarenessService {
 // Import input layer
 // const AwarenessEventListener = require('../input/awarenessEventListener'); // Commented for consolidation
 
-// Import app layer services
-// const KeepAllDetectorService = require('./keepAllDetectorService'); // Commented for consolidation
+// Import pure calculation functions (moved from domain services)
+// const { calculateReviewScore, calculateCriticalScore, calculateAdaptationScore, calculateDebtScore } = require('./scoreCalculations'); // Commented for consolidation
 
 // Import domain aggregates
 // const SuggestionAggregate = require('../domain/aggregates/suggestionAggregate'); // Commented for consolidation
 
 // Import domain utilities
-// const { rangesOverlap, isPositionInRange: checkPositionInRange } = require('../domain/utils/utils'); // Commented for consolidation
-// const { buildDiffBullets } = require('../domain/utils/diffBulletBuilder'); // Commented for consolidation
+// const { rangesOverlap, isPositionInRange: checkPositionInRange } = require('./vscodeDocUtilities'); // Commented for consolidation
+// const { buildDiffBullets } = require('./diffBulletService'); // Commented for consolidation
 
 // Import domain events
 // const AISuggestionEvent = require('../domain/events/aiSuggestionEvent'); // Commented for consolidation
@@ -163,12 +162,7 @@ class AwarenessService extends IAwarenessService {
      * @param {Object} adapters.idGeneratorAdapter - ID generator adapter implementing IIdGeneratorPort
      * @param {Object} adapters.rangeOperationServiceD - Range operation domain service (domain logic only)
      * @param {Object} adapters.uriPathOperationServiceD - URI/path operation domain service (domain validation only)
-     * @param {Object} adapters.suggestionLifecycleServiceD - Suggestion lifecycle domain service
      * @param {Object} adapters.changeClassificationServiceD - Change classification domain service
-     * @param {Object} adapters.reviewSessionServiceD - Review session domain service
-     * @param {Object} adapters.debtCalculationServiceD - Debt calculation domain service
-     * @param {Object} adapters.suggestionBatchServiceD - Suggestion batch domain service
-     * @param {Object} adapters.scoreCalculationServiceD - Score calculation domain service
      */
     constructor({ 
         vscodeAdapter, 
@@ -180,12 +174,7 @@ class AwarenessService extends IAwarenessService {
         hashGeneratorAdapter,
         rangeOperationServiceD,
         uriPathOperationServiceD,
-        suggestionLifecycleServiceD,
-        changeClassificationServiceD,
-        reviewSessionServiceD,
-        debtCalculationServiceD,
-        suggestionBatchServiceD,
-        scoreCalculationServiceD
+        changeClassificationServiceD
     }) {
         // Validate required adapters
         if (!vscodeAdapter) {
@@ -212,23 +201,8 @@ class AwarenessService extends IAwarenessService {
         if (!uriPathOperationServiceD) {
             throw new Error('AwarenessService requires uriPathOperationServiceD');
         }
-        if (!suggestionLifecycleServiceD) {
-            throw new Error('AwarenessService requires suggestionLifecycleServiceD');
-        }
         if (!changeClassificationServiceD) {
             throw new Error('AwarenessService requires changeClassificationServiceD');
-        }
-        if (!reviewSessionServiceD) {
-            throw new Error('AwarenessService requires reviewSessionServiceD');
-        }
-        if (!debtCalculationServiceD) {
-            throw new Error('AwarenessService requires debtCalculationServiceD');
-        }
-        if (!suggestionBatchServiceD) {
-            throw new Error('AwarenessService requires suggestionBatchServiceD');
-        }
-        if (!scoreCalculationServiceD) {
-            throw new Error('AwarenessService requires scoreCalculationServiceD');
         }
         
         // Store all injected adapters (Ports and Adapters pattern)
@@ -244,12 +218,7 @@ class AwarenessService extends IAwarenessService {
         // Note: Technical utilities (VSCodeUtilities, RangeUtilities, UriPathUtilities) are static classes
         this.rangeOperationServiceD = rangeOperationServiceD; // Domain logic: rangesOverlap, isPositionInRange
         this.uriPathOperationServiceD = uriPathOperationServiceD; // Domain validation: isCodeDocument, isSkippableUri
-        this.suggestionLifecycleServiceD = suggestionLifecycleServiceD;
         this.changeClassificationServiceD = changeClassificationServiceD;
-        this.reviewSessionServiceD = reviewSessionServiceD;
-        this.debtCalculationServiceD = debtCalculationServiceD;
-        this.suggestionBatchServiceD = suggestionBatchServiceD;
-        this.scoreCalculationServiceD = scoreCalculationServiceD;
         
         // Optional callbacks for external tracking (e.g., UsageStats)
         this.onAISuggestion = null;
@@ -261,14 +230,12 @@ class AwarenessService extends IAwarenessService {
         // Internal components (initialized in start())
         this.debtService = null;
         this.suggestionAggregate = null; // Replaces agentSuggestionHandler
-        this.suggestionService = null; // Suggestion lifecycle management
+        this.suggestionService = null; // Suggestion lifecycle management (includes review tracking and keep-all detection)
         this.sessionTracker = null;
-        this.reviewTrackingService = null; // Review tracking service
         // FileWatcherService removed - using VS Code events only
         this.changeLedger = null;
         this.classificationService = null; // Classification service
         this.eventHandlers = null;
-        this.keepAllDetectorService = null;
         
         // Score state (merged from ScoreService)
         this.currentScore = 0;
@@ -291,7 +258,6 @@ class AwarenessService extends IAwarenessService {
         this.disposables = [];
         this.updateTimer = null;
         this.isActive = false;
-        this.activeStatusCheckTimers = new Set(); // Track status check timers for cleanup
     }
     
     /**
@@ -339,8 +305,6 @@ class AwarenessService extends IAwarenessService {
         );
         this.debtService.loadDebt();
         
-        this.keepAllDetectorService = new KeepAllDetectorService(this.onKeepAll, this.loggerAdapter); // Adapter implements ILoggerPort
-        
         // Score state initialized above in constructor
 
         // Create suggestion aggregate (replaces AgentSuggestionHandler)
@@ -367,20 +331,20 @@ class AwarenessService extends IAwarenessService {
             }
         };
 
-        // Create suggestion service for lifecycle management
+        // Create suggestion service for lifecycle management (includes review tracking and keep-all detection)
         this.suggestionService = new SuggestionService({
             suggestionAggregate: this.suggestionAggregate,
             debtService: this.debtService,
-            keepAllDetectorService: this.keepAllDetectorService,
             vscodeAdapter: this.vscodeAdapter,
             loggerAdapter: this.loggerAdapter,
             messagingAdapter: this.messagingAdapter,
+            rangeOperationServiceD: this.rangeOperationServiceD,
+            timerRegistry: this.timerRegistry,
             updateScore: () => this.updateScore(),
             updateFileColorsInExplorer: updateFileColorsInExplorer,
             onAISuggestion: this.onAISuggestion,
             onAISuggestionOutcome: this.onAISuggestionOutcome,
             onKeepAll: this.onKeepAll,
-            activeStatusCheckTimers: this.activeStatusCheckTimers,
             isActive: () => this.isActive,
             instanceId: this.instanceId // Pass instance ID for generation-based cancellation
         });
@@ -392,30 +356,6 @@ class AwarenessService extends IAwarenessService {
             () => this.updateScore(),
             updateFileColorsInExplorer,
             this.messagingAdapter // Pass messaging adapter for domain events
-        );
-
-        // Create review tracking service (handles cursor/scroll tracking for suggestions)
-        // ReviewTrackingService only emits signals - SuggestionService owns all state mutations
-        this.reviewTrackingService = new ReviewTrackingService(
-            this.suggestionService,
-            this.rangeOperationServiceD,
-            this.vscodeAdapter,
-            this.loggerAdapter,
-            (suggestionId, reviewTime) => {
-                // Signal: suggestion was reviewed (dwell time reached)
-                // SuggestionService owns the state mutation - single authority
-                if (this.suggestionService) {
-                    this.suggestionService.markSuggestionAsReviewed(suggestionId, reviewTime);
-                }
-            },
-            (suggestionId) => {
-                // Signal: trigger status check (after review state updated)
-                // SuggestionService owns the status determination - single authority
-                if (this.suggestionService) {
-                    this.suggestionService.checkSuggestionStatus(suggestionId);
-                }
-            },
-            this.timerRegistry // Pass timer registry for centralized timer management
         );
         
         // FileWatcherService removed - VS Code events handle file detection
@@ -568,23 +508,17 @@ class AwarenessService extends IAwarenessService {
             });
         }
         
-        // Dispose review tracking service (cleans up all dwell timers)
-        if (this.reviewTrackingService) {
-            this.reviewTrackingService.dispose();
+        // Dispose suggestion service (cleans up review tracking and keep-all detection)
+        if (this.suggestionService) {
+            this.suggestionService.dispose();
         }
         
         // Clean up file system watcher
         // FileWatcherService removed - no cleanup needed
         
-        // Clear all timers through registry (includes updateTimer and all other timers)
+        // Clear all timers through registry (includes updateTimer, status checks, and all other timers)
         this.timerRegistry.clear();
         this.updateTimer = null;
-        
-        // Clear all status check timers (zombie timer prevention)
-        for (const timer of this.activeStatusCheckTimers) {
-            clearTimeout(timer);
-        }
-        this.activeStatusCheckTimers.clear();
         
         // Invalidate instance ID to prevent any remaining timers from executing
         this.instanceId = null;
@@ -596,8 +530,9 @@ class AwarenessService extends IAwarenessService {
             });
         }
         
-        // Keep: suggestionAggregate, debtService, keepAllDetectorService, score state
+        // Keep: suggestionAggregate, debtService, score state
         // (preserve state for when monitoring restarts)
+        // Note: keepAllDetectorService merged into suggestionService
         
         getLogger().log('AwarenessService: Monitoring stopped');
     }
@@ -612,14 +547,12 @@ class AwarenessService extends IAwarenessService {
         }
         
         const suggestions = this.suggestionAggregate ? this.suggestionAggregate.getSuggestions() : [];
+        const pendingSuggestions = suggestions.filter(s => s && s.status === 'pending');
         const getDebtScore = () => {
             if (!this.debtService) return 0;
-            // Use domain service for proper separation of file-level and suggestion-level debt
-            if (this.debtCalculationServiceD) {
-                return this.debtService.calculateDebtScoreWithDomainService(suggestions, this.debtCalculationServiceD);
-            }
-            // Fallback to app-level calculation
-            return this.debtService.calculateDebtScore(suggestions);
+            // Use pure function for debt calculation (moved from domain service)
+            const fileDebts = this.debtService.getDebtMap();
+            return calculateDebtScore(fileDebts, pendingSuggestions);
         };
         const getReviewDebtSummary = () => {
             if (!this.debtService) {
@@ -704,15 +637,15 @@ class AwarenessService extends IAwarenessService {
             return;
         }
         
-        // Delegate to domain service for pure scoring calculations
+        // Use pure functions for scoring calculations (moved from domain services)
         // 1. Code Review Rate (40 points)
-        this.scores.review = this.scoreCalculationServiceD.calculateReviewScore(completed);
+        this.scores.review = calculateReviewScore(completed);
         
         // 2. Critical Evaluation (30 points)
-        this.scores.critical = this.scoreCalculationServiceD.calculateCriticalScore(completed);
+        this.scores.critical = calculateCriticalScore(completed);
         
         // 3. Code Adaptation (30 points)
-        this.scores.adaptation = this.scoreCalculationServiceD.calculateAdaptationScore(completed);
+        this.scores.adaptation = calculateAdaptationScore(completed);
         
         // 4. Review Debt (30 points)
         this.scores.debt = debtScore;
@@ -784,7 +717,7 @@ class AwarenessService extends IAwarenessService {
         const allSuggestions = suggestions;
         
         // Get pending suggestions with file paths
-        // const { getRelativePath } = require('../domain/utils/utils'); // Commented for consolidation
+        // const { getRelativePath } = require('./vscodeDocUtilities'); // Commented for consolidation
         const pendingSuggestions = allSuggestions
             .filter(s => s.status === 'pending')
             .map(s => {
@@ -1025,7 +958,7 @@ class AwarenessService extends IAwarenessService {
             hasUpdateTimer: !!this.updateTimer,
             watchedDirectories: [], // FileWatcherService removed
             workspaceFolders: (this.vscodeAdapter.workspaceFolders || []).map(f => f.uri.fsPath),
-            recentAcceptances: this.keepAllDetectorService ? this.keepAllDetectorService.getRecentAcceptanceCount() : 0
+            recentAcceptances: this.suggestionService ? this.suggestionService.getRecentAcceptanceCount() : 0
         };
     }
     
@@ -1184,8 +1117,8 @@ class AwarenessService extends IAwarenessService {
      */
     handleCursorMove(uri, position) {
         // Update review tracking for suggestions (dwell time, marking as reviewed)
-        if (this.reviewTrackingService) {
-            this.reviewTrackingService.onCursorMoved(uri, position);
+        if (this.suggestionService) {
+            this.suggestionService.onCursorMoved(uri, position);
         }
         
         // Update session tracking for debt (engagement metrics)
@@ -1200,8 +1133,8 @@ class AwarenessService extends IAwarenessService {
      */
     handleScroll(uri) {
         // Update review tracking for suggestions
-        if (this.reviewTrackingService) {
-            this.reviewTrackingService.onScroll(uri);
+        if (this.suggestionService) {
+            this.suggestionService.onScroll(uri);
         }
         
         // Update session tracking for debt (engagement metrics)
@@ -1359,7 +1292,7 @@ class AwarenessService extends IAwarenessService {
 
 
 // ============================================================================
-// FILE 3/12: app/changeLedgerService.js
+// FILE 3/14: app/changeLedgerService.js
 // ============================================================================
 
 (function() { // IIFE scope for app/changeLedgerService.js
@@ -1604,7 +1537,7 @@ class ChangeLedgerService {
 
 
 // ============================================================================
-// FILE 4/12: app/classificationService.js
+// FILE 4/14: app/classificationService.js
 // ============================================================================
 
 (function() { // IIFE scope for app/classificationService.js
@@ -1623,7 +1556,7 @@ class ChangeLedgerService {
 // const Change = require('../domain/entities/change'); // Commented for consolidation
 // const IIdGeneratorPort = require('../domain/ports/IIdGeneratorPort'); // Commented for consolidation
 // const ILoggerPort = require('../domain/ports/ILoggerPort'); // Commented for consolidation
-// const { buildDiffBullets } = require('../domain/utils/diffBulletBuilder'); // Commented for consolidation
+// const { buildDiffBullets } = require('./diffBulletService'); // Commented for consolidation
 
 class ClassificationService {
     /**
@@ -1664,8 +1597,8 @@ class ClassificationService {
         // Get classification configuration for mode
         const classifierConfig = this._getClassifierConfig(mode);
         
-        // Create change classifier
-        this.changeClassifier = new ChangeClassifier(debounceMs, classifierConfig);
+        // Create change classifier with logger port for config validation warnings
+        this.changeClassifier = new ChangeClassifier(debounceMs, classifierConfig, this.loggerPort);
     }
     
     /**

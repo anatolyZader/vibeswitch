@@ -5,7 +5,7 @@
  * Generated automatically for ChatGPT context.
  * 
  * Files included: 2
- * Generated: 2026-01-13T17:41:29.113Z
+ * Generated: 2026-01-14T18:13:49.747Z
  */
 
 // ============================================================================
@@ -28,7 +28,7 @@
  * - Controller throws errors; composition root handles UI
  */
 
-// const { isNonCodeDocument, isSkippableUri } = require('../domain/utils/utils'); // Commented for consolidation
+// const { isNonCodeDocument, isSkippableUri } = require('../app/vscodeDocUtilities'); // Commented for consolidation
 
 class AwarenessController {
     /**
@@ -121,8 +121,8 @@ class AwarenessController {
      */
     classifyTextChange(event) {
         try {
-            // Validate document (early return if invalid)
-            if (!this.awarenessService.isValidCodeDocument(event.document)) {
+            // Validate document (early return if invalid) - controller is single authority for input validation
+            if (!this.isValidCodeDocument(event.document)) {
                 return;
             }
             
@@ -194,8 +194,8 @@ class AwarenessController {
      */
     async handleFileCreated(fileUri, options = {}) {
         try {
-            // Validate URI (early return if invalid)
-            if (!this.awarenessService.isValidUri(fileUri)) {
+            // Validate URI (early return if invalid) - controller is single authority for input validation
+            if (!this.isValidUri(fileUri)) {
                 return Promise.resolve(null);
             }
             
@@ -223,8 +223,8 @@ class AwarenessController {
      */
     handleFileSaved(document) {
         try {
-            // Validate document (early return if invalid)
-            if (!this.awarenessService.isValidCodeDocument(document)) {
+            // Validate document (early return if invalid) - controller is single authority for input validation
+            if (!this.isValidCodeDocument(document)) {
                 return false;
             }
             
@@ -262,8 +262,8 @@ class AwarenessController {
      */
     handleFileOpened(document) {
         try {
-            // Validate document (early return if invalid)
-            if (!this.awarenessService.isValidCodeDocument(document)) {
+            // Validate document (early return if invalid) - controller is single authority for input validation
+            if (!this.isValidCodeDocument(document)) {
                 return;
             }
             
@@ -447,6 +447,7 @@ class AwarenessController {
     
     /**
      * Validate if document is a code document (input validation)
+     * Controller is the single authority for input validation
      * @param {vscode.TextDocument} document - Document to validate
      * @returns {boolean} True if document should be processed
      */
@@ -456,6 +457,7 @@ class AwarenessController {
     
     /**
      * Validate if URI should be processed (input validation)
+     * Controller is the single authority for input validation
      * @param {vscode.Uri|string} uriOrScheme - URI or scheme string
      * @returns {boolean} True if URI should be processed
      */
@@ -589,9 +591,10 @@ class AwarenessEventListener {
         
         this.controller = controller;
         
-        // Duplicate detection cache for file saves (primary key: uri + version)
+        // Duplicate detection cache for file saves (primary key: uri + contentHash)
+        // Using contentHash instead of version because saves can happen without version bumps
         // This is input-layer state for preventing duplicate save events
-        this.saveCache = new Map(); // `${uri}:${version}` -> { hash: string, timestamp: number }
+        this.saveCache = new Map(); // `${uri}:${hash}` -> { timestamp: number }
         
         // Track previous active document for flush on editor change
         this.previousActiveDocumentUri = null;
@@ -611,17 +614,25 @@ class AwarenessEventListener {
 
     /**
      * Handle file creation (AI creating new files)
-     * FIXED: Uses isSkippableUri for URI-only checks
+     * FIXED: Handles async calls with proper error handling to prevent unhandled rejections
      * @param {vscode.FileCreateEvent} event - File create event
      */
     onFilesCreated(event) {
-        // Delegate to controller - handles validation, logging, and processing
-        for (const fileUri of event.files) {
+        // Collect all async tasks and handle errors to prevent unhandled rejections
+        const tasks = event.files.map(fileUri => 
             this.controller.handleFileCreated(fileUri, {
                 isFileCreation: true,
                 filePath: null // Let processFileAsSuggestion handle path extraction from URI
-            });
-        }
+            }).catch(err => {
+                // Log error but don't throw - prevent unhandled rejection crashes
+                this.controller.logError('AwarenessEventListener: Error handling file creation', err);
+                return null; // Return null on error
+            })
+        );
+        
+        // Fire and forget - errors are handled in catch above
+        // Using void to explicitly mark as intentionally not awaited
+        void Promise.all(tasks);
     }
 
     /**
@@ -632,10 +643,12 @@ class AwarenessEventListener {
     onFileSaved(document) {
         // Manage cache (input-layer state)
         const uri = document.uri.toString();
-        const cacheKey = `${uri}:${document.version}`;
+        const content = document.getText();
+        const contentHash = this.controller.getContentHash(content);
+        const cacheKey = `${uri}:${contentHash}`;
         const cached = this.saveCache.get(cacheKey);
         
-        // If we already processed this exact version, skip
+        // If we already processed this exact content, skip
         if (cached) {
             return; // Already processed
         }
@@ -645,15 +658,23 @@ class AwarenessEventListener {
         const wasProcessed = this.controller.handleFileSaved(document);
         
         if (wasProcessed) {
-            // Update cache (primary key: version)
-            const content = document.getText();
-            const contentHash = this.controller.getContentHash(content);
+            // Update cache (primary key: uri + contentHash)
             this.saveCache.set(cacheKey, {
-                hash: contentHash,
                 timestamp: Date.now()
             });
             
-            // Clean old cache entries (keep last 100)
+            // Clean old cache entries (keep last 100, with 5 minute TTL)
+            const now = Date.now();
+            const TTL_MS = 5 * 60 * 1000; // 5 minutes
+            
+            // Remove expired entries
+            for (const [key, value] of this.saveCache.entries()) {
+                if (now - value.timestamp > TTL_MS) {
+                    this.saveCache.delete(key);
+                }
+            }
+            
+            // If still too many, keep most recent 100
             if (this.saveCache.size > 100) {
                 const entries = Array.from(this.saveCache.entries());
                 entries.sort((a, b) => b[1].timestamp - a[1].timestamp);
@@ -682,15 +703,11 @@ class AwarenessEventListener {
     onDocumentClose(document) {
         if (!document) return;
         
-        const uri = document.uri.toString();
-        
         // Fix: Emit with source meta instead of silent flush to preserve evidence
         // Silent flush drops potentially important data (user closed file quickly)
         // Emit with source='close' so downstream can filter if needed
+        // Review tracking cleanup is handled by service dispose() - no need for separate call
         this.controller.flushChanges(document, { source: 'close' });
-        
-        // Delegate review tracking cleanup to controller/service
-        this.controller.handleDocumentClose(uri);
     }
 
     /**

@@ -163,12 +163,7 @@ async function activate(context) {
             hashGeneratorAdapter: adapters.hashGeneratorAdapter,
             rangeOperationServiceD: domainServices.rangeOperationServiceD,
             uriPathOperationServiceD: domainServices.uriPathOperationServiceD,
-            suggestionLifecycleServiceD: domainServices.suggestionLifecycleServiceD,
-            changeClassificationServiceD: domainServices.changeClassificationServiceD,
-            reviewSessionServiceD: domainServices.reviewSessionServiceD,
-            debtCalculationServiceD: domainServices.debtCalculationServiceD,
-            suggestionBatchServiceD: domainServices.suggestionBatchServiceD,
-            scoreCalculationServiceD: domainServices.scoreCalculationServiceD
+            changeClassificationServiceD: domainServices.changeClassificationServiceD
         });
         
         // Register service in DI container (before creating controller)

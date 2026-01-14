@@ -80,18 +80,19 @@ function calculateMetrics(changes, eventTimestamps = [], eventRangeSets = [], fi
         
         // Optimized sliding window: O(n) instead of O(n²)
         // Use two pointers: left (window start) and right (window end)
+        // FIX: Use multiset (counts) instead of Set to handle duplicate ranges across events
         let left = 0;
         let right = 0;
-        const windowRanges = new Set();
+        const rangeCounts = new Map(); // rangeKey -> count (multiset)
         
         while (right < eventTimestamps.length) {
             // Expand window: move right pointer until window exceeds timeWindow
             while (right < eventTimestamps.length && 
                    eventTimestamps[right] - eventTimestamps[left] <= timeWindow) {
-                // Add ranges from this event
+                // Add ranges from this event (increment count)
                 if (right < eventRangeSets.length) {
                     for (const rangeKey of eventRangeSets[right]) {
-                        windowRanges.add(rangeKey);
+                        rangeCounts.set(rangeKey, (rangeCounts.get(rangeKey) || 0) + 1);
                     }
                 }
                 right++;
@@ -101,14 +102,19 @@ function calculateMetrics(changes, eventTimestamps = [], eventRangeSets = [], fi
             const windowEventCount = right - left;
             if (windowEventCount > maxRapidEventCount) {
                 maxRapidEventCount = windowEventCount;
-                // Create a copy of current window ranges
-                maxRapidRanges = new Set(windowRanges);
+                // Create a copy of current window ranges (all ranges with count > 0)
+                maxRapidRanges = new Set(rangeCounts.keys());
             }
             
-            // Shrink window: move left pointer and remove ranges from leftmost event
+            // Shrink window: move left pointer and decrement ranges from leftmost event
             if (left < eventRangeSets.length) {
                 for (const rangeKey of eventRangeSets[left]) {
-                    windowRanges.delete(rangeKey);
+                    const count = rangeCounts.get(rangeKey) || 0;
+                    if (count > 1) {
+                        rangeCounts.set(rangeKey, count - 1);
+                    } else {
+                        rangeCounts.delete(rangeKey); // Remove only when count hits 0
+                    }
                 }
             }
             left++;

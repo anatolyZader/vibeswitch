@@ -101,8 +101,8 @@ class AwarenessController {
      */
     classifyTextChange(event) {
         try {
-            // Validate document (early return if invalid)
-            if (!this.awarenessService.isValidCodeDocument(event.document)) {
+            // Validate document (early return if invalid) - controller is single authority for input validation
+            if (!this.isValidCodeDocument(event.document)) {
                 return;
             }
             
@@ -174,8 +174,8 @@ class AwarenessController {
      */
     async handleFileCreated(fileUri, options = {}) {
         try {
-            // Validate URI (early return if invalid)
-            if (!this.awarenessService.isValidUri(fileUri)) {
+            // Validate URI (early return if invalid) - controller is single authority for input validation
+            if (!this.isValidUri(fileUri)) {
                 return Promise.resolve(null);
             }
             
@@ -203,8 +203,8 @@ class AwarenessController {
      */
     handleFileSaved(document) {
         try {
-            // Validate document (early return if invalid)
-            if (!this.awarenessService.isValidCodeDocument(document)) {
+            // Validate document (early return if invalid) - controller is single authority for input validation
+            if (!this.isValidCodeDocument(document)) {
                 return false;
             }
             
@@ -242,8 +242,8 @@ class AwarenessController {
      */
     handleFileOpened(document) {
         try {
-            // Validate document (early return if invalid)
-            if (!this.awarenessService.isValidCodeDocument(document)) {
+            // Validate document (early return if invalid) - controller is single authority for input validation
+            if (!this.isValidCodeDocument(document)) {
                 return;
             }
             
@@ -427,6 +427,7 @@ class AwarenessController {
     
     /**
      * Validate if document is a code document (input validation)
+     * Controller is the single authority for input validation
      * @param {vscode.TextDocument} document - Document to validate
      * @returns {boolean} True if document should be processed
      */
@@ -436,6 +437,7 @@ class AwarenessController {
     
     /**
      * Validate if URI should be processed (input validation)
+     * Controller is the single authority for input validation
      * @param {vscode.Uri|string} uriOrScheme - URI or scheme string
      * @returns {boolean} True if URI should be processed
      */

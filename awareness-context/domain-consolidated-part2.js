@@ -4,8 +4,8 @@
  * This file contains part 2 of 3 of the domain layer code.
  * Generated automatically for ChatGPT context.
  * 
- * Files in this part: 15/50
- * Generated: 2026-01-13T17:41:29.112Z
+ * Files in this part: 20/43
+ * Generated: 2026-01-14T18:13:49.746Z
  */
 
 // ============================================================================
@@ -14,7 +14,7 @@
 
 
 // ============================================================================
-// FILE 18/50: domain/ports/IAwarenessVSCodePort.js
+// FILE 18/43: domain/ports/IAwarenessVSCodePort.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/ports/IAwarenessVSCodePort.js
@@ -190,7 +190,7 @@ class IAwarenessVSCodePort {
 
 
 // ============================================================================
-// FILE 19/50: domain/ports/IFileSystemPort.js
+// FILE 19/43: domain/ports/IFileSystemPort.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/ports/IFileSystemPort.js
@@ -255,7 +255,7 @@ class IFileSystemPort {
 
 
 // ============================================================================
-// FILE 20/50: domain/ports/IHashGeneratorPort.js
+// FILE 20/43: domain/ports/IHashGeneratorPort.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/ports/IHashGeneratorPort.js
@@ -290,7 +290,7 @@ class IHashGeneratorPort {
 
 
 // ============================================================================
-// FILE 21/50: domain/ports/IIdGeneratorPort.js
+// FILE 21/43: domain/ports/IIdGeneratorPort.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/ports/IIdGeneratorPort.js
@@ -331,7 +331,7 @@ class IIdGeneratorPort {
 
 
 // ============================================================================
-// FILE 22/50: domain/ports/ILoggerPort.js
+// FILE 22/43: domain/ports/ILoggerPort.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/ports/ILoggerPort.js
@@ -385,7 +385,7 @@ class ILoggerPort {
 
 
 // ============================================================================
-// FILE 23/50: domain/services/changeClassificationServiceD.js
+// FILE 23/43: domain/services/changeClassificationServiceD.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/services/changeClassificationServiceD.js
@@ -618,166 +618,7 @@ class ChangeClassificationServiceD {
 
 
 // ============================================================================
-// FILE 24/50: domain/services/debtCalculationServiceD.js
-// ============================================================================
-
-(function() { // IIFE scope for domain/services/debtCalculationServiceD.js
-/**
- * DebtCalculationServiceD - Domain service for debt calculation operations
- * 
- * Encapsulates business logic for calculating debt scores and aggregating debt metrics.
- * This is a domain service (stateless, no ports needed).
- */
-
-class DebtCalculationServiceD {
-    constructor() {
-        // No constructor dependencies - stateless domain service
-    }
-
-    /**
-     * Calculate debt score (0-30) - combines file-level and suggestion-level debt
-     * 
-     * Properly separates:
-     * - FileDebt: Unreviewed changes in files (file-level)
-     * - SuggestionDebt: Pending AI suggestions (suggestion-level)
-     * 
-     * @param {Map<string, FileDebt>} fileDebts - Map of file-level debt entities
-     * @param {Array<Suggestion>} pendingSuggestions - Pending suggestions (suggestion-level debt)
-     * @returns {number} Debt score (0-30)
-     */
-    calculateDebtScore(fileDebts, pendingSuggestions) {
-        if (!fileDebts) fileDebts = new Map();
-        if (!pendingSuggestions) pendingSuggestions = [];
-
-        // File-level debt: unreviewed file changes
-        const unreviewedFiles = Array.from(fileDebts.values())
-            .filter(d => d && !d.isReviewed());
-
-        // Suggestion-level debt: pending AI suggestions (tracked separately)
-        const pending = pendingSuggestions.filter(s => s && s.status === 'pending');
-
-        // If no debt at all, return 0
-        if (unreviewedFiles.length === 0 && pending.length === 0) {
-            return 0;
-        }
-
-        const now = Date.now();
-
-        // Calculate debt severity
-        let debtScore = 0;
-
-        // 1. Number of unreviewed files (0-10 points)
-        debtScore += this.calculateDebtCountScore(unreviewedFiles.length);
-
-        // 2. Number of pending suggestions (0-10 points)
-        debtScore += this.calculateDebtPendingScore(pending.length);
-
-        // 3. Age of oldest unreviewed file OR pending suggestion (0-10 points)
-        // Combines both file-level and suggestion-level debt timestamps
-        const fileDebtTimestamps = unreviewedFiles.map(d => d.modifiedAt || now);
-        const suggestionDebtTimestamps = pending.map(s => s.timestamp || now);
-        const allDebtTimestamps = [...fileDebtTimestamps, ...suggestionDebtTimestamps];
-
-        if (allDebtTimestamps.length > 0) {
-            const oldestDebt = Math.min(...allDebtTimestamps);
-            debtScore += this.calculateDebtAgeScore(oldestDebt, now);
-        }
-
-        return Math.round(Math.min(debtScore, 30));
-    }
-
-    /**
-     * Calculate debt age component (0-10)
-     * @param {number} oldestDebtTimestamp - Oldest debt timestamp
-     * @param {number} now - Current timestamp
-     * @returns {number} Age score (0-10)
-     */
-    calculateDebtAgeScore(oldestDebtTimestamp, now) {
-        if (!oldestDebtTimestamp || !now) return 0;
-
-        const ageHours = (now - oldestDebtTimestamp) / (1000 * 60 * 60);
-        return Math.min(ageHours * 1.5, 10);
-    }
-
-    /**
-     * Calculate debt count component (0-10)
-     * @param {number} unreviewedFileCount - Count of unreviewed files
-     * @returns {number} Count score (0-10)
-     */
-    calculateDebtCountScore(unreviewedFileCount) {
-        if (!unreviewedFileCount || unreviewedFileCount <= 0) return 0;
-        return Math.min(unreviewedFileCount * 2, 10);
-    }
-
-    /**
-     * Calculate debt pending component (0-10)
-     * @param {number} pendingSuggestionCount - Count of pending suggestions
-     * @returns {number} Pending score (0-10)
-     */
-    calculateDebtPendingScore(pendingSuggestionCount) {
-        if (!pendingSuggestionCount || pendingSuggestionCount <= 0) return 0;
-        return Math.min(pendingSuggestionCount * 2, 10);
-    }
-
-    /**
-     * Aggregate file-level debt metrics
-     * Note: This aggregates file-level debt only. Suggestion debt is tracked separately.
-     * @param {Map<string, FileDebt>} fileDebts - Map of file-level debt entities
-     * @returns {Object} Aggregated metrics
-     */
-    aggregateDebtMetrics(fileDebts) {
-        if (!fileDebts) fileDebts = new Map();
-
-        const debtArray = Array.from(fileDebts.values()).filter(d => d);
-        const unreviewed = debtArray.filter(d => !d.isReviewed());
-
-        const totalChanges = debtArray.reduce((sum, d) => sum + (d.totalChanges || 0), 0);
-        const totalReviewTime = debtArray.reduce((sum, d) => sum + (d.totalReviewTime || 0), 0);
-        const totalSessions = debtArray.reduce((sum, d) => sum + (d.reviewSessions || 0), 0);
-
-        const timestamps = unreviewed.map(d => d.modifiedAt || 0).filter(t => t > 0);
-        const oldestTimestamp = timestamps.length > 0 ? Math.min(...timestamps) : null;
-        const newestTimestamp = timestamps.length > 0 ? Math.max(...timestamps) : null;
-
-        const ages = timestamps.map(t => Date.now() - t);
-        const avgAge = ages.length > 0 
-            ? ages.reduce((sum, age) => sum + age, 0) / ages.length 
-            : 0;
-
-        return {
-            total: debtArray.length,
-            unreviewed: unreviewed.length,
-            totalChanges,
-            totalReviewTime,
-            totalSessions,
-            oldestTimestamp,
-            newestTimestamp,
-            avgAge,
-            oldestAge: oldestTimestamp ? Date.now() - oldestTimestamp : 0
-        };
-    }
-
-    /**
-     * Determine if file-level debt should be evicted
-     * @param {FileDebt} fileDebt - File-level debt entity
-     * @param {number} evictionThreshold - Eviction threshold in milliseconds
-     * @returns {boolean} True if should evict
-     */
-    shouldEvictDebt(fileDebt, evictionThreshold) {
-        if (!fileDebt || !evictionThreshold) return false;
-
-        const age = Date.now() - (fileDebt.modifiedAt || 0);
-        return age > evictionThreshold;
-    }
-}
-
-// module.exports = DebtCalculationServiceD; // Commented for consolidation
-
-})(); // End IIFE for domain/services/debtCalculationServiceD.js
-
-
-// ============================================================================
-// FILE 25/50: domain/services/rangeOperationServiceD.js
+// FILE 24/43: domain/services/rangeOperationServiceD.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/services/rangeOperationServiceD.js
@@ -835,544 +676,7 @@ class RangeOperationServiceD {
 
 
 // ============================================================================
-// FILE 26/50: domain/services/reviewSessionServiceD.js
-// ============================================================================
-
-(function() { // IIFE scope for domain/services/reviewSessionServiceD.js
-/**
- * ReviewSessionServiceD - Domain service for review session operations
- * 
- * Encapsulates business logic for calculating review session metrics and validations.
- * This is a domain service (stateless, no ports needed).
- */
-
-class ReviewSessionServiceD {
-    constructor() {
-        // No constructor dependencies - stateless domain service
-    }
-
-    /**
-     * Calculate engagement score (0-100)
-     * @param {ReviewSession} session - Review session entity
-     * @returns {number} Engagement score
-     */
-    calculateEngagementScore(session) {
-        if (!session) return 0;
-
-        const duration = session.getDuration ? session.getDuration() : (Date.now() - session.sessionStart);
-        const cursorMovements = session.cursorMovements || 0;
-        const scrollEvents = session.scrollEvents || 0;
-
-        // Duration score (max 40 points)
-        const durationScore = Math.min((duration / 60000) * 40, 40);
-        
-        // Movement score (max 30 points)
-        const movementScore = Math.min((cursorMovements / 20) * 30, 30);
-        
-        // Scroll score (max 30 points)
-        const scrollScore = Math.min((scrollEvents / 10) * 30, 30);
-        
-        return Math.min(durationScore + movementScore + scrollScore, 100);
-    }
-
-    /**
-     * Check if session has sufficient engagement
-     * @param {ReviewSession} session - Review session entity
-     * @param {Object} thresholds - Thresholds {minReviewTime, minMovements, minScrolls}
-     * @returns {boolean} True if sufficient engagement
-     */
-    hasSufficientEngagement(session, thresholds = {}) {
-        if (!session) return false;
-
-        const {
-            minReviewTime = 30000,
-            minMovements = 5,
-            minScrolls = 3
-        } = thresholds;
-
-        const duration = session.getDuration ? session.getDuration() : (Date.now() - session.sessionStart);
-        const cursorMovements = session.cursorMovements || 0;
-        const scrollEvents = session.scrollEvents || 0;
-
-        return duration >= minReviewTime && 
-               (cursorMovements >= minMovements || scrollEvents >= minScrolls);
-    }
-
-    /**
-     * Calculate total review time
-     * @param {ReviewSession} session - Review session entity
-     * @returns {number} Review time in milliseconds
-     */
-    calculateReviewTime(session) {
-        if (!session) return 0;
-
-        if (session.completedAt) {
-            return session.completedAt - session.sessionStart;
-        }
-
-        return Date.now() - session.sessionStart;
-    }
-
-    /**
-     * Determine if session should timeout
-     * @param {ReviewSession} session - Review session entity
-     * @param {number} timeoutMs - Timeout in milliseconds
-     * @returns {boolean} True if should timeout
-     */
-    shouldTimeoutSession(session, timeoutMs = 60000) {
-        if (!session) return false;
-
-        const timeSinceActivity = session.getTimeSinceActivity 
-            ? session.getTimeSinceActivity() 
-            : (Date.now() - (session.lastActivity || session.sessionStart));
-
-        return timeSinceActivity > timeoutMs;
-    }
-}
-
-// module.exports = ReviewSessionServiceD; // Commented for consolidation
-
-})(); // End IIFE for domain/services/reviewSessionServiceD.js
-
-
-// ============================================================================
-// FILE 27/50: domain/services/scoreCalculationServiceD.js
-// ============================================================================
-
-(function() { // IIFE scope for domain/services/scoreCalculationServiceD.js
-/**
- * ScoreCalculationServiceD - Domain service for calculating awareness score components
- * 
- * Encapsulates pure domain business logic for calculating score components.
- * This is a stateless domain service - no ports, no state, no orchestration.
- * 
- * Orchestration (time filtering, callbacks, state management) is in app layer.
- */
-
-class ScoreCalculationServiceD {
-    constructor() {
-        // No constructor dependencies - stateless domain service
-    }
-
-    /**
-     * Calculate review score (0-40)
-     * High score = user carefully reviewed code
-     * @param {Array<Suggestion>} suggestions - Array of suggestions
-     * @returns {number} Review score (0-40)
-     */
-    calculateReviewScore(suggestions) {
-        if (!suggestions || suggestions.length === 0) return 0;
-
-        const reviewedCount = suggestions.filter(s => s.reviewed).length;
-        const totalReviewTime = suggestions.reduce((sum, s) => sum + (s.reviewTime || 0), 0);
-        const avgReviewTime = totalReviewTime / suggestions.length;
-        
-        // Review rate (0-20): % of suggestions reviewed
-        const reviewRate = (reviewedCount / suggestions.length) * 20;
-        
-        // Review depth (0-20): Average time spent reviewing
-        // Good: 10+ seconds per suggestion = 20 points
-        // Fair: 5-10 seconds = 10-20 points
-        // Poor: <5 seconds = 0-10 points
-        const reviewDepth = Math.min((avgReviewTime / 10000) * 20, 20);
-        
-        return Math.round(reviewRate + reviewDepth);
-    }
-
-    /**
-     * Calculate critical evaluation score (0-30)
-     * High score = user is selective (accepts some, rejects some)
-     * LOW SCORE = GOOD in DEV mode (means careful, not blind acceptance)
-     * @param {Array<Suggestion>} suggestions - Array of suggestions
-     * @returns {number} Critical score (0-30)
-     */
-    calculateCriticalScore(suggestions) {
-        if (!suggestions || suggestions.length === 0) return 0;
-
-        const accepted = suggestions.filter(s => s.status === 'accepted').length;
-        const rejected = suggestions.filter(s => s.status === 'rejected').length;
-        const total = suggestions.length;
-        
-        const acceptRate = accepted / total;
-        const rejectRate = rejected / total;
-        
-        // INVERTED: In DEV mode, blind acceptance = HIGH score (bad)
-        // We want LOW scores (careful review, selective acceptance)
-        
-        if (acceptRate === 1.0) {
-            // Accepts everything blindly - WORST (high score = bad in DEV)
-            return 30;
-        } else if (rejectRate === 1.0) {
-            // Rejects everything (not using AI effectively)
-            return 20;
-        } else if (acceptRate >= 0.6 && acceptRate <= 0.8) {
-            // Moderate acceptance - not great, not terrible
-            return 15;
-        } else if (acceptRate < 0.5) {
-            // Low acceptance rate = careful review = BEST
-            return 0;
-        } else {
-            // Linear interpolation for other cases
-            return Math.round(acceptRate * 30);
-        }
-    }
-
-    /**
-     * Calculate adaptation score (0-30)
-     * High score = user customizes AI suggestions
-     * @param {Array<Suggestion>} suggestions - Array of suggestions
-     * @returns {number} Adaptation score (0-30)
-     */
-    calculateAdaptationScore(suggestions) {
-        if (!suggestions || suggestions.length === 0) return 0;
-
-        const adapted = suggestions.filter(s => s.status === 'adapted').length;
-        const adaptRate = adapted / suggestions.length;
-        
-        // Average edits per suggestion
-        const totalEdits = suggestions.reduce((sum, s) => sum + (s.editCount || 0), 0);
-        const avgEdits = totalEdits / suggestions.length;
-        
-        // Adaptation rate (0-15): % of suggestions user edited
-        const adaptationRate = adaptRate * 15;
-        
-        // Adaptation depth (0-15): How much editing per suggestion
-        // Good: 2+ edits = 15 points
-        // Fair: 1 edit = 7.5 points
-        // Poor: 0 edits = 0 points
-        const adaptationDepth = Math.min((avgEdits / 2) * 15, 15);
-        
-        return Math.round(adaptationRate + adaptationDepth);
-    }
-}
-
-// module.exports = ScoreCalculationServiceD; // Commented for consolidation
-
-})(); // End IIFE for domain/services/scoreCalculationServiceD.js
-
-
-// ============================================================================
-// FILE 28/50: domain/services/suggestionBatchServiceD.js
-// ============================================================================
-
-(function() { // IIFE scope for domain/services/suggestionBatchServiceD.js
-/**
- * SuggestionBatchServiceD - Domain service for suggestion batch operations
- * 
- * Encapsulates business logic for managing suggestion batches and detecting patterns.
- * This is a domain service that uses ID generator port for batch creation.
- */
-
-// const SuggestionBatch = require('../entities/suggestionBatch'); // Commented for consolidation
-
-class SuggestionBatchServiceD {
-    constructor() {
-        // No constructor dependencies - ports passed as method parameters
-    }
-
-    /**
-     * Create a new batch
-     * @param {IIdGeneratorPort} idGeneratorPort - ID generator port
-     * @param {string} documentUri - Document URI
-     * @param {string} suggestionId - First suggestion ID
-     * @param {number} size - Suggestion size
-     * @returns {SuggestionBatch} New batch entity
-     */
-    createBatch(idGeneratorPort, documentUri, suggestionId, size) {
-        if (!idGeneratorPort) {
-            throw new Error('SuggestionBatchServiceD.createBatch requires idGeneratorPort');
-        }
-        if (!documentUri || !suggestionId || size === undefined) {
-            throw new Error('SuggestionBatchServiceD.createBatch requires documentUri, suggestionId, and size');
-        }
-
-        let batchId;
-        try {
-            batchId = idGeneratorPort.generateUUID();
-        } catch (e) {
-            batchId = idGeneratorPort.generateId();
-        }
-
-        const batch = new SuggestionBatch(batchId, documentUri, Date.now());
-        batch.addSuggestion(suggestionId, size);
-
-        return batch;
-    }
-
-    /**
-     * Add suggestion to batch
-     * @param {SuggestionBatch} batch - Batch entity
-     * @param {string} suggestionId - Suggestion ID
-     * @param {number} size - Suggestion size
-     */
-    addSuggestionToBatch(batch, suggestionId, size) {
-        if (!batch || !(batch instanceof SuggestionBatch)) {
-            throw new Error('SuggestionBatchServiceD.addSuggestionToBatch requires SuggestionBatch entity');
-        }
-        if (!suggestionId || size === undefined) {
-            throw new Error('SuggestionBatchServiceD.addSuggestionToBatch requires suggestionId and size');
-        }
-
-        batch.addSuggestion(suggestionId, size);
-    }
-
-    /**
-     * Update batch outcome
-     * @param {SuggestionBatch} batch - Batch entity
-     * @param {string} suggestionId - Suggestion ID
-     * @param {string} outcome - Outcome: 'accepted' | 'rejected' | 'modified'
-     */
-    updateBatchOutcome(batch, suggestionId, outcome) {
-        if (!batch || !(batch instanceof SuggestionBatch)) {
-            throw new Error('SuggestionBatchServiceD.updateBatchOutcome requires SuggestionBatch entity');
-        }
-        if (!suggestionId || !outcome) {
-            throw new Error('SuggestionBatchServiceD.updateBatchOutcome requires suggestionId and outcome');
-        }
-
-        const validOutcomes = ['accepted', 'rejected', 'modified'];
-        if (!validOutcomes.includes(outcome)) {
-            throw new Error(`SuggestionBatchServiceD.updateBatchOutcome: invalid outcome '${outcome}'`);
-        }
-
-        batch.recordOutcome(suggestionId, outcome);
-    }
-
-    /**
-     * Detect keep-all pattern
-     * @param {SuggestionBatch} batch - Batch entity
-     * @returns {boolean} True if keep-all pattern
-     */
-    detectKeepAllPattern(batch) {
-        if (!batch || !(batch instanceof SuggestionBatch)) {
-            return false;
-        }
-
-        return batch.isKeepAllPattern();
-    }
-
-    /**
-     * Calculate batch acceptance rate
-     * @param {SuggestionBatch} batch - Batch entity
-     * @returns {number} Acceptance rate (0-1)
-     */
-    calculateBatchAcceptanceRate(batch) {
-        if (!batch || !(batch instanceof SuggestionBatch)) {
-            return 0;
-        }
-
-        return batch.getAcceptanceRate();
-    }
-
-    /**
-     * Determine if batches should merge
-     * @param {SuggestionBatch} batch1 - First batch
-     * @param {SuggestionBatch} batch2 - Second batch
-     * @param {number} timeWindow - Time window in milliseconds
-     * @returns {boolean} True if should merge
-     */
-    shouldMergeBatches(batch1, batch2, timeWindow) {
-        if (!batch1 || !batch2 || !(batch1 instanceof SuggestionBatch) || !(batch2 instanceof SuggestionBatch)) {
-            return false;
-        }
-
-        // Check if same file
-        const filePath1 = batch1.filePath instanceof Object ? batch1.filePath.toString() : String(batch1.filePath);
-        const filePath2 = batch2.filePath instanceof Object ? batch2.filePath.toString() : String(batch2.filePath);
-        
-        if (filePath1 !== filePath2) {
-            return false;
-        }
-
-        // Check if within time window
-        const timeDiff = Math.abs(batch1.timestamp - batch2.timestamp);
-        return timeDiff <= timeWindow;
-    }
-
-    /**
-     * Get batch metrics
-     * @param {SuggestionBatch} batch - Batch entity
-     * @returns {Object} Batch metrics
-     */
-    getBatchMetrics(batch) {
-        if (!batch || !(batch instanceof SuggestionBatch)) {
-            return {
-                totalSuggestions: 0,
-                acceptedCount: 0,
-                rejectedCount: 0,
-                modifiedCount: 0,
-                acceptanceRate: 0,
-                totalSize: 0,
-                age: 0,
-                status: 'unknown'
-            };
-        }
-
-        return {
-            totalSuggestions: batch.suggestionIds.length,
-            acceptedCount: batch.acceptedCount,
-            rejectedCount: batch.rejectedCount,
-            modifiedCount: batch.modifiedCount,
-            acceptanceRate: batch.getAcceptanceRate(),
-            totalSize: batch.totalSize,
-            age: batch.getAge(),
-            status: batch.status,
-            isFullyResolved: batch.isFullyResolved(),
-            isKeepAllPattern: batch.isKeepAllPattern()
-        };
-    }
-}
-
-// module.exports = SuggestionBatchServiceD; // Commented for consolidation
-
-})(); // End IIFE for domain/services/suggestionBatchServiceD.js
-
-
-// ============================================================================
-// FILE 29/50: domain/services/suggestionLifecycleServiceD.js
-// ============================================================================
-
-(function() { // IIFE scope for domain/services/suggestionLifecycleServiceD.js
-/**
- * SuggestionLifecycleServiceD - Domain service for suggestion lifecycle operations
- * 
- * Encapsulates business logic for determining suggestion status and tracking user interactions.
- * This is a domain service that uses VS Code port for document operations.
- */
-
-class SuggestionLifecycleServiceD {
-    constructor() {
-        // No constructor dependencies - ports passed as method parameters
-    }
-
-    /**
-     * Determine suggestion status based on current state
-     * @param {IAwarenessVSCodePort} vscodePort - VS Code port (interface)
-     * @param {Suggestion} suggestion - Suggestion entity
-     * @param {string} currentText - Current text in document
-     * @param {number} currentSize - Current size in characters
-     * @returns {string} Status: 'accepted' | 'rejected' | 'adapted' | 'pending'
-     */
-    determineSuggestionStatus(vscodePort, suggestion, currentText, currentSize) {
-        if (!suggestion) return 'pending';
-        
-        const MIN_SIZE_FOR_RATIO = 10;
-        
-        // Handle tiny suggestions
-        if (!suggestion.size || suggestion.size < MIN_SIZE_FOR_RATIO) {
-            if (currentSize === 0) {
-                return 'rejected';
-            }
-            return 'pending';
-        }
-
-        const sizeRatio = this.calculateSizeRatio(suggestion.size, currentSize);
-
-        // Check rejection first (most definitive)
-        if (this.shouldMarkAsRejected(sizeRatio)) {
-            return 'rejected';
-        }
-
-        // Check adaptation (user modified it)
-        if (this.shouldMarkAsAdapted(suggestion, suggestion.userEdited)) {
-            return 'adapted';
-        }
-
-        // Check acceptance (reviewed and unchanged)
-        if (this.shouldMarkAsAccepted(suggestion, sizeRatio, suggestion.userEdited)) {
-            return 'accepted';
-        }
-
-        // Still pending
-        return 'pending';
-    }
-
-    /**
-     * Detect if user edits overlap with suggestion
-     * @param {IAwarenessVSCodePort} vscodePort - VS Code port (interface)
-     * @param {Suggestion} suggestion - Suggestion entity
-     * @param {Array<Range>} userEditRanges - User edit ranges
-     * @returns {boolean} True if overlaps
-     */
-    detectUserEditOverlap(vscodePort, suggestion, userEditRanges) {
-        if (!suggestion || !userEditRanges || userEditRanges.length === 0) {
-            return false;
-        }
-
-        // Use RangeOperationServiceD for overlap detection
-        // For now, we'll use the vscodePort directly
-        for (const editRange of userEditRanges) {
-            if (suggestion.range && editRange) {
-                const intersection = suggestion.range.intersection(editRange);
-                if (intersection !== undefined) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Calculate size ratio for status determination
-     * @param {number} originalSize - Original suggestion size
-     * @param {number} currentSize - Current size
-     * @returns {number} Size ratio (0-1+)
-     */
-    calculateSizeRatio(originalSize, currentSize) {
-        if (!originalSize || originalSize === 0) return 1;
-        return currentSize / originalSize;
-    }
-
-    /**
-     * Determine if suggestion should be marked as rejected
-     * @param {number} sizeRatio - Size ratio
-     * @param {number} minRatio - Minimum ratio threshold (default: 0.4)
-     * @returns {boolean} True if should reject
-     */
-    shouldMarkAsRejected(sizeRatio, minRatio = 0.4) {
-        return sizeRatio < minRatio;
-    }
-
-    /**
-     * Determine if suggestion should be marked as adapted
-     * @param {Suggestion} suggestion - Suggestion entity
-     * @param {boolean} hasUserEdits - Whether user edits detected
-     * @returns {boolean} True if should mark as adapted
-     */
-    shouldMarkAsAdapted(suggestion, hasUserEdits) {
-        if (!suggestion) return false;
-        return hasUserEdits && suggestion.reviewed;
-    }
-
-    /**
-     * Determine if suggestion should be marked as accepted
-     * @param {Suggestion} suggestion - Suggestion entity
-     * @param {number} sizeRatio - Size ratio
-     * @param {boolean} hasUserEdits - Whether user edits detected
-     * @returns {boolean} True if should mark as accepted
-     */
-    shouldMarkAsAccepted(suggestion, sizeRatio, hasUserEdits) {
-        if (!suggestion) return false;
-        
-        // Must be reviewed and not edited by user
-        if (!suggestion.reviewed || hasUserEdits) {
-            return false;
-        }
-
-        // Size should be close to original (within reasonable range)
-        // Accept if size ratio is between 0.8 and 1.2 (allows for minor formatting changes)
-        return sizeRatio >= 0.8 && sizeRatio <= 1.2;
-    }
-}
-
-// module.exports = SuggestionLifecycleServiceD; // Commented for consolidation
-
-})(); // End IIFE for domain/services/suggestionLifecycleServiceD.js
-
-
-// ============================================================================
-// FILE 30/50: domain/services/uriPathOperationServiceD.js
+// FILE 25/43: domain/services/uriPathOperationServiceD.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/services/uriPathOperationServiceD.js
@@ -1454,7 +758,7 @@ class UriPathOperationServiceD {
 
 
 // ============================================================================
-// FILE 31/50: domain/utils/changeAggregator.js
+// FILE 26/43: domain/utils/changeAggregator.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/utils/changeAggregator.js
@@ -1540,7 +844,7 @@ function recordEventMetadata(pending, timestamp, eventRangeSet, changeCount) {
 
 
 // ============================================================================
-// FILE 32/50: domain/utils/changeClassifier.js
+// FILE 27/43: domain/utils/changeClassifier.js
 // ============================================================================
 
 (function() { // IIFE scope for domain/utils/changeClassifier.js
@@ -1598,8 +902,9 @@ class ChangeClassifier {
     /**
      * @param {number} debounceMs - Debounce window in milliseconds
      * @param {Object} config - Classification configuration (mode-specific thresholds)
+     * @param {ILoggerPort} loggerPort - Logger port (optional, for config validation warnings)
      */
-    constructor(debounceMs = 200, config = null) {
+    constructor(debounceMs = 200, config = null, loggerPort = null) {
         this.debounceMs = debounceMs;
         this.pendingChanges = new Map(); // document URI -> { changes: [], timer: null, lastChangeTime: 0, documentVersion: null, onClassified: null }
         this.maxChangesPerDocumentBatch = 200; // Cap changes per document batch (safety)
@@ -1610,8 +915,8 @@ class ChangeClassifier {
             totalClassifications: 0
         };
         
-        // Create and merge configuration
-        this.config = createConfig(config);
+        // Create and merge configuration (pass logger for validation warnings)
+        this.config = createConfig(config, loggerPort);
         
         // Fix: Use strict boolean check (more explicit than || false)
         this.markerOnly = this.config.markerOnly === true;
@@ -1933,4 +1238,688 @@ class ChangeClassifier {
 // module.exports = ChangeClassifier; // Commented for consolidation
 
 })(); // End IIFE for domain/utils/changeClassifier.js
+
+
+// ============================================================================
+// FILE 28/43: domain/utils/classificationScorer.js
+// ============================================================================
+
+(function() { // IIFE scope for domain/utils/classificationScorer.js
+/**
+ * Classification Scorer
+ * Accumulates detector scores and determines final classification label and confidence
+ */
+
+function accumulateScores(detectors) {
+    // Fix: Use probabilistic OR instead of additive scoring
+    // Formula: combined = 1 - Π(1 - score_i) per label
+    // This prevents score inflation from multiple weak signals
+    // and is easier to calibrate than additive with capping
+    
+    const aiScores = [];
+    const formatterScores = [];
+    const userScores = [];
+    
+    // Fix: Store reasons as paired objects to prevent misalignment
+    // Some detectors may return reason without reasonTag (e.g., marker detection)
+    const reasonObjects = [];
+    
+    for (const detector of detectors) {
+        const result = detector();
+        if (!result) continue;
+        
+        if (result.label === 'formatter') {
+            formatterScores.push(result.score);
+        } else if (result.label === 'ai') {
+            aiScores.push(result.score);
+        } else if (result.label === 'user') {
+            userScores.push(result.score);
+        }
+        
+        if (result.reason) {
+            reasonObjects.push({ tag: result.reasonTag || null, text: result.reason });
+        }
+    }
+    
+    // Probabilistic OR: 1 - Π(1 - score_i)
+    // If no scores, product is 1, so result is 0 (correct)
+    const aiScore = aiScores.length > 0
+        ? 1 - aiScores.reduce((product, score) => product * (1 - score), 1)
+        : 0;
+    
+    const formatterScore = formatterScores.length > 0
+        ? 1 - formatterScores.reduce((product, score) => product * (1 - score), 1)
+        : 0;
+    
+    const userScore = userScores.length > 0
+        ? 1 - userScores.reduce((product, score) => product * (1 - score), 1)
+        : 0;
+    
+    return { aiScore, formatterScore, userScore, reasonObjects };
+}
+
+function determineLabel(aiScore, formatterScore, userScore) {
+    let label = 'unknown';
+    let confidence = 0;
+    
+    if (formatterScore > aiScore && formatterScore > userScore && formatterScore > 0.5) {
+        label = 'formatter';
+        confidence = Math.min(formatterScore, 1.0);
+    } else if (aiScore > userScore && aiScore > 0.3) {
+        label = 'ai';
+        confidence = Math.min(aiScore, 1.0);
+    } else if (userScore > 0) {
+        // Fix: Only label 'user' when we have positive user evidence
+        label = 'user';
+        confidence = Math.max(0.3, Math.min(userScore, 1.0));
+    } else {
+        // Fix: If all scores are 0, return 'unknown' (not 'user')
+        // This matches the documented behavior where 'unknown' exists
+        label = 'unknown';
+        confidence = 0.2;
+    }
+    
+    return { label, confidence };
+}
+
+// module.exports = { // Commented for consolidation
+//     accumulateScores, // Commented for consolidation
+//     determineLabel // Commented for consolidation
+// }; // Commented for consolidation
+
+
+})(); // End IIFE for domain/utils/classificationScorer.js
+
+
+// ============================================================================
+// FILE 29/43: domain/utils/configManager.js
+// ============================================================================
+
+(function() { // IIFE scope for domain/utils/configManager.js
+/**
+ * Config Manager
+ * Manages classifier configuration: defaults, validation, and merging
+ * 
+ * Domain layer - no logging dependencies. Validation results are returned
+ * for application layer to handle logging.
+ */
+
+/**
+ * Get default classifier configuration
+ * @returns {Object} Default configuration object
+ */
+function getDefaultConfig() {
+    return {
+        // VIBE: more permissive (lower thresholds)
+        // DEV: more conservative (higher thresholds)
+        multiLineThreshold: 50,
+        pureInsertionCount: 3,
+        pureInsertionSize: 20,
+        largeInsertionThreshold: 100,
+        scatteredRangeCount: 5,
+        scatteredChangeCount: 5,
+        scatteredSizeThreshold: 200,
+        formatterRangeCount: 8,
+        formatterLineSpan: 50,
+        aiLineSpan: 30,
+        aiMultiLineSize: 50,
+        // Rapid scattered changes: AI agents often make many scattered edits quickly
+        rapidScatteredTimeWindow: 1000, // Time window in ms for rapid changes (1 second)
+        rapidScatteredEventCount: 8, // Minimum number of events in time window (renamed from ChangeCount for clarity)
+        rapidScatteredRangeCount: 6, // Minimum distinct line ranges for scattered pattern
+        rapidScatteredMinSize: 50, // Minimum total size to avoid false positives on tiny edits
+        rapidBurstChangeCount: 10, // Minimum number of changes for rapid burst branch (separate from event count)
+        // Marker-only mode: if true, only use @ai marker, ignore heuristics
+        // If false, use behavioral heuristics as primary with markers as strong signal when present
+        markerOnly: false  // Default: use behavioral inference (heuristics) as primary method
+    };
+}
+
+/**
+ * Validate and sanitize classifier configuration to prevent silent misclassification
+ * Fix: Sanitizes user config BEFORE merge to ensure defaults always win
+ * @param {Object} config - User configuration to validate (will be mutated)
+ * @param {Object} defaultConfig - Default configuration (for reference)
+ * @returns {{errors: string[], sanitized: string[]}} Validation result
+ */
+function validateConfig(config, defaultConfig = {}) {
+    const errors = [];
+    const sanitized = [];
+    
+    // Thresholds must be positive numbers
+    const thresholdKeys = [
+        'multiLineThreshold', 'pureInsertionCount', 'pureInsertionSize',
+        'largeInsertionThreshold', 'scatteredRangeCount', 'scatteredChangeCount',
+        'scatteredSizeThreshold', 'formatterRangeCount', 'formatterLineSpan',
+        'aiLineSpan', 'aiMultiLineSize', 'rapidScatteredTimeWindow',
+        'rapidScatteredEventCount', 'rapidScatteredRangeCount', 'rapidScatteredMinSize',
+        'rapidBurstChangeCount'
+    ];
+    
+    // Fix: Sanitize invalid values (delete them so defaults win) instead of just warning
+    for (const key of thresholdKeys) {
+        if (config[key] !== undefined && (typeof config[key] !== 'number' || config[key] < 0)) {
+            errors.push(`${key} must be a non-negative number, got: ${config[key]}`);
+            delete config[key]; // Remove invalid value so default wins
+            sanitized.push(key);
+        }
+    }
+    
+    // Boolean flags
+    if (config.markerOnly !== undefined && typeof config.markerOnly !== 'boolean') {
+        errors.push(`markerOnly must be a boolean, got: ${config.markerOnly}`);
+        delete config.markerOnly; // Remove invalid value so default wins
+        sanitized.push('markerOnly');
+    }
+    
+    // Fix: Domain layer doesn't log - return validation result for app layer to handle
+    // Invalid values have been deleted, so defaults will be used via merge
+    return { errors, sanitized };
+}
+
+/**
+ * Create and merge classifier configuration
+ * @param {Object|null} userConfig - User-provided configuration (optional)
+ * @param {ILoggerPort} loggerPort - Logger port (optional, for validation warnings)
+ * @returns {Object} Final frozen configuration object
+ */
+function createConfig(userConfig = null, loggerPort = null) {
+    const defaultConfig = getDefaultConfig();
+    
+    // Fix: Sanitize user config BEFORE merging to ensure defaults always win
+    // This prevents invalid values from overwriting defaults, then being deleted, leaving undefined
+    const sanitizedUserConfig = userConfig ? { ...userConfig } : {};
+    const validationResult = validateConfig(sanitizedUserConfig, defaultConfig);
+    
+    // Log validation warnings at application layer (if logger provided)
+    if (validationResult.errors.length > 0 && loggerPort) {
+        loggerPort.log(`[ChangeClassifier] Invalid config sanitized: ${validationResult.sanitized.join(', ')}. ${validationResult.errors.length} invalid value(s) removed, defaults applied.`, true);
+    }
+    
+    // Merge sanitized user config with defaults (defaults win for any missing/invalid keys)
+    const config = { ...defaultConfig, ...sanitizedUserConfig };
+    
+    // Freeze config to prevent accidental mutation
+    Object.freeze(config);
+    
+    return config;
+}
+
+// module.exports = { // Commented for consolidation
+//     getDefaultConfig, // Commented for consolidation
+//     validateConfig, // Commented for consolidation
+//     createConfig // Commented for consolidation
+// }; // Commented for consolidation
+
+
+})(); // End IIFE for domain/utils/configManager.js
+
+
+// ============================================================================
+// FILE 30/43: domain/utils/detectors/changeAnalyzer.js
+// ============================================================================
+
+(function() { // IIFE scope for domain/utils/detectors/changeAnalyzer.js
+/**
+ * Change Analyzer
+ * Analyzes text changes and calculates metrics for detector analysis
+ */
+
+/**
+ * Calculate metrics from changes for detector analysis
+ * @param {Array<vscode.TextDocumentContentChangeEvent>} changes - Aggregated changes
+ * @param {Array<number>} eventTimestamps - Timestamps for each event (for temporal analysis)
+ * @param {Array<Set>} eventRangeSets - Range sets for each event (for scattered pattern detection)
+ * @param {number} firstChangeTime - Timestamp of first change in batch
+ * @param {Object} config - Configuration with rapidScatteredTimeWindow
+ * @returns {Object} Metrics object
+ */
+function calculateMetrics(changes, eventTimestamps = [], eventRangeSets = [], firstChangeTime = null, config = {}) {
+    let totalInserted = 0;
+    let totalDeleted = 0;
+    let hasMultiLine = false;
+    let pureInsertionCount = 0;
+    let distinctRanges = new Set();
+    const startLines = [];
+    const endLines = [];
+    
+    for (const change of changes) {
+        const inserted = change.text.length;
+        const deleted = change.rangeLength;
+        
+        totalInserted += inserted;
+        totalDeleted += deleted;
+        
+        if (change.text.includes('\n')) {
+            hasMultiLine = true;
+        }
+        
+        if (deleted === 0 && inserted > 0) {
+            pureInsertionCount++;
+        }
+        
+        // Use line-based key for scatteredness detection (more stable than character-precise)
+        const lineKey = `${change.range.start.line}-${change.range.end.line}`;
+        distinctRanges.add(lineKey);
+        
+        startLines.push(change.range.start.line);
+        endLines.push(change.range.end.line);
+    }
+    
+    // Fix: maxLineSpan should consider both start and end lines
+    const allLines = [...startLines, ...endLines];
+    const maxLineSpan = allLines.length > 0 
+        ? Math.max(...allLines) - Math.min(...allLines)
+        : 0;
+    
+    // Fix: Count whitespace-only changes instead of whitespace ratio
+    // This avoids false positives on normal code (which naturally contains whitespace)
+    // Fix: Only count insertions of whitespace (deletions have empty text but aren't whitespace-only)
+    let whitespaceOnlyChangeCount = 0;
+    for (const change of changes) {
+        if (change.text.length > 0 && change.text.trim().length === 0) {
+            whitespaceOnlyChangeCount++;
+        }
+    }
+    const whitespaceOnlyChangeRatio = changes.length > 0 
+        ? whitespaceOnlyChangeCount / changes.length 
+        : 0;
+    
+    // Calculate temporal metrics using event timestamps (not per-change timestamps)
+    // Fix: Track events, not individual changes, for true "rapid scattered" detection
+    // Fix: Optimized from O(n²) to O(n) using sliding window two-pointer technique
+    const timeWindow = config.rapidScatteredTimeWindow || 1000;
+    let rapidEventCount = 0;
+    let rapidRangeSet = new Set();
+    let burstDurationMs = 0;
+    
+    if (eventTimestamps.length > 0 && firstChangeTime) {
+        const lastEventTime = eventTimestamps[eventTimestamps.length - 1];
+        burstDurationMs = lastEventTime - firstChangeTime;
+        
+        let maxRapidEventCount = 0;
+        let maxRapidRanges = new Set();
+        
+        // Optimized sliding window: O(n) instead of O(n²)
+        // Use two pointers: left (window start) and right (window end)
+        let left = 0;
+        let right = 0;
+        const windowRanges = new Set();
+        
+        while (right < eventTimestamps.length) {
+            // Expand window: move right pointer until window exceeds timeWindow
+            while (right < eventTimestamps.length && 
+                   eventTimestamps[right] - eventTimestamps[left] <= timeWindow) {
+                // Add ranges from this event
+                if (right < eventRangeSets.length) {
+                    for (const rangeKey of eventRangeSets[right]) {
+                        windowRanges.add(rangeKey);
+                    }
+                }
+                right++;
+            }
+            
+            // Current window: [left, right) has all events within timeWindow
+            const windowEventCount = right - left;
+            if (windowEventCount > maxRapidEventCount) {
+                maxRapidEventCount = windowEventCount;
+                // Create a copy of current window ranges
+                maxRapidRanges = new Set(windowRanges);
+            }
+            
+            // Shrink window: move left pointer and remove ranges from leftmost event
+            if (left < eventRangeSets.length) {
+                for (const rangeKey of eventRangeSets[left]) {
+                    windowRanges.delete(rangeKey);
+                }
+            }
+            left++;
+            
+            // If right didn't move, advance it to avoid infinite loop
+            if (right === left) {
+                right++;
+            }
+        }
+        
+        rapidEventCount = maxRapidEventCount;
+        rapidRangeSet = maxRapidRanges;
+    }
+    
+    return {
+        totalInserted,
+        totalDeleted,
+        hasMultiLine,
+        pureInsertionCount,
+        distinctRanges,
+        distinctRangeCount: distinctRanges.size,
+        maxLineSpan,
+        whitespaceOnlyChangeRatio,
+        rapidEventCount,
+        rapidRangeSet,
+        rapidRangeCount: rapidRangeSet.size,
+        burstDurationMs,
+        changeCount: changes.length
+    };
+}
+
+// module.exports = { // Commented for consolidation
+//     calculateMetrics // Commented for consolidation
+// }; // Commented for consolidation
+
+
+})(); // End IIFE for domain/utils/detectors/changeAnalyzer.js
+
+
+// ============================================================================
+// FILE 31/43: domain/utils/detectors/formatterDetector.js
+// ============================================================================
+
+(function() { // IIFE scope for domain/utils/detectors/formatterDetector.js
+/**
+ * Formatter Detector
+ * Detects formatter patterns (many scattered changes with high whitespace ratio)
+ */
+
+/**
+ * Detector: Formatter pattern (many scattered changes with high whitespace ratio)
+ * @param {Object} metrics - Calculated metrics
+ * @param {Object} config - Configuration with formatter thresholds
+ * @returns {Object|null} Detection result or null
+ */
+function detectFormatter(metrics, config) {
+    // Fix: Use whitespace-only change ratio instead of whitespace character ratio
+    // This avoids false positives on normal code (which naturally contains whitespace)
+    // Fix: Add guard for small inserted text per change (formatters typically have small inserts)
+    // Fix: Also detect formatters with moderate whitespace ratio but strong other signals
+    const avgInsertedPerChange = metrics.changeCount > 0 ? metrics.totalInserted / metrics.changeCount : 0;
+    const formatterMaxAvgInsert = 30; // Formatters typically insert small amounts per change
+    
+    // Primary signal: high whitespace-only ratio
+    const hasHighWhitespaceRatio = metrics.whitespaceOnlyChangeRatio > 0.6;
+    
+    // Secondary signal: formatter characteristics (many ranges, wide span, small inserts, both deletes and inserts)
+    const hasFormatterCharacteristics = 
+        metrics.distinctRangeCount >= config.formatterRangeCount && 
+        metrics.maxLineSpan >= config.formatterLineSpan &&
+        metrics.totalDeleted > 0 && // Formatters typically have deletes
+        (metrics.totalInserted <= 500 || avgInsertedPerChange <= formatterMaxAvgInsert);
+    
+    // Detect formatter if: (high whitespace ratio) OR (formatter characteristics with moderate whitespace)
+    if (hasFormatterCharacteristics) {
+        const whitespaceThreshold = hasHighWhitespaceRatio ? 0.6 : 0.3; // Lower threshold if other signals are strong
+        if (metrics.whitespaceOnlyChangeRatio > whitespaceThreshold) {
+            return {
+                label: 'formatter',
+                score: hasHighWhitespaceRatio ? 0.9 : 0.7, // Lower confidence if whitespace ratio is moderate
+                reason: `formatter pattern: ${metrics.distinctRangeCount} ranges, ${metrics.maxLineSpan} line span, ${(metrics.whitespaceOnlyChangeRatio * 100).toFixed(0)}% whitespace-only changes, avg ${avgInsertedPerChange.toFixed(0)} chars/change`,
+                reasonTag: 'fmt:whitespace' // Fix: Add tag for stable filtering
+            };
+        }
+    }
+    return null;
+}
+
+// module.exports = { // Commented for consolidation
+//     detectFormatter // Commented for consolidation
+// }; // Commented for consolidation
+
+
+})(); // End IIFE for domain/utils/detectors/formatterDetector.js
+
+
+// ============================================================================
+// FILE 32/43: domain/utils/detectors/largeInsertionDetector.js
+// ============================================================================
+
+(function() { // IIFE scope for domain/utils/detectors/largeInsertionDetector.js
+/**
+ * Large Insertion Detector
+ * Detects large single insertions
+ */
+
+/**
+ * Detector: Large single insertion
+ * @param {Object} metrics - Calculated metrics
+ * @param {Object} config - Configuration with large insertion threshold
+ * @returns {Object|null} Detection result or null
+ */
+function detectLargeInsertion(metrics, config) {
+    if (metrics.totalInserted > config.largeInsertionThreshold && metrics.totalDeleted === 0) {
+        return {
+            label: 'ai',
+            score: 0.6,
+            reason: `large insertion: ${metrics.totalInserted} chars`,
+            reasonTag: 'ai:large_insertion' // Fix: Add tag for stable filtering
+        };
+    }
+    return null;
+}
+
+// module.exports = { // Commented for consolidation
+//     detectLargeInsertion // Commented for consolidation
+// }; // Commented for consolidation
+
+
+})(); // End IIFE for domain/utils/detectors/largeInsertionDetector.js
+
+
+// ============================================================================
+// FILE 33/43: domain/utils/detectors/markerDetector.js
+// ============================================================================
+
+(function() { // IIFE scope for domain/utils/detectors/markerDetector.js
+/**
+ * Marker Detector
+ * Detects @ai markers in code changes (strong signal when present)
+ */
+
+/**
+ * Check if changes contain @ai marker (primary signal for AI-generated code)
+ * @param {Array<vscode.TextDocumentContentChangeEvent>} changes - Aggregated changes
+ * @returns {boolean} True if @ai marker is found
+ */
+function hasAIMarker(changes) {
+    // Check for @ai marker in various comment formats
+    // FIXED: CSS pattern was too strict, now uses flexible block comment matching
+    // Fix: HTML marker regex should be case-insensitive and more flexible
+    const markerPatterns = [
+        /\/\/\s*@ai/i,                    // JavaScript/TypeScript/Java/C/C++/C#
+        /#\s*@ai/i,                        // Python/Shell/Bash
+        /<!--[\s\S]*?@ai[\s\S]*?-->/i,     // HTML/XML/Markdown - Fix: case-insensitive and flexible whitespace
+        /--\s*@ai/i,                       // SQL
+        /\/\*[\s\S]*?@ai[\s\S]*?\*\//i     // CSS - FIXED: flexible block comment matching
+    ];
+    
+    for (const change of changes) {
+        const text = change.text;
+        for (const pattern of markerPatterns) {
+            if (pattern.test(text)) {
+                return true;
+            }
+        }
+    }
+    // NOTE: Markers may exist in untouched context (AI edits elsewhere)
+    // Currently only checking inserted text - could be enhanced to check document context
+    return false;
+}
+
+// module.exports = { // Commented for consolidation
+//     hasAIMarker // Commented for consolidation
+// }; // Commented for consolidation
+
+
+
+})(); // End IIFE for domain/utils/detectors/markerDetector.js
+
+
+// ============================================================================
+// FILE 34/43: domain/utils/detectors/multiLineDetector.js
+// ============================================================================
+
+(function() { // IIFE scope for domain/utils/detectors/multiLineDetector.js
+/**
+ * Multi-Line Insertion Detector
+ * Detects large multi-line insertions in localized area
+ */
+
+/**
+ * Detector: Large multi-line insertions in localized area
+ * @param {Object} metrics - Calculated metrics
+ * @param {Object} config - Configuration with multi-line thresholds
+ * @returns {Object|null} Detection result or null
+ */
+function detectMultiLineInsertion(metrics, config) {
+    // Fix: Use multiLineThreshold to require minimum multi-line size
+    if (metrics.hasMultiLine && 
+        metrics.totalInserted >= config.multiLineThreshold &&
+        metrics.totalInserted >= config.aiMultiLineSize &&
+        metrics.maxLineSpan <= config.aiLineSpan) {
+        return {
+            label: 'ai',
+            score: 0.7,
+            reason: `large multi-line insertion: ${metrics.totalInserted} chars, ${metrics.maxLineSpan} line span`,
+            reasonTag: 'ai:multi_line' // Fix: Add tag for stable filtering
+        };
+    }
+    return null;
+}
+
+// module.exports = { // Commented for consolidation
+//     detectMultiLineInsertion // Commented for consolidation
+// }; // Commented for consolidation
+
+
+})(); // End IIFE for domain/utils/detectors/multiLineDetector.js
+
+
+// ============================================================================
+// FILE 35/43: domain/utils/detectors/pureInsertionDetector.js
+// ============================================================================
+
+(function() { // IIFE scope for domain/utils/detectors/pureInsertionDetector.js
+/**
+ * Pure Insertion Detector
+ * Detects multiple pure insertions (no deletes)
+ */
+
+/**
+ * Detector: Multiple pure insertions (no deletes)
+ * @param {Object} metrics - Calculated metrics
+ * @param {Object} config - Configuration with pure insertion thresholds
+ * @returns {Object|null} Detection result or null
+ */
+function detectPureInsertions(metrics, config) {
+    if (metrics.pureInsertionCount >= config.pureInsertionCount && 
+        metrics.totalInserted > config.pureInsertionSize &&
+        metrics.totalDeleted === 0) {
+        return {
+            label: 'ai',
+            score: 0.6,
+            reason: `pure insertions: ${metrics.pureInsertionCount} insertions, ${metrics.totalInserted} chars`,
+            reasonTag: 'ai:pure_insertions' // Fix: Add tag for stable filtering
+        };
+    }
+    return null;
+}
+
+// module.exports = { // Commented for consolidation
+//     detectPureInsertions // Commented for consolidation
+// }; // Commented for consolidation
+
+
+})(); // End IIFE for domain/utils/detectors/pureInsertionDetector.js
+
+
+// ============================================================================
+// FILE 36/43: domain/utils/detectors/rapidScatteredDetector.js
+// ============================================================================
+
+(function() { // IIFE scope for domain/utils/detectors/rapidScatteredDetector.js
+/**
+ * Rapid Scattered Detector
+ * Detects rapid scattered changes (strong AI signal)
+ */
+
+/**
+ * Detector: Rapid scattered changes (strong AI signal)
+ * @param {Object} metrics - Calculated metrics
+ * @param {Object} config - Configuration with rapid scattered thresholds
+ * @returns {Object|null} Detection result or null
+ */
+function detectRapidScattered(metrics, config) {
+    // Fix: Use event count instead of change count (events are what matter for "rapid")
+    if (metrics.rapidEventCount >= config.rapidScatteredEventCount &&
+        metrics.rapidRangeCount >= config.rapidScatteredRangeCount &&
+        metrics.totalInserted >= config.rapidScatteredMinSize) {
+        return {
+            label: 'ai',
+            score: 0.8,
+            reason: `rapid scattered: ${metrics.rapidEventCount} events in ${config.rapidScatteredTimeWindow}ms window across ${metrics.rapidRangeCount} ranges`,
+            reasonTag: 'ai:rapid_scattered' // Fix: Add tag for stable filtering
+        };
+    }
+    
+    // Fix: Require at least 2 events for rapid burst (avoid false positives from single large events)
+    // Fix: Use separate rapidBurstChangeCount threshold (not rapidScatteredEventCount)
+    // Fix: Require rapidRangeCount >= 2 to reduce false positives from tight loop editing one place
+    if (metrics.rapidEventCount >= 2 && metrics.burstDurationMs > 0 && metrics.burstDurationMs <= 1200 &&
+        metrics.rapidRangeCount >= 2 && // Guard: require scatteredness even in burst branch
+        metrics.distinctRangeCount >= config.rapidScatteredRangeCount &&
+        metrics.changeCount >= (config.rapidBurstChangeCount || 10) &&
+        metrics.totalInserted >= config.rapidScatteredMinSize) {
+        return {
+            label: 'ai',
+            score: 0.7,
+            reason: `rapid burst: ${metrics.rapidEventCount} events, ${metrics.changeCount} changes in ${metrics.burstDurationMs}ms`,
+            reasonTag: 'ai:rapid_burst' // Fix: Add tag for stable filtering
+        };
+    }
+    return null;
+}
+
+// module.exports = { // Commented for consolidation
+//     detectRapidScattered // Commented for consolidation
+// }; // Commented for consolidation
+
+
+})(); // End IIFE for domain/utils/detectors/rapidScatteredDetector.js
+
+
+// ============================================================================
+// FILE 37/43: domain/utils/detectors/scatteredEditsDetector.js
+// ============================================================================
+
+(function() { // IIFE scope for domain/utils/detectors/scatteredEditsDetector.js
+/**
+ * Scattered Edits Detector
+ * Detects scattered edits (could be formatter or AI)
+ */
+
+/**
+ * Detector: Scattered edits (could be formatter or AI)
+ * @param {Object} metrics - Calculated metrics
+ * @param {Object} config - Configuration with scattered edit thresholds
+ * @returns {Object|null} Detection result or null
+ */
+function detectScatteredEdits(metrics, config) {
+    if (metrics.distinctRangeCount >= config.scatteredRangeCount && 
+        metrics.changeCount >= config.scatteredChangeCount) {
+        if (metrics.totalInserted > config.scatteredSizeThreshold) {
+            return {
+                label: 'ai',
+                score: 0.5,
+                reason: `scattered edits: ${metrics.distinctRangeCount} ranges, ${metrics.totalInserted} chars`,
+                reasonTag: 'ai:scattered' // Fix: Add tag for stable filtering
+            };
+        }
+    }
+    return null;
+}
+
+// module.exports = { // Commented for consolidation
+//     detectScatteredEdits // Commented for consolidation
+// }; // Commented for consolidation
+
+
+})(); // End IIFE for domain/utils/detectors/scatteredEditsDetector.js
 

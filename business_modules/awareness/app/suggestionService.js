@@ -14,9 +14,6 @@ const SuggestionAggregate = require('../domain/aggregates/suggestionAggregate');
 // Import domain entities
 const Change = require('../domain/entities/change');
 
-// Import app layer services
-const KeepAllDetectorService = require('./keepAllDetectorService');
-
 // Import domain utilities
 const { rangesOverlap } = require('./vscodeDocUtilities');
 
@@ -26,37 +23,39 @@ const KeepAllEvent = require('../domain/events/keepAllEvent');
 
 // Import utilities
 const safe = require('../../../../helpers/safe');
+const SuggestionStatusScheduler = require('./suggestionStatusScheduler');
+const SuggestionOutcomePolicy = require('../domain/policies/suggestionOutcomePolicy');
 
 class SuggestionService {
     /**
      * @param {SuggestionAggregate} suggestionAggregate - Suggestion aggregate (required)
      * @param {DebtService} debtService - Debt service (required)
-     * @param {KeepAllDetectorService} keepAllDetectorService - Keep all detector service (optional)
      * @param {IAwarenessVSCodePort} vscodeAdapter - VS Code adapter (required)
      * @param {ILoggerPort} loggerAdapter - Logger adapter (optional)
      * @param {IAwarenessMessagingPort} messagingAdapter - Messaging adapter (optional)
+     * @param {Object} rangeOperationServiceD - Range operation service (required for review tracking)
+     * @param {Object} timerRegistry - Timer registry (required - all timers must go through it)
      * @param {Function} updateScore - Score update callback (optional)
      * @param {Function} updateFileColorsInExplorer - File colors update callback (optional)
      * @param {Function} onAISuggestion - AI suggestion callback (optional)
      * @param {Function} onAISuggestionOutcome - AI suggestion outcome callback (optional)
      * @param {Function} onKeepAll - Keep all callback (optional)
-     * @param {Set} activeStatusCheckTimers - Set to track status check timers (required)
      * @param {Function} isActive - Function to check if service is active (required)
      * @param {string} instanceId - Instance ID for generation-based timer cancellation (required)
      */
     constructor({
         suggestionAggregate,
         debtService,
-        keepAllDetectorService = null,
         vscodeAdapter,
         loggerAdapter = null,
         messagingAdapter = null,
+        rangeOperationServiceD,
+        timerRegistry,
         updateScore = null,
         updateFileColorsInExplorer = null,
         onAISuggestion = null,
         onAISuggestionOutcome = null,
         onKeepAll = null,
-        activeStatusCheckTimers,
         isActive,
         instanceId
     }) {
@@ -69,8 +68,11 @@ class SuggestionService {
         if (!vscodeAdapter) {
             throw new Error('SuggestionService requires vscodeAdapter');
         }
-        if (!activeStatusCheckTimers) {
-            throw new Error('SuggestionService requires activeStatusCheckTimers');
+        if (!rangeOperationServiceD) {
+            throw new Error('SuggestionService requires rangeOperationServiceD');
+        }
+        if (!timerRegistry) {
+            throw new Error('SuggestionService requires timerRegistry');
         }
         if (!isActive || typeof isActive !== 'function') {
             throw new Error('SuggestionService requires isActive function');
@@ -81,18 +83,37 @@ class SuggestionService {
 
         this.suggestionAggregate = suggestionAggregate;
         this.debtService = debtService;
-        this.keepAllDetectorService = keepAllDetectorService;
         this.vscodeAdapter = vscodeAdapter;
         this.loggerAdapter = loggerAdapter;
         this.messagingAdapter = messagingAdapter;
+        this.rangeOperationServiceD = rangeOperationServiceD;
+        this.timerRegistry = timerRegistry;
         this.updateScore = updateScore;
         this.updateFileColorsInExplorer = updateFileColorsInExplorer;
         this.onAISuggestion = onAISuggestion;
         this.onAISuggestionOutcome = onAISuggestionOutcome;
         this.onKeepAll = onKeepAll;
-        this.activeStatusCheckTimers = activeStatusCheckTimers;
         this.isActive = isActive;
         this.instanceId = instanceId; // Store instance ID for generation-based cancellation
+        
+        // Create status scheduler (coalesces timers per suggestion ID)
+        this.statusScheduler = new SuggestionStatusScheduler(
+            this.timerRegistry,
+            this.isActive,
+            this.instanceId
+        );
+        
+        // Create domain policy for status decisions
+        this.outcomePolicy = new SuggestionOutcomePolicy();
+        
+        // Keep-all detection state (merged from KeepAllDetectorService)
+        this.recentAcceptances = [];
+        this.keepAllDetectionWindow = 2000; // 2 seconds
+        this.keepAllThreshold = 3; // Minimum acceptances to trigger
+        
+        // Review tracking state (merged from ReviewTrackingService)
+        this.activeReviews = new Map(); // URI -> { suggestionId, reviewStarted, reviewTime, dwellTimer }
+        this.DWELL_TIME_MS = 1000; // Dwell time threshold
     }
 
     /**
@@ -187,13 +208,18 @@ class SuggestionService {
             effectiveRange = new Range(firstChange.range.start, cappedEnd);
         }
 
-        // Get merged text from document
-        const mergedText = document.getText(effectiveRange);
-        const mergedSize = mergedText.length;
+        // Get text from full merged range (for suggestion entity)
+        // Store both fullRange and effectiveRange to fix range/text mismatch
+        const fullText = document.getText(mergedRange);
+        const fullSize = fullText.length;
+        
+        // Get text from effective range (for debt sizing only)
+        const effectiveText = document.getText(effectiveRange);
+        const effectiveSize = effectiveText.length;
 
         const fileName = uri.split('/').pop().split('?')[0];
         if (this.loggerAdapter) {
-            this.loggerAdapter.debug(`[DEBUG] 📝 AI suggestion batch: ${changes.length} changes, ${mergedSize} chars in ${fileName}`);
+            this.loggerAdapter.debug(`[DEBUG] 📝 AI suggestion batch: ${changes.length} changes, ${fullSize} chars (effective: ${effectiveSize}) in ${fileName}`);
         }
 
         // Extract classification metadata from first change (all changes in batch have same classification)
@@ -203,18 +229,23 @@ class SuggestionService {
             classificationReasons: changes[0].classification.reasons
         } : {};
 
-        // Create suggestion entity with classification metadata
+        // Create suggestion entity with full range and text (fixes range/text mismatch)
+        // Store effectiveRange separately if different (for debt sizing)
         const suggestion = this.suggestionAggregate.createSuggestion({
             document: uri,
-            range: mergedRange,
-            text: mergedText,
-            size: mergedSize,
+            range: mergedRange, // Full range
+            text: fullText, // Text matching full range
+            size: fullSize, // Size matching full range
+            effectiveRange: effectiveRange !== mergedRange ? effectiveRange : undefined, // Store if different
+            effectiveSize: effectiveSize !== fullSize ? effectiveSize : undefined, // Store if different
             ...classificationMeta,
             ...meta
         });
 
         // Add suggestion to batch (aggregate sets batchId on entity)
-        const batchId = this.suggestionAggregate.addSuggestionToBatch(uri, suggestion.id, mergedSize);
+        // Use effectiveSize for debt sizing if available, otherwise fullSize
+        const debtSize = suggestion.effectiveSize || fullSize;
+        const batchId = this.suggestionAggregate.addSuggestionToBatch(uri, suggestion.id, debtSize);
 
         // Check if this is a new batch (first suggestion) for event publishing
         const batch = this.suggestionAggregate.getBatch(batchId);
@@ -401,107 +432,82 @@ class SuggestionService {
         }
 
         try {
+            // Fetch current text from document (I/O operation)
             const Uri = this.vscodeAdapter.Uri;
             const doc = await this.vscodeAdapter.openTextDocument(Uri.parse(suggestion.document));
             const safeRange = doc.validateRange(suggestion.range);
             const currentText = doc.getText(safeRange);
             const currentSize = currentText.length;
 
-            const MIN_SIZE_FOR_RATIO = 10;
-            if (!suggestion.size || suggestion.size < MIN_SIZE_FOR_RATIO) {
-                if (currentSize === 0) {
-                    this.suggestionAggregate.updateSuggestionStatus(suggestion, 'rejected');
-                    this.suggestionAggregate.updateBatchOutcome(suggestion);
-                    if (this.loggerAdapter) {
-                        this.loggerAdapter.debug(`[DEBUG] Tiny suggestion rejected: empty after validation`);
-                    }
+            // Prepare facts for domain policy (pure data)
+            const facts = {
+                originalText: suggestion.text || '',
+                currentText: currentText,
+                originalSize: suggestion.size || 0,
+                currentSize: currentSize,
+                wasUserEdited: suggestion.userEdited || false,
+                wasReviewed: suggestion.reviewed || false,
+                meta: {
+                    isFileCreation: suggestion.isFileCreation || false,
+                    isExternalCreation: suggestion.isExternalCreation || false,
+                    isFileWrite: suggestion.isFileWrite || false
                 }
-                return;
+            };
+
+            // Domain policy makes the decision (pure business logic)
+            const decision = this.outcomePolicy.decideOutcome(facts);
+
+            // If still pending, schedule another check
+            if (decision.outcome === 'pending') {
+                this.statusScheduler.schedule(
+                    suggestion.id,
+                    () => this.checkSuggestionStatus(suggestion.id),
+                    10000
+                );
+                return; // Exit early, don't emit outcome yet
             }
 
-            const sizeRatio = currentSize / suggestion.size;
+            // Update status (domain aggregate enforces invariants)
+            this.suggestionAggregate.updateSuggestionStatus(suggestion, decision.outcome);
+            // Always update batch outcome when status changes (fix for inconsistency)
+            this.suggestionAggregate.updateBatchOutcome(suggestion);
 
-            if (currentSize < suggestion.size * 0.4) {
-                this.suggestionAggregate.updateSuggestionStatus(suggestion, 'rejected');
-                if (this.loggerAdapter) {
-                    this.loggerAdapter.debug(`[DEBUG] Suggestion rejected: ${(sizeRatio * 100).toFixed(1)}% of original`);
-                }
-            } else if (suggestion.userEdited) {
-                this.suggestionAggregate.updateSuggestionStatus(suggestion, 'adapted');
-                this.suggestionAggregate.updateBatchOutcome(suggestion);
-                if (this.loggerAdapter) {
-                    this.loggerAdapter.debug(`[DEBUG] Suggestion adapted by user`);
-                }
-            } else {
-                let sourceType = 'AI suggestion';
-                if (suggestion.isFileCreation || suggestion.isExternalCreation) {
-                    sourceType = suggestion.isExternalCreation ? 'externally created file' : 'file creation';
-                } else if (suggestion.isFileWrite) {
-                    sourceType = 'agent file write';
-                } else {
-                    sourceType = 'text change';
-                }
+            if (this.loggerAdapter) {
+                this.loggerAdapter.debug(`[DEBUG] Suggestion ${decision.outcome}: ${decision.reason}`);
+            }
 
-                if (suggestion.reviewed) {
-                    this.suggestionAggregate.updateSuggestionStatus(suggestion, 'accepted');
-                    this.suggestionAggregate.updateBatchOutcome(suggestion);
-                    if (this.loggerAdapter) {
-                        this.loggerAdapter.debug(`[DEBUG] Suggestion accepted (${sourceType})`);
+            // Handle accepted suggestions (keep-all detection, events)
+            if (decision.outcome === 'accepted') {
+                // Check for keep all pattern
+                // Use aggregate's batch mapping (single source of truth)
+                const batchId = this.suggestionAggregate.getBatchIdForSuggestion(suggestion.id);
+                const batch = batchId ? this.suggestionAggregate.getBatch(batchId) : null;
+                if (batch && batch.isFullyResolved() && batch.isKeepAllPattern()) {
+                    // Track acceptance for keep-all detection (merged from KeepAllDetectorService)
+                    this._trackAcceptanceForKeepAll(suggestion);
+                    
+                    // Batch-level result for events/callbacks (separate from KeepAll detection)
+                    const result = {
+                        batchId: batch.batchId,
+                        suggestionIds: batch.getSuggestionIdStrings(),
+                        filePath: batch.filePath.toString(),
+                        acceptanceCount: batch.acceptedCount
+                    };
+
+                    if (this.messagingAdapter) {
+                        safe('publishKeepAllEvent', async () => {
+                            const event = new KeepAllEvent({
+                                suggestionIds: result.suggestionIds || [],
+                                filePath: result.filePath,
+                                acceptanceCount: result.acceptanceCount || 0
+                            });
+                            await this.messagingAdapter.publishKeepAllEvent(event);
+                        });
                     }
 
-                    // Check for keep all pattern
-                    // Use aggregate's batch mapping (single source of truth)
-                    const batchId = this.suggestionAggregate.getBatchIdForSuggestion(suggestion.id);
-                    const batch = batchId ? this.suggestionAggregate.getBatch(batchId) : null;
-                    if (batch && batch.isFullyResolved() && batch.isKeepAllPattern()) {
-                        // Track each accepted suggestion individually (not batch-level)
-                        // KeepAllDetector expects per-suggestion data: { id, document, size }
-                        if (this.keepAllDetectorService && suggestion) {
-                            this.keepAllDetectorService.trackAcceptance({
-                                id: suggestion.id,
-                                document: suggestion.document,
-                                size: suggestion.size || 0
-                            });
-                        }
-                        
-                        // Batch-level result for events/callbacks (separate from KeepAll detection)
-                        const result = {
-                            batchId: batch.batchId,
-                            suggestionIds: batch.getSuggestionIdStrings(),
-                            filePath: batch.filePath.toString(),
-                            acceptanceCount: batch.acceptedCount
-                        };
-
-                        if (this.messagingAdapter) {
-                            safe('publishKeepAllEvent', async () => {
-                                const event = new KeepAllEvent({
-                                    suggestionIds: result.suggestionIds || [],
-                                    filePath: result.filePath,
-                                    acceptanceCount: result.count || 0
-                                });
-                                await this.messagingAdapter.publishKeepAllEvent(event);
-                            });
-                        }
-
-                        if (this.onKeepAll) {
-                            this.onKeepAll(result);
-                        }
+                    if (this.onKeepAll) {
+                        this.onKeepAll(result);
                     }
-                } else {
-                    // No user interaction yet - keep pending, schedule another check
-                    const instanceId = this.instanceId; // Capture instance ID at timer creation
-                    const timer = setTimeout(() => {
-                        this.activeStatusCheckTimers.delete(timer);
-                        // Generation-based cancellation: only execute if instance ID matches
-                        if (this.instanceId !== instanceId) {
-                            return; // Instance was restarted, ignore this timer
-                        }
-                        if (this.isActive()) {
-                            this.checkSuggestionStatus(suggestion.id);
-                        }
-                    }, 10000);
-                    this.activeStatusCheckTimers.add(timer);
-                    return; // Exit early, don't emit outcome yet
                 }
             }
 
@@ -585,18 +591,12 @@ class SuggestionService {
         }
 
         // Schedule status check after 5 seconds
-        const instanceId = this.instanceId; // Capture instance ID at timer creation
-        const timer = setTimeout(() => {
-            this.activeStatusCheckTimers.delete(timer);
-            // Generation-based cancellation: only execute if instance ID matches
-            if (this.instanceId !== instanceId) {
-                return; // Instance was restarted, ignore this timer
-            }
-            if (this.isActive()) {
-                this.checkSuggestionStatus(suggestion.id);
-            }
-        }, 5000);
-        this.activeStatusCheckTimers.add(timer);
+        // Use scheduler to coalesce (cancels any existing timer for this suggestion)
+        this.statusScheduler.schedule(
+            suggestion.id,
+            () => this.checkSuggestionStatus(suggestion.id),
+            5000
+        );
 
         // Immediately update score to reflect new activity
         if (this.updateScore) {
@@ -677,6 +677,239 @@ class SuggestionService {
      */
     getPendingSuggestionsForFile(documentUri) {
         return this.suggestionAggregate ? this.suggestionAggregate.getPendingSuggestionsForFile(documentUri) : [];
+    }
+    
+    // ============================================
+    // Keep-All Detection (merged from KeepAllDetectorService)
+    // ============================================
+    
+    /**
+     * Track suggestion acceptance and detect "Keep All" pattern
+     * @private
+     */
+    _trackAcceptanceForKeepAll(suggestion) {
+        const now = Date.now();
+        
+        // Add this acceptance to the tracking array
+        this.recentAcceptances.push({
+            timestamp: now,
+            suggestionId: suggestion.id,
+            document: suggestion.document,
+            size: suggestion.size || 0
+        });
+        
+        // Clean old entries (outside detection window)
+        this.recentAcceptances = this.recentAcceptances.filter(
+            entry => (now - entry.timestamp) < this.keepAllDetectionWindow
+        );
+        
+        // Check for "Keep All" pattern
+        if (this.recentAcceptances.length >= this.keepAllThreshold) {
+            this._detectKeepAll();
+        }
+    }
+    
+    /**
+     * Detect "Keep All" pattern and emit to usage statistics
+     * @private
+     */
+    _detectKeepAll() {
+        const now = Date.now();
+        const recent = this.recentAcceptances.filter(
+            entry => (now - entry.timestamp) < this.keepAllDetectionWindow
+        );
+        
+        if (recent.length >= this.keepAllThreshold) {
+            // Get unique files affected
+            const uniqueFiles = new Set(recent.map(e => e.document));
+            const totalSize = recent.reduce((sum, e) => sum + e.size, 0);
+            
+            if (this.loggerAdapter) {
+                this.loggerAdapter.log(`AwarenessMonitor: "Keep All" detected - ${recent.length} suggestions accepted across ${uniqueFiles.size} files`);
+            }
+            
+            // Call optional callback (e.g., for UsageStats)
+            if (this.onKeepAll) {
+                this.onKeepAll({
+                    count: recent.length,
+                    fileCount: uniqueFiles.size,
+                    totalSize: totalSize,
+                    timestamp: now,
+                    window: this.keepAllDetectionWindow
+                });
+            }
+            
+            // Clear the tracking array to avoid duplicate detections
+            // (but keep the most recent one to allow for overlapping detections)
+            this.recentAcceptances = recent.slice(-1);
+        }
+    }
+    
+    /**
+     * Get number of recent acceptances
+     * @returns {number} Number of recent acceptances
+     */
+    getRecentAcceptanceCount() {
+        return this.recentAcceptances.length;
+    }
+    
+    // ============================================
+    // Review Tracking (merged from ReviewTrackingService)
+    // ============================================
+    
+    /**
+     * Handle cursor move event for review tracking
+     * @param {string} uri - Document URI string
+     * @param {Object} position - Cursor position { line, character }
+     */
+    onCursorMoved(uri, position) {
+        if (!uri || !position) return;
+        
+        // Get pending suggestions for this document
+        const pendingSuggestions = this.getSuggestionsByStatus('pending')
+            .filter(s => s.document === uri);
+        
+        const activeReview = this.activeReviews.get(uri);
+        
+        // Check if cursor left the active suggestion
+        if (activeReview) {
+            const activeSuggestion = pendingSuggestions.find(s => s.id === activeReview.suggestionId);
+            if (activeSuggestion) {
+                const isInRange = this.rangeOperationServiceD.isPositionInRange(
+                    position,
+                    activeSuggestion.range
+                );
+                
+                if (!isInRange) {
+                    // Cursor left the suggestion - close review
+                    this._closeReview(uri);
+                } else {
+                    // Still in active suggestion - continue tracking
+                    return;
+                }
+            } else {
+                // Active suggestion no longer exists
+                this._closeReview(uri);
+            }
+        }
+        
+        // Check if cursor entered a new suggestion
+        for (const suggestion of pendingSuggestions) {
+            const isInRange = this.rangeOperationServiceD.isPositionInRange(
+                this.vscodeAdapter,
+                position,
+                suggestion.range
+            );
+            
+            if (isInRange) {
+                // Start tracking this suggestion
+                this._startReview(uri, suggestion.id);
+                return;
+            }
+        }
+    }
+    
+    /**
+     * Handle scroll event for review tracking
+     * @param {string} uri - Document URI string
+     */
+    onScroll(uri) {
+        // Scroll events can be used for engagement tracking
+        // Currently just ensure active review is maintained
+        if (this.activeReviews.has(uri)) {
+            // Review is still active
+            return;
+        }
+    }
+    
+    /**
+     * Handle document close for review tracking
+     * @param {string} uri - Document URI string
+     */
+    onDocumentClose(uri) {
+        if (uri) {
+            this._closeReview(uri);
+        }
+    }
+    
+    /**
+     * Start tracking a review session
+     * @private
+     */
+    _startReview(uri, suggestionId) {
+        const now = Date.now();
+        
+        // Clear any existing review for this URI
+        this._closeReview(uri, false);
+        
+        // Create dwell timer through timer registry (mandatory)
+        // Tag with owner for selective clearing
+        const dwellTimer = this.timerRegistry.setTimeout(() => {
+            const currentReview = this.activeReviews.get(uri);
+            if (currentReview && currentReview.suggestionId === suggestionId) {
+                // Calculate review time (dwell time threshold)
+                const reviewTime = this.DWELL_TIME_MS;
+                
+                // Mark suggestion as reviewed
+                this.markSuggestionAsReviewed(suggestionId, reviewTime);
+                
+                // Trigger status check
+                this.checkSuggestionStatus(suggestionId);
+            }
+        }, this.DWELL_TIME_MS, 'reviewTracking');
+        
+        // Store review state
+        this.activeReviews.set(uri, {
+            suggestionId,
+            reviewStarted: now,
+            reviewTime: 0,
+            dwellTimer
+        });
+    }
+    
+    /**
+     * Close an active review session
+     * @private
+     */
+    _closeReview(uri, updateReviewTime = true) {
+        const activeReview = this.activeReviews.get(uri);
+        if (!activeReview) return;
+        
+        // Clear dwell timer through timer registry
+        if (activeReview.dwellTimer) {
+            this.timerRegistry.clearTimeout(activeReview.dwellTimer);
+        }
+        
+        // Update review time if requested
+        if (updateReviewTime && activeReview.reviewStarted) {
+            const reviewDuration = Date.now() - activeReview.reviewStarted;
+            if (reviewDuration > 0) {
+                // Update review time (accumulates)
+                this.updateSuggestionReviewTime(activeReview.suggestionId, reviewDuration);
+            }
+        }
+        
+        // Remove from active reviews
+        this.activeReviews.delete(uri);
+    }
+    
+    /**
+     * Dispose - clean up all timers and state
+     */
+    dispose() {
+        // Cancel all outstanding status check timers
+        this.statusScheduler.cancelAll();
+        
+        // Clean up review tracking timers
+        for (const [uri, review] of this.activeReviews.entries()) {
+            if (review.dwellTimer) {
+                this.timerRegistry.clearTimeout(review.dwellTimer);
+            }
+        }
+        this.activeReviews.clear();
+        
+        // Clear keep-all tracking
+        this.recentAcceptances = [];
     }
 }
 
