@@ -5,8 +5,8 @@
  * and publishes domain events. This is an application service.
  */
 
-const vscodeDocUtilities = require('./vscodeDocUtilities');
-const ReviewSession = require('../domain/entities/reviewSession');
+const vscodeDocUtilities = require('../utilities/vscodeDocUtilities');
+const ReviewSession = require('../../domain/entities/reviewSession');
 
 class SessionService {
     /**
@@ -15,15 +15,13 @@ class SessionService {
      * @param {Function} onDebtCleared - Callback when debt is cleared
      * @param {Function} updateScore - Score update callback
      * @param {Function} updateFileColorsInExplorer - Callback to update file colors (optional)
-     * @param {Object} messagingAdapter - Messaging adapter for domain events (optional)
      */
-    constructor(debtService, suggestionLifecycleService, onDebtCleared, updateScore, updateFileColorsInExplorer = null, messagingAdapter = null) {
+    constructor(debtService, suggestionLifecycleService, onDebtCleared, updateScore, updateFileColorsInExplorer = null) {
         this.debtService = debtService;
         this.suggestionLifecycleService = suggestionLifecycleService;
         this.onDebtCleared = onDebtCleared;
         this.updateScore = updateScore;
         this.updateFileColorsInExplorer = updateFileColorsInExplorer;
-        this.messagingAdapter = messagingAdapter; // Optional - for publishing domain events
         
         // Active sessions: URI string -> ReviewSession entity
         this.sessions = new Map();
@@ -54,18 +52,7 @@ class SessionService {
         }
 
         // Publish domain event if messaging adapter is available
-        if (this.messagingAdapter) {
-            const ReviewSessionStartedEvent = require('../events/reviewSessionStartedEvent'); // Commented for consolidation
-            const event = new ReviewSessionStartedEvent({
-                filePath: uri,
-                sessionStart: session.sessionStart
-            });
-            this.messagingAdapter.publishReviewSessionStartedEvent(event).catch(err => {
-                // Log but don't throw - event publishing is non-critical
-                // Note: loggerPort not available in SessionService, but this is non-critical
-                // Consider injecting loggerPort if needed for consistency
-            });
-        }
+        // Session started - no callback needed (not used by UsageStats)
 
         return session;
     }
@@ -144,21 +131,7 @@ class SessionService {
                         this.debtService.markAsReviewed(uri, session.reviewTime);
                         
                         // Publish domain event if messaging adapter is available
-                        if (this.messagingAdapter) {
-                            const ReviewSessionCompletedEvent = require('../events/reviewSessionCompletedEvent'); // Commented for consolidation
-                            const event = new ReviewSessionCompletedEvent({
-                                filePath: uri,
-                                sessionStart: session.sessionStart,
-                                completedAt: session.completedAt,
-                                reviewTime: session.reviewTime,
-                                engagementScore: session.getEngagementScore()
-                            });
-                            this.messagingAdapter.publishReviewSessionCompletedEvent(event).catch(err => {
-                                // Log but don't throw - event publishing is non-critical
-                                // Note: loggerPort not available in SessionService, but this is non-critical
-                                // Consider injecting loggerPort if needed for consistency
-                            });
-                        }
+                        // Session completed - no callback needed (not used by UsageStats)
                         
                         // Call optional callback with engagement score
                         if (this.onDebtCleared) {

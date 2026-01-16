@@ -5,8 +5,8 @@
  * This is an application service that coordinates Debt domain entities.
  */
 
-const FileDebt = require('../domain/entities/fileDebt');
-const vscodeDocUtilities = require('./vscodeDocUtilities');
+const FileDebt = require('../../domain/entities/fileDebt');
+const vscodeDocUtilities = require('../utilities/vscodeDocUtilities');
 
 class DebtService {
     /**

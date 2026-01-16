@@ -81,57 +81,7 @@ function setupUsageStatsListeners(context, state) {
     );
 }
 
-/**
- * Create disposable event listeners for UsageStats integration
- * Subscribes to awareness module domain events and forwards them to UsageStats
- * @param {EventEmitter} eventEmitter - Event emitter from messaging adapter
- * @param {Object} state - Extension state (must have usageStats property)
- * @returns {vscode.Disposable} Disposable that removes all listeners
- */
-function createUsageStatsEventListenersDisposable(eventEmitter, state) {
-    const handlers = {
-        aiSuggestion: (payload) => {
-            safe('handleAISuggestionEvent', () => {
-                if (state.usageStats) {
-                    state.usageStats.trackAISuggestion(payload.event);
-                }
-            });
-        },
-        aiSuggestionOutcome: (payload) => {
-            safe('handleAISuggestionOutcomeEvent', () => {
-                if (state.usageStats) {
-                    state.usageStats.trackAISuggestionOutcome(payload.event);
-                }
-            });
-        },
-        keepAll: (payload) => {
-            safe('handleKeepAllEvent', () => {
-                if (state.usageStats?.trackKeepAll) {
-                    state.usageStats.trackKeepAll(payload.event);
-                }
-            });
-        },
-        debtCleared: (payload) => {
-            safe('handleDebtClearedEvent', () => {
-                if (state.usageStats) {
-                    state.usageStats.trackAIDebtCleared(payload.event);
-                }
-            });
-        }
-    };
-
-    // Register all handlers
-    Object.entries(handlers).forEach(([event, handler]) => {
-        eventEmitter.on(event, handler);
-    });
-
-    // Return disposable that removes all listeners
-    return new vscode.Disposable(() => {
-        Object.entries(handlers).forEach(([event, handler]) => {
-            eventEmitter.off(event, handler);
-        });
-    });
-}
+// Domain events removed - using callbacks instead for engine-based design
 
 // Main activation function
 async function activate(context) {
@@ -186,7 +136,7 @@ async function activate(context) {
             updateAwarenessMeter
         } = helpers;
         
-        // Set callbacks for UI updates only
+        // Set callbacks for UI updates and UsageStats integration
         awarenessEngine.setCallbacks({
             onScoreUpdate: () => {
                 safe('onScoreUpdate', () => {
@@ -194,13 +144,36 @@ async function activate(context) {
                         updateAwarenessMeter();
                     }
                 });
+            },
+            onAISuggestion: (event) => {
+                safe('onAISuggestion', () => {
+                    if (state.usageStats) {
+                        state.usageStats.trackAISuggestion(event);
+                    }
+                });
+            },
+            onAISuggestionOutcome: (event) => {
+                safe('onAISuggestionOutcome', () => {
+                    if (state.usageStats) {
+                        state.usageStats.trackAISuggestionOutcome(event);
+                    }
+                });
+            },
+            onKeepAll: (event) => {
+                safe('onKeepAll', () => {
+                    if (state.usageStats?.trackKeepAll) {
+                        state.usageStats.trackKeepAll(event);
+                    }
+                });
+            },
+            onDebtCleared: (event) => {
+                safe('onDebtCleared', () => {
+                    if (state.usageStats) {
+                        state.usageStats.trackAIDebtCleared(event);
+                    }
+                });
             }
         });
-        
-        // Subscribe to domain events for UsageStats integration
-        const eventEmitter = adapters.messagingAdapter.getEventEmitter();
-        const usageStatsEventListenersDisposable = createUsageStatsEventListenersDisposable(eventEmitter, state);
-        context.subscriptions.push(usageStatsEventListenersDisposable);
         
         // Initialize status bar items using direct VS Code API
         state.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);

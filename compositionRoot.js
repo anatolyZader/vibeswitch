@@ -14,18 +14,14 @@ const AwarenessEngine = require('./business_modules/awareness/app/awarenessEngin
 function buildAdapters(context) {
     const AwarenessVSCodeAdapter = require('./business_modules/awareness/infrastructure/adapters/awarenessVSCodeAdapter');
     const AwarenessWorkspaceStateAdapter = require('./business_modules/awareness/infrastructure/adapters/awarenessWorkspaceStateAdapter');
-    const AwarenessEventEmitterMessagingAdapter = require('./business_modules/awareness/infrastructure/adapters/awarenessEventEmitterMessagingAdapter');
     const AwarenessLoggerAdapter = require('./business_modules/awareness/infrastructure/adapters/awarenessLoggerAdapter');
-    const AwarenessFileSystemAdapter = require('./business_modules/awareness/infrastructure/adapters/awarenessFileSystemAdapter');
     const AwarenessIdGeneratorAdapter = require('./business_modules/awareness/infrastructure/adapters/awarenessIdGeneratorAdapter');
     const AwarenessHashGeneratorAdapter = require('./business_modules/awareness/infrastructure/adapters/awarenessHashGeneratorAdapter');
     
     return {
         vscodeAdapter: new AwarenessVSCodeAdapter(context),
         persistenceAdapter: new AwarenessWorkspaceStateAdapter(context),
-        messagingAdapter: new AwarenessEventEmitterMessagingAdapter(),
         loggerAdapter: new AwarenessLoggerAdapter(),
-        fileSystemAdapter: new AwarenessFileSystemAdapter(),
         idGeneratorAdapter: new AwarenessIdGeneratorAdapter(),
         hashGeneratorAdapter: new AwarenessHashGeneratorAdapter()
     };
@@ -38,12 +34,10 @@ function buildAdapters(context) {
 function buildDomainServices() {
     const RangeOperationServiceD = require('./business_modules/awareness/domain/services/rangeOperationServiceD');
     const UriPathOperationServiceD = require('./business_modules/awareness/domain/services/uriPathOperationServiceD');
-    const ChangeClassificationServiceD = require('./business_modules/awareness/domain/services/changeClassificationServiceD');
     
     return {
         rangeOperationServiceD: new RangeOperationServiceD(),
-        uriPathOperationServiceD: new UriPathOperationServiceD(),
-        changeClassificationServiceD: new ChangeClassificationServiceD()
+        uriPathOperationServiceD: new UriPathOperationServiceD()
     };
 }
 
@@ -57,14 +51,11 @@ function buildAwarenessEngine(adapters, domainServices) {
     return new AwarenessEngine({
         vscodeAdapter: adapters.vscodeAdapter,
         persistenceAdapter: adapters.persistenceAdapter,
-        messagingAdapter: adapters.messagingAdapter,
         loggerAdapter: adapters.loggerAdapter,
-        fileSystemAdapter: adapters.fileSystemAdapter,
         idGeneratorAdapter: adapters.idGeneratorAdapter,
         hashGeneratorAdapter: adapters.hashGeneratorAdapter,
         rangeOperationServiceD: domainServices.rangeOperationServiceD,
-        uriPathOperationServiceD: domainServices.uriPathOperationServiceD,
-        changeClassificationServiceD: domainServices.changeClassificationServiceD
+        uriPathOperationServiceD: domainServices.uriPathOperationServiceD
     });
 }
 
@@ -97,9 +88,7 @@ function compose(context, state, container) {
     // Store adapters in DI container
     container.setAdapter('awareness', 'vscodeAdapter', adapters.vscodeAdapter);
     container.setAdapter('awareness', 'persistenceAdapter', adapters.persistenceAdapter);
-    container.setAdapter('awareness', 'messagingAdapter', adapters.messagingAdapter);
     container.setAdapter('awareness', 'loggerAdapter', adapters.loggerAdapter);
-    container.setAdapter('awareness', 'fileSystemAdapter', adapters.fileSystemAdapter);
     container.setAdapter('awareness', 'idGeneratorAdapter', adapters.idGeneratorAdapter);
     container.setAdapter('awareness', 'hashGeneratorAdapter', adapters.hashGeneratorAdapter);
     

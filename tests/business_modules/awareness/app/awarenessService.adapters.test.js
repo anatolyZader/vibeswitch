@@ -8,7 +8,7 @@ const AwarenessController = require('../../../../business_modules/awareness/inpu
 const AwarenessMockVSCodeAdapter = require('../../../../business_modules/awareness/infrastructure/adapters/awarenessMockVSCodeAdapter');
 const AwarenessMockPersistenceAdapter = require('../../../../business_modules/awareness/infrastructure/adapters/awarenessMockPersistenceAdapter');
 const AwarenessLoggerAdapter = require('../../../../business_modules/awareness/infrastructure/adapters/awarenessLoggerAdapter');
-const AwarenessFileSystemAdapter = require('../../../../business_modules/awareness/infrastructure/adapters/awarenessFileSystemAdapter');
+// AwarenessFileSystemAdapter removed - unused
 const AwarenessIdGeneratorAdapter = require('../../../../business_modules/awareness/infrastructure/adapters/awarenessIdGeneratorAdapter');
 const AwarenessHashGeneratorAdapter = require('../../../../business_modules/awareness/infrastructure/adapters/awarenessHashGeneratorAdapter');
 const RangeOperationServiceD = require('../../../../business_modules/awareness/domain/services/rangeOperationServiceD');
@@ -37,7 +37,7 @@ describe('AwarenessService with Adapters', () => {
         
         // Create internal adapters (no dependencies, can use real adapters in tests)
         const loggerAdapter = new AwarenessLoggerAdapter();
-        const fileSystemAdapter = new AwarenessFileSystemAdapter();
+        // fileSystemAdapter removed - unused
         const idGeneratorAdapter = new AwarenessIdGeneratorAdapter();
         const hashGeneratorAdapter = new AwarenessHashGeneratorAdapter();
         
@@ -56,7 +56,7 @@ describe('AwarenessService with Adapters', () => {
             persistenceAdapter: mockPersistenceAdapter,
             messagingAdapter: null,
             loggerAdapter: loggerAdapter,
-            fileSystemAdapter: fileSystemAdapter,
+            // fileSystemAdapter removed - unused
             idGeneratorAdapter: idGeneratorAdapter,
             hashGeneratorAdapter: hashGeneratorAdapter,
             rangeOperationServiceD: rangeOperationServiceD,
@@ -152,7 +152,7 @@ describe('AwarenessController with DI Container', () => {
         
         // Create internal adapters (no dependencies, can use real adapters in tests)
         const loggerAdapter = new AwarenessLoggerAdapter();
-        const fileSystemAdapter = new AwarenessFileSystemAdapter();
+        // fileSystemAdapter removed - unused
         const idGeneratorAdapter = new AwarenessIdGeneratorAdapter();
         const hashGeneratorAdapter = new AwarenessHashGeneratorAdapter();
         
@@ -171,7 +171,7 @@ describe('AwarenessController with DI Container', () => {
             persistenceAdapter: mockPersistenceAdapter,
             messagingAdapter: null,
             loggerAdapter: loggerAdapter,
-            fileSystemAdapter: fileSystemAdapter,
+            // fileSystemAdapter removed - unused
             idGeneratorAdapter: idGeneratorAdapter,
             hashGeneratorAdapter: hashGeneratorAdapter,
             rangeOperationServiceD: rangeOperationServiceD,

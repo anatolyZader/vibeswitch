@@ -22,8 +22,9 @@ class SuggestionAggregate {
     /**
      * @param {IIdGeneratorPort} idGeneratorPort - ID generator port (required)
      * @param {ILoggerPort} loggerPort - Logger port (optional)
+     * @param {SuggestionEvictionPolicy} evictionPolicy - Eviction policy (optional, uses default if not provided)
      */
-    constructor(idGeneratorPort, loggerPort = null) {
+    constructor(idGeneratorPort, loggerPort = null, evictionPolicy = null) {
         if (!idGeneratorPort) {
             throw new Error('SuggestionAggregate requires idGeneratorPort');
         }
@@ -36,9 +37,9 @@ class SuggestionAggregate {
         this.recentIds = []; // Capped to 10 for UI/quick feedback
         this.maxRecentSuggestions = 10;
         
-        // Eviction policy
-        this.MAX_TOTAL_SUGGESTIONS = 5000; // Global cap
-        this._evictionThreshold = 0.9; // Evict when 90% full (4500)
+        // Eviction policy (injectable for testability and configurability)
+        const SuggestionEvictionPolicy = require('../policies/suggestionEvictionPolicy');
+        this.evictionPolicy = evictionPolicy || new SuggestionEvictionPolicy();
         
         // Batch tracking
         this.batchesById = new Map(); // batchId -> SuggestionBatch
@@ -108,7 +109,7 @@ class SuggestionAggregate {
         const id = suggestion.id;
         
         // Enforce global cap with eviction policy
-        if (this.suggestionsById.size >= this.MAX_TOTAL_SUGGESTIONS * this._evictionThreshold) {
+        if (this.evictionPolicy.shouldEvict(this.suggestionsById.size)) {
             this._evictSuggestions();
         }
         
@@ -369,7 +370,7 @@ class SuggestionAggregate {
     }
 
     _evictSuggestions() {
-        const targetSize = Math.floor(this.MAX_TOTAL_SUGGESTIONS * 0.8);
+        const targetSize = this.evictionPolicy.getEvictionTarget(this.suggestionsById.size);
         const currentSize = this.suggestionsById.size;
         
         if (currentSize < targetSize) {

@@ -5,12 +5,15 @@
  * This is a domain entity with identity (filePath + sessionStart).
  */
 
+const ReviewEngagementPolicy = require('../policies/reviewEngagementPolicy');
+
 class ReviewSession {
     /**
      * @param {string} filePath - File being reviewed (URI string)
      * @param {number} sessionStart - Timestamp when session started
+     * @param {ReviewEngagementPolicy} engagementPolicy - Engagement policy (optional, uses default if not provided)
      */
-    constructor(filePath, sessionStart = Date.now()) {
+    constructor(filePath, sessionStart = Date.now(), engagementPolicy = null) {
         if (!filePath || typeof filePath !== 'string') {
             throw new Error('ReviewSession requires a non-empty filePath string');
         }
@@ -22,6 +25,9 @@ class ReviewSession {
         this.reviewTime = 0;
         this.isActive = true;
         this.completedAt = null;
+        
+        // Engagement policy (optional - only use if explicitly provided)
+        this.engagementPolicy = engagementPolicy || null;
     }
 
     /**
@@ -46,12 +52,18 @@ class ReviewSession {
 
     /**
      * Check if session has sufficient engagement
+     * Uses engagement policy if available, otherwise falls back to parameters
      * @param {number} minimumReviewTime - Minimum review time in ms (default: 30000)
      * @param {number} minimumMovements - Minimum cursor movements (default: 5)
      * @param {number} minimumScrolls - Minimum scroll events (default: 3)
      * @returns {boolean} True if session meets engagement criteria
      */
     hasSufficientEngagement(minimumReviewTime = 30000, minimumMovements = 5, minimumScrolls = 3) {
+        // Use policy if explicitly provided, otherwise use parameters (backward compatibility)
+        if (this.engagementPolicy) {
+            return this.engagementPolicy.hasSufficientEngagement(this);
+        }
+        // Fallback for backward compatibility
         const duration = Date.now() - this.sessionStart;
         return duration >= minimumReviewTime && 
                (this.cursorMovements >= minimumMovements || this.scrollEvents >= minimumScrolls);
@@ -59,10 +71,16 @@ class ReviewSession {
 
     /**
      * Check if session has timed out due to inactivity
+     * Uses engagement policy if available, otherwise falls back to parameter
      * @param {number} timeoutMs - Inactivity timeout in ms (default: 60000)
      * @returns {boolean} True if session has timed out
      */
     hasTimedOut(timeoutMs = 60000) {
+        // Use policy if explicitly provided, otherwise use parameter (backward compatibility)
+        if (this.engagementPolicy) {
+            return this.engagementPolicy.hasTimedOut(this, timeoutMs);
+        }
+        // Fallback for backward compatibility
         const timeSinceActivity = Date.now() - this.lastActivity;
         return timeSinceActivity > timeoutMs;
     }

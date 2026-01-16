@@ -15,8 +15,8 @@ const ChangeClassifier = require('./classification/changeClassifier');
 const Change = require('../domain/entities/change');
 const IIdGeneratorPort = require('../domain/ports/IIdGeneratorPort');
 const ILoggerPort = require('../domain/ports/ILoggerPort');
-const { buildDiffBullets } = require('./diffBulletService');
-const { getClassifierConfig } = require('./classificationConfig');
+const { buildDiffBullets } = require('./utilities/diffBulletService');
+const { getClassifierConfig } = require('./scoring/classificationConfig');
 
 class ClassificationService {
     /**

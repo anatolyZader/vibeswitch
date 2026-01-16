@@ -9,19 +9,16 @@
  */
 
 // Import domain aggregates
-const SuggestionAggregate = require('../domain/aggregates/suggestionAggregate');
+const SuggestionAggregate = require('../../domain/aggregates/suggestionAggregate');
 
 // Import domain entities
-const Change = require('../domain/entities/change');
+const Change = require('../../domain/entities/change');
 
 // Import domain utilities
-const { rangesOverlap } = require('./vscodeDocUtilities');
-const UriPathUtilities = require('./uriPathUtilities');
+const { rangesOverlap } = require('../utilities/vscodeDocUtilities');
+const UriPathUtilities = require('../utilities/uriPathUtilities');
 
-// Import domain events
-const AISuggestionOutcomeEvent = require('../domain/events/aiSuggestionOutcomeEvent');
-const KeepAllEvent = require('../domain/events/keepAllEvent');
-const SuggestionBatchCreatedEvent = require('../domain/events/suggestionBatchCreatedEvent');
+// Domain events removed - using callbacks instead for engine-based design
 
 // Import utilities
 const safe = require('../../../../safe');
@@ -33,7 +30,6 @@ class SuggestionLifecycleService {
      * @param {DebtService} debtService - Debt service (required)
      * @param {IAwarenessVSCodePort} vscodeAdapter - VS Code adapter (required)
      * @param {ILoggerPort} loggerAdapter - Logger adapter (optional)
-     * @param {IAwarenessMessagingPort} messagingAdapter - Messaging adapter (optional)
      * @param {Object} rangeOperationServiceD - Range operation service (required for review tracking)
      * @param {Object} timerRegistry - Timer registry (required - all timers must go through it)
      * @param {Function} updateScore - Score update callback (optional)
@@ -43,13 +39,13 @@ class SuggestionLifecycleService {
      * @param {Function} onKeepAll - Keep all callback (optional)
      * @param {Function} isActive - Function to check if service is active (required)
      * @param {string} instanceId - Instance ID for generation-based timer cancellation (required)
+     * @param {KeepAllDetectionPolicy} keepAllPolicy - Keep-all detection policy (optional, uses default if not provided)
      */
     constructor({
         suggestionAggregate,
         debtService,
         vscodeAdapter,
         loggerAdapter = null,
-        messagingAdapter = null,
         rangeOperationServiceD,
         timerRegistry,
         updateScore = null,
@@ -58,7 +54,8 @@ class SuggestionLifecycleService {
         onAISuggestionOutcome = null,
         onKeepAll = null,
         isActive,
-        instanceId
+        instanceId,
+        keepAllPolicy = null
     }) {
         if (!suggestionAggregate) {
             throw new Error('SuggestionLifecycleService requires suggestionAggregate');
@@ -86,7 +83,6 @@ class SuggestionLifecycleService {
         this.debtService = debtService;
         this.vscodeAdapter = vscodeAdapter;
         this.loggerAdapter = loggerAdapter;
-        this.messagingAdapter = messagingAdapter;
         this.rangeOperationServiceD = rangeOperationServiceD;
         this.timerRegistry = timerRegistry;
         this.updateScore = updateScore;
@@ -106,8 +102,10 @@ class SuggestionLifecycleService {
         
         // Keep-all detection state (merged from KeepAllDetectorService)
         this.recentAcceptances = [];
-        this.keepAllDetectionWindow = 2000; // 2 seconds
-        this.keepAllThreshold = 3; // Minimum acceptances to trigger
+        
+        // Keep-all detection policy (injectable for testability and configurability)
+        const KeepAllDetectionPolicy = require('../../domain/policies/keepAllDetectionPolicy');
+        this.keepAllPolicy = keepAllPolicy || new KeepAllDetectionPolicy();
         
         // Review tracking state (merged from ReviewTrackingService)
         this.activeReviews = new Map(); // URI -> { suggestionId, reviewStarted, reviewTime, dwellTimer }
@@ -243,18 +241,6 @@ class SuggestionLifecycleService {
         this._addSuggestionAndTrack(suggestion, mergedSize);
 
         // Publish batch created event if this is a new batch
-        if (isNewBatch && this.messagingAdapter) {
-            safe('publishSuggestionBatchCreatedEvent', async () => {
-                const batchEvent = new SuggestionBatchCreatedEvent({
-                    batchId: batch.batchId,
-                    filePath: batch.filePath.toString(),
-                    suggestionCount: batch.suggestionIds.length,
-                    totalSize: batch.totalSize
-                });
-                await this.messagingAdapter.publishSuggestionBatchCreatedEvent(batchEvent);
-            });
-        }
-
         // Call optional callback (e.g., for UsageStats)
         if (this.onAISuggestion) {
             this.onAISuggestion({
@@ -483,17 +469,6 @@ class SuggestionLifecycleService {
                             acceptanceCount: batch.acceptedCount
                         };
 
-                        if (this.messagingAdapter) {
-                            safe('publishKeepAllEvent', async () => {
-                                const event = new KeepAllEvent({
-                                    suggestionIds: result.suggestionIds || [],
-                                    filePath: result.filePath,
-                                    acceptanceCount: result.acceptanceCount || 0
-                                });
-                                await this.messagingAdapter.publishKeepAllEvent(event);
-                            });
-                        }
-
                         if (this.onKeepAll) {
                             this.onKeepAll(result);
                         }
@@ -521,18 +496,6 @@ class SuggestionLifecycleService {
                     isFileCreation: suggestion.isFileCreation,
                     isExternalCreation: suggestion.isExternalCreation,
                     isFileWrite: suggestion.isFileWrite
-                });
-            }
-
-            // Publish domain event
-            if (this.messagingAdapter) {
-                safe('publishAISuggestionOutcomeEvent', async () => {
-                    const event = new AISuggestionOutcomeEvent({
-                        suggestionId: suggestion.id,
-                        outcome: suggestion.status,
-                        filePath: suggestion.document
-                    });
-                    await this.messagingAdapter.publishAISuggestionOutcomeEvent(event);
                 });
             }
 
@@ -698,12 +661,13 @@ class SuggestionLifecycleService {
         });
         
         // Clean old entries (outside detection window)
+        const windowMs = this.keepAllPolicy.getWindowMs();
         this.recentAcceptances = this.recentAcceptances.filter(
-            entry => (now - entry.timestamp) < this.keepAllDetectionWindow
+            entry => (now - entry.timestamp) < windowMs
         );
         
-        // Check for "Keep All" pattern
-        if (this.recentAcceptances.length >= this.keepAllThreshold) {
+        // Check for "Keep All" pattern using policy
+        if (this.keepAllPolicy.isKeepAllPattern(this.recentAcceptances, now)) {
             this._detectKeepAll();
         }
     }
@@ -714,34 +678,38 @@ class SuggestionLifecycleService {
      */
     _detectKeepAll() {
         const now = Date.now();
+        
+        // Use policy to check for keep-all pattern
+        if (!this.keepAllPolicy.isKeepAllPattern(this.recentAcceptances, now)) {
+            return; // Not a keep-all pattern
+        }
+        
+        // Get data using policy methods
+        const uniqueFiles = this.keepAllPolicy.getAffectedFiles(this.recentAcceptances, now);
+        const totalSize = this.keepAllPolicy.getTotalSize(this.recentAcceptances, now);
+        const windowMs = this.keepAllPolicy.getWindowMs();
         const recent = this.recentAcceptances.filter(
-            entry => (now - entry.timestamp) < this.keepAllDetectionWindow
+            entry => (now - entry.timestamp) < windowMs
         );
         
-        if (recent.length >= this.keepAllThreshold) {
-            // Get unique files affected
-            const uniqueFiles = new Set(recent.map(e => e.document));
-            const totalSize = recent.reduce((sum, e) => sum + e.size, 0);
-            
-            if (this.loggerAdapter) {
-                this.loggerAdapter.log(`AwarenessMonitor: "Keep All" detected - ${recent.length} suggestions accepted across ${uniqueFiles.size} files`);
-            }
-            
-            // Call optional callback (e.g., for UsageStats)
-            if (this.onKeepAll) {
-                this.onKeepAll({
-                    count: recent.length,
-                    fileCount: uniqueFiles.size,
-                    totalSize: totalSize,
-                    timestamp: now,
-                    window: this.keepAllDetectionWindow
-                });
-            }
-            
-            // Clear the tracking array to avoid duplicate detections
-            // (but keep the most recent one to allow for overlapping detections)
-            this.recentAcceptances = recent.slice(-1);
+        if (this.loggerAdapter) {
+            this.loggerAdapter.log(`AwarenessMonitor: "Keep All" detected - ${recent.length} suggestions accepted across ${uniqueFiles.size} files`);
         }
+        
+        // Call optional callback (e.g., for UsageStats)
+        if (this.onKeepAll) {
+            this.onKeepAll({
+                count: recent.length,
+                fileCount: uniqueFiles.size,
+                totalSize: totalSize,
+                timestamp: now,
+                window: windowMs
+            });
+        }
+        
+        // Clear the tracking array to avoid duplicate detections
+        // (but keep the most recent one to allow for overlapping detections)
+        this.recentAcceptances = recent.slice(-1);
     }
     
     /**

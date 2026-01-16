@@ -6,69 +6,55 @@
  */
 
 // Import application services
-const DebtService = require('./debtService');
-const ChangeLedgerService = require('./changeLedgerService');
-const SessionService = require('./sessionService');
-const SuggestionLifecycleService = require('./suggestionLifecycleService');
+const DebtService = require('./debt/debtService');
+const ChangeLedgerService = require('./persistence/changeLedgerService');
+const SessionService = require('./sessions/sessionService');
+const SuggestionLifecycleService = require('./suggestions/suggestionLifecycleService');
 const ClassificationService = require('./classificationService');
-const TimerRegistry = require('./timerRegistry');
+const TimerRegistry = require('./utilities/timerRegistry');
 
 // Import app layer utilities (technical/infrastructure operations)
-const RangeUtilities = require('./rangeUtilities');
-const UriPathUtilities = require('./uriPathUtilities');
+const RangeUtilities = require('./utilities/rangeUtilities');
+const UriPathUtilities = require('./utilities/uriPathUtilities');
 
 // Import input layer
 const AwarenessEventListener = require('../input/awarenessEventListener');
 
 // Import pure calculation functions (moved from domain services)
-const { calculateReviewScore, calculateCriticalScore, calculateAdaptationScore, calculateDebtScore } = require('./scoreCalculations');
+const { calculateReviewScore, calculateCriticalScore, calculateAdaptationScore, calculateDebtScore } = require('./scoring/scoreCalculations');
 
 // Import domain aggregates
 const SuggestionAggregate = require('../domain/aggregates/suggestionAggregate');
 
 // Import domain utilities
-const { rangesOverlap, isPositionInRange: checkPositionInRange } = require('./vscodeDocUtilities');
-const { buildDiffBullets } = require('./diffBulletService');
+const { rangesOverlap, isPositionInRange: checkPositionInRange } = require('./utilities/vscodeDocUtilities');
+const { buildDiffBullets } = require('./utilities/diffBulletService');
 
-// Import domain events
-const AISuggestionEvent = require('../domain/events/aiSuggestionEvent');
-const AISuggestionOutcomeEvent = require('../domain/events/aiSuggestionOutcomeEvent');
-const ScoreUpdateEvent = require('../domain/events/scoreUpdateEvent');
-const KeepAllEvent = require('../domain/events/keepAllEvent');
-const DebtClearedEvent = require('../domain/events/debtClearedEvent');
-const SuggestionBatchCreatedEvent = require('../domain/events/suggestionBatchCreatedEvent');
+// Domain events removed - using callbacks instead for engine-based design
 
 // Import utilities
 const { getLogger } = require('../../../../logger');
 const safe = require('../../../../safe');
 
-// Import engine interface
-const IAwarenessEngine = require('./IAwarenessEngine');
-
-class AwarenessEngine extends IAwarenessEngine {
+class AwarenessEngine {
     /**
      * @param {Object} adapters - Adapter instances
      * @param {Object} adapters.vscodeAdapter - VS Code adapter implementing IAwarenessVSCodePort
      * @param {Object} adapters.persistenceAdapter - Persistence adapter implementing IAwarenessPersistencePort
-     * @param {Object} adapters.messagingAdapter - Messaging adapter implementing IAwarenessMessagingPort (optional)
      * @param {Object} adapters.loggerAdapter - Logger adapter implementing ILoggerPort
-     * @param {Object} adapters.fileSystemAdapter - File system adapter implementing IFileSystemPort
      * @param {Object} adapters.idGeneratorAdapter - ID generator adapter implementing IIdGeneratorPort
+     * @param {Object} adapters.hashGeneratorAdapter - Hash generator adapter implementing IHashGeneratorPort
      * @param {Object} adapters.rangeOperationServiceD - Range operation domain service (domain logic only)
      * @param {Object} adapters.uriPathOperationServiceD - URI/path operation domain service (domain validation only)
-     * @param {Object} adapters.changeClassificationServiceD - Change classification domain service
      */
     constructor({ 
         vscodeAdapter, 
         persistenceAdapter, 
-        messagingAdapter = null,
         loggerAdapter,
-        fileSystemAdapter,
         idGeneratorAdapter,
         hashGeneratorAdapter,
         rangeOperationServiceD,
-        uriPathOperationServiceD,
-        changeClassificationServiceD
+        uriPathOperationServiceD
     }) {
         // Validate required adapters
         if (!vscodeAdapter) {
@@ -79,9 +65,6 @@ class AwarenessEngine extends IAwarenessEngine {
         }
         if (!loggerAdapter) {
             throw new Error('AwarenessEngine requires loggerAdapter');
-        }
-        if (!fileSystemAdapter) {
-            throw new Error('AwarenessEngine requires fileSystemAdapter');
         }
         if (!idGeneratorAdapter) {
             throw new Error('AwarenessEngine requires idGeneratorAdapter');
@@ -95,16 +78,11 @@ class AwarenessEngine extends IAwarenessEngine {
         if (!uriPathOperationServiceD) {
             throw new Error('AwarenessEngine requires uriPathOperationServiceD');
         }
-        if (!changeClassificationServiceD) {
-            throw new Error('AwarenessEngine requires changeClassificationServiceD');
-        }
         
         // Store all injected adapters (Ports and Adapters pattern)
         this.vscodeAdapter = vscodeAdapter;
         this.persistenceAdapter = persistenceAdapter;
-        this.messagingAdapter = messagingAdapter; // Optional - events won't be published if not provided
         this.loggerAdapter = loggerAdapter;
-        this.fileSystemAdapter = fileSystemAdapter;
         this.idGeneratorAdapter = idGeneratorAdapter;
         this.hashGeneratorAdapter = hashGeneratorAdapter;
         
@@ -112,7 +90,6 @@ class AwarenessEngine extends IAwarenessEngine {
         // Note: Technical utilities (VSCodeUtilities, RangeUtilities, UriPathUtilities) are static classes
         this.rangeOperationServiceD = rangeOperationServiceD; // Domain logic: rangesOverlap, isPositionInRange
         this.uriPathOperationServiceD = uriPathOperationServiceD; // Domain validation: isCodeDocument, isSkippableUri
-        this.changeClassificationServiceD = changeClassificationServiceD;
         
         // Optional callbacks for external tracking (e.g., UsageStats)
         this.onAISuggestion = null;
@@ -206,19 +183,8 @@ class AwarenessEngine extends IAwarenessEngine {
             this.loggerAdapter
         );
         
-        // Create debt cleared callback that publishes event AND calls legacy callback
+        // Create debt cleared callback
         const debtClearedCallback = (data) => {
-            // Publish domain event
-            if (this.messagingAdapter) {
-                safe('publishDebtClearedEvent', async () => {
-                    const event = new DebtClearedEvent({
-                        clearedFiles: data.clearedFiles || [],
-                        totalDebtCleared: data.totalDebtCleared || 0
-                    });
-                    await this.messagingAdapter.publishDebtClearedEvent(event);
-                });
-            }
-            // Call legacy callback for backward compatibility
             if (this.onDebtCleared) {
                 this.onDebtCleared(data);
             }
@@ -230,7 +196,6 @@ class AwarenessEngine extends IAwarenessEngine {
             debtService: this.debtService,
             vscodeAdapter: this.vscodeAdapter,
             loggerAdapter: this.loggerAdapter,
-            messagingAdapter: this.messagingAdapter,
             rangeOperationServiceD: this.rangeOperationServiceD,
             timerRegistry: this.timerRegistry,
             updateScore: () => this.updateScore(),
@@ -247,8 +212,7 @@ class AwarenessEngine extends IAwarenessEngine {
             this.suggestionLifecycleService, // Pass suggestionService
             debtClearedCallback,
             () => this.updateScore(),
-            updateFileColorsInExplorer,
-            this.messagingAdapter // Pass messaging adapter for domain events
+            updateFileColorsInExplorer
         );
         
         // FileWatcherService removed - VS Code events handle file detection
@@ -554,20 +518,7 @@ class AwarenessEngine extends IAwarenessEngine {
      * @private
      */
     _triggerScoreCallbacks(suggestions, getReviewDebtSummary) {
-        // Publish domain event
-        if (this.messagingAdapter) {
-            safe('publishScoreUpdateEvent', async () => {
-                const scoreData = this.getScore();
-                const event = new ScoreUpdateEvent({
-                    score: scoreData.total || 0,
-                    components: scoreData.components || {},
-                    suggestions: scoreData.suggestions || { total: 0, pending: 0, pendingFiles: [] },
-                    debt: scoreData.debt || { unreviewedFiles: 0, files: [] }
-                });
-                await this.messagingAdapter.publishScoreUpdateEvent(event);
-            });
-        }
-        // Call legacy callback for backward compatibility
+        // Trigger score update callback
         if (this.onScoreUpdate) {
             this.onScoreUpdate();
         }
