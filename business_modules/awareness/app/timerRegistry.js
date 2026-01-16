@@ -23,7 +23,11 @@ class TimerRegistry {
     setTimeout(callback, delay, owner = 'default') {
         const timer = setTimeout(() => {
             this.timeouts.delete(timer);
-            callback();
+            try {
+                callback();
+            } catch (e) {
+                console.error(`TimerRegistry: Error in timeout callback (owner: ${owner}):`, e);
+            }
         }, delay);
         this.timeouts.set(timer, { owner, callback });
         return timer;
@@ -37,7 +41,13 @@ class TimerRegistry {
      * @returns {Object} Timer ID (Node.js Timeout object)
      */
     setInterval(callback, delay, owner = 'default') {
-        const timer = setInterval(callback, delay);
+        const timer = setInterval(() => {
+            try {
+                callback();
+            } catch (e) {
+                console.error(`TimerRegistry: Error in interval callback (owner: ${owner}):`, e);
+            }
+        }, delay);
         this.intervals.set(timer, { owner, callback });
         return timer;
     }
@@ -67,16 +77,8 @@ class TimerRegistry {
     /**
      * Clear all timers (timeouts and intervals)
      * Should be called on service stop/dispose
-     * Alias: dispose() for consistency with VS Code patterns
      */
     clear() {
-        this.dispose();
-    }
-
-    /**
-     * Dispose - clear all timers (alias for clear() for consistency)
-     */
-    dispose() {
         // Clear all timeouts
         for (const timer of this.timeouts.keys()) {
             clearTimeout(timer);
@@ -91,19 +93,16 @@ class TimerRegistry {
     }
 
     /**
-     * Clear timers by owner tag
+     * Clear all timers by owner
      * @param {string} owner - Owner tag to clear
      */
     clearByOwner(owner) {
-        // Clear timeouts by owner
         for (const [timer, info] of this.timeouts.entries()) {
             if (info.owner === owner) {
                 clearTimeout(timer);
                 this.timeouts.delete(timer);
             }
         }
-
-        // Clear intervals by owner
         for (const [timer, info] of this.intervals.entries()) {
             if (info.owner === owner) {
                 clearInterval(timer);
@@ -113,10 +112,21 @@ class TimerRegistry {
     }
 
     /**
-     * Get count of active timers
-     * @returns {Object} { timeouts: number, intervals: number }
+     * Get count of active timers by owner
+     * @param {string} owner - Owner tag (optional)
+     * @returns {Object|number} Count object or total count if owner specified
      */
-    getCount() {
+    getCountByOwner(owner) {
+        if (owner) {
+            let count = 0;
+            for (const info of this.timeouts.values()) {
+                if (info.owner === owner) count++;
+            }
+            for (const info of this.intervals.values()) {
+                if (info.owner === owner) count++;
+            }
+            return count;
+        }
         return {
             timeouts: this.timeouts.size,
             intervals: this.intervals.size
@@ -124,22 +134,10 @@ class TimerRegistry {
     }
 
     /**
-     * Get count of timers by owner
-     * @param {string} owner - Owner tag
-     * @returns {Object} { timeouts: number, intervals: number }
+     * Alias for clear() for consistency
      */
-    getCountByOwner(owner) {
-        let timeoutCount = 0;
-        let intervalCount = 0;
-
-        for (const info of this.timeouts.values()) {
-            if (info.owner === owner) timeoutCount++;
-        }
-        for (const info of this.intervals.values()) {
-            if (info.owner === owner) intervalCount++;
-        }
-
-        return { timeouts: timeoutCount, intervals: intervalCount };
+    dispose() {
+        this.clear();
     }
 }
 

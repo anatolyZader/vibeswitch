@@ -6,20 +6,23 @@
  * as a separate suggestion.
  */
 
-const SuggestionId = require('../value_objects/suggestionId');
-const FilePath = require('../value_objects/filePath');
-
 class SuggestionBatch {
     /**
      * @param {string} batchId - Unique batch identifier
-     * @param {string|FilePath} filePath - File where batch was created
+     * @param {string} filePath - File where batch was created (URI string)
      * @param {number} timestamp - When batch was created
      */
     constructor(batchId, filePath, timestamp = Date.now()) {
+        if (!batchId || typeof batchId !== 'string') {
+            throw new Error('SuggestionBatch requires a non-empty batchId string');
+        }
+        if (!filePath || typeof filePath !== 'string') {
+            throw new Error('SuggestionBatch requires a non-empty filePath string');
+        }
         this.batchId = batchId;
-        this.filePath = filePath instanceof FilePath ? filePath : new FilePath(filePath);
+        this.filePath = filePath;
         this.timestamp = timestamp;
-        this.suggestionIds = []; // Array of SuggestionId
+        this.suggestionIds = []; // Array of string IDs
         this.totalSize = 0;
         this.status = 'pending'; // 'pending' | 'partially_accepted' | 'fully_accepted' | 'rejected'
         this.acceptedCount = 0;
@@ -29,16 +32,12 @@ class SuggestionBatch {
 
     /**
      * Add a suggestion to this batch
-     * @param {string|SuggestionId} suggestionId - Suggestion ID
+     * @param {string} suggestionId - Suggestion ID (string)
      * @param {number} size - Size of the suggestion
      */
     addSuggestion(suggestionId, size) {
-        // Store as string for simplicity (can convert to SuggestionId if needed)
-        const idStr = suggestionId instanceof SuggestionId ? suggestionId.toString() : String(suggestionId);
-        if (!this.suggestionIds.find(sid => {
-            const sidStr = sid instanceof SuggestionId ? sid.toString() : String(sid);
-            return sidStr === idStr;
-        })) {
+        const idStr = String(suggestionId);
+        if (!this.suggestionIds.includes(idStr)) {
             this.suggestionIds.push(idStr);
             this.totalSize += size;
         }
@@ -46,15 +45,12 @@ class SuggestionBatch {
 
     /**
      * Record outcome for a suggestion in this batch
-     * @param {string|SuggestionId} suggestionId - Suggestion ID
+     * @param {string} suggestionId - Suggestion ID (string)
      * @param {string} outcome - 'accepted' | 'rejected' | 'modified'
      */
     recordOutcome(suggestionId, outcome) {
-        const idStr = suggestionId instanceof SuggestionId ? suggestionId.toString() : String(suggestionId);
-        if (!this.suggestionIds.find(sid => {
-            const sidStr = sid instanceof SuggestionId ? sid.toString() : String(sid);
-            return sidStr === idStr;
-        })) {
+        const idStr = String(suggestionId);
+        if (!this.suggestionIds.includes(idStr)) {
             return; // Suggestion not in this batch
         }
 
@@ -131,9 +127,7 @@ class SuggestionBatch {
      * @returns {Array<string>} Array of suggestion ID strings
      */
     getSuggestionIdStrings() {
-        return this.suggestionIds.map(id => {
-            return id instanceof SuggestionId ? id.toString() : String(id);
-        });
+        return [...this.suggestionIds];
     }
 }
 

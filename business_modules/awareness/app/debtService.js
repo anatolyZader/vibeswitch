@@ -6,7 +6,7 @@
  */
 
 const FileDebt = require('../domain/entities/fileDebt');
-const { normalizeToUri } = require('./vscodeDocUtilities');
+const vscodeDocUtilities = require('./vscodeDocUtilities');
 
 class DebtService {
     /**
@@ -110,7 +110,7 @@ class DebtService {
      * @param {Function} updateScore - Callback to trigger score update
      */
     addToDebt(filePathOrUri, changeSize, updateScore) {
-        const uri = normalizeToUri(filePathOrUri);
+        const uri = vscodeDocUtilities.normalizeToUri(null, filePathOrUri);
         if (!uri) return;
         
         let fileDebt = this.fileDebts.get(uri);
@@ -148,7 +148,7 @@ class DebtService {
      * @returns {FileDebt|null} FileDebt entity or null
      */
     getDebt(filePathOrUri) {
-        const uri = normalizeToUri(filePathOrUri);
+        const uri = vscodeDocUtilities.normalizeToUri(null, filePathOrUri);
         if (!uri) return null;
         return this.fileDebts.get(uri) || null;
     }
@@ -160,7 +160,7 @@ class DebtService {
      * @param {number} reviewTime - Time spent reviewing
      */
     markAsReviewed(filePathOrUri, reviewTime) {
-        const uri = normalizeToUri(filePathOrUri);
+        const uri = vscodeDocUtilities.normalizeToUri(null, filePathOrUri);
         if (!uri) return;
         const fileDebt = this.fileDebts.get(uri);
         if (fileDebt) {
@@ -186,7 +186,7 @@ class DebtService {
      * @param {Object} sessionData - Session data
      */
     updateSession(filePathOrUri, sessionData) {
-        const uri = normalizeToUri(filePathOrUri);
+        const uri = vscodeDocUtilities.normalizeToUri(null, filePathOrUri);
         if (!uri) return;
         const fileDebt = this.fileDebts.get(uri);
         if (fileDebt) {
@@ -300,7 +300,7 @@ class DebtService {
      * @returns {boolean} True if file has unreviewed file-level debt
      */
     hasUnreviewedDebt(filePathOrUri) {
-        const uri = normalizeToUri(filePathOrUri);
+        const uri = vscodeDocUtilities.normalizeToUri(null, filePathOrUri);
         if (!uri) return false;
         const fileDebt = this.fileDebts.get(uri);
         return fileDebt && !fileDebt.isReviewed();
@@ -308,3 +308,6 @@ class DebtService {
 }
 
 module.exports = DebtService;
+
+
+// ============================================================================

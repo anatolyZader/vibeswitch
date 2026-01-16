@@ -6,7 +6,6 @@
  */
 
 const ReviewSession = require('../../../../../business_modules/awareness/domain/entities/reviewSession');
-const FilePath = require('../../../../../business_modules/awareness/domain/value_objects/filePath');
 
 describe('ReviewSession Entity', () => {
     let session;
@@ -24,7 +23,7 @@ describe('ReviewSession Entity', () => {
     test('should create session with file path and start time', () => {
         session = new ReviewSession(testFilePath, testStartTime);
         
-        expect(session.filePath).toBeInstanceOf(FilePath);
+        expect(typeof session.filePath).toBe("string");
         expect(session.sessionStart).toBe(testStartTime);
         expect(session.lastActivity).toBe(testStartTime);
         expect(session.cursorMovements).toBe(0);
@@ -43,11 +42,12 @@ describe('ReviewSession Entity', () => {
         expect(session.sessionStart).toBeLessThanOrEqual(after);
     });
 
-    test('should accept FilePath object as file path', () => {
-        const filePath = new FilePath(testFilePath);
+    test('should accept file path string', () => {
+        const filePath = testFilePath;
         session = new ReviewSession(filePath, testStartTime);
         
         expect(session.filePath).toBe(filePath);
+        expect(typeof session.filePath).toBe("string");
     });
 
     test('should record cursor movement', () => {
@@ -237,7 +237,7 @@ describe('ReviewSession Entity', () => {
         session = new ReviewSession(testFilePath, testStartTime);
         
         expect(session.isForFile(testFilePath)).toBe(true);
-        expect(session.isForFile(new FilePath(testFilePath))).toBe(true);
+        expect(session.isForFile(testFilePath)).toBe(true);
         expect(session.isForFile('file:///workspace/other.js')).toBe(false);
     });
 

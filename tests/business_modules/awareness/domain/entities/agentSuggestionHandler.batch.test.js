@@ -4,7 +4,6 @@
  * Tests that AgentSuggestionHandler correctly creates and tracks batches.
  */
 
-const { assert } = require('chai');
 const AgentSuggestionHandler = require('../../../../../business_modules/awareness/domain/entities/agentSuggestionHandler');
 const SuggestionBatch = require('../../../../../business_modules/awareness/domain/entities/suggestionBatch');
 
@@ -80,7 +79,7 @@ describe('AgentSuggestionHandler with SuggestionBatch', () => {
         handler.recordAISuggestionBatch(mockDocument, mockChanges);
         
         // Check that a batch was created
-        expect(handler.batchesById.size, 1);
+        expect(handler.batchesById.size).toBe(1);
     });
 
     test('should add suggestions to same batch within time window', () => {
@@ -112,8 +111,8 @@ describe('AgentSuggestionHandler with SuggestionBatch', () => {
         
         // Should have one batch with two suggestions
         const batches = Array.from(handler.batchesById.values());
-        expect(batches.length, 1);
-        expect(batches[0].suggestionIds.length, 2);
+        expect(batches.length).toBe(1);
+        expect(batches[0].suggestionIds.length).toBe(2);
     });
 
     test('should assign batchId to suggestions', () => {
@@ -135,7 +134,7 @@ describe('AgentSuggestionHandler with SuggestionBatch', () => {
         
         // Get the suggestion
         const suggestions = Array.from(handler.suggestionsById.values());
-        expect(suggestions.length, 1);
+        expect(suggestions.length).toBe(1);
         expect(suggestions[0].batchId);
     });
 
@@ -162,14 +161,14 @@ describe('AgentSuggestionHandler with SuggestionBatch', () => {
         const batch = handler.batchesById.get(batchId);
         
         expect(batch);
-        expect(batch.status, 'pending');
+        expect(batch.status).toBe('pending');
         
         // Mark suggestion as accepted (simulate)
         suggestion.status = 'accepted';
         handler._updateBatchOutcome(suggestion);
         
         // Batch should reflect the outcome
-        expect(batch.acceptedCount, 1);
+        expect(batch.acceptedCount).toBe(1);
     });
 
     test('should detect keep all pattern when batch fully accepted', () => {
@@ -280,7 +279,7 @@ describe('AgentSuggestionHandler with SuggestionBatch', () => {
         handler.recordAISuggestionBatch(mockDocument2, mockChanges);
         
         // Should have two separate batches
-        expect(handler.batchesById.size, 2);
+        expect(handler.batchesById.size).toBe(2);
     });
 
     test('should include batch info in callback data', () => {

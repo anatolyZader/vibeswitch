@@ -6,8 +6,6 @@
  */
 
 const SuggestionBatch = require('../../../../../business_modules/awareness/domain/entities/suggestionBatch');
-const SuggestionId = require('../../../../../business_modules/awareness/domain/value_objects/suggestionId');
-const FilePath = require('../../../../../business_modules/awareness/domain/value_objects/filePath');
 
 describe('SuggestionBatch Entity', () => {
     let batch;
@@ -26,15 +24,15 @@ describe('SuggestionBatch Entity', () => {
     test('should create batch with required parameters', () => {
         batch = new SuggestionBatch(testBatchId, testFilePath, testTimestamp);
         
-        expect(batch.batchId, testBatchId);
-        expect(batch.filePath, FilePath);
-        expect(batch.timestamp, testTimestamp);
-        expect(batch.suggestionIds, []);
-        expect(batch.totalSize, 0);
-        expect(batch.status, 'pending');
-        expect(batch.acceptedCount, 0);
-        expect(batch.rejectedCount, 0);
-        expect(batch.modifiedCount, 0);
+        expect(batch.batchId).toBe(testBatchId);
+        expect(typeof batch.filePath).toBe("string");
+        expect(batch.timestamp).toBe(testTimestamp);
+        expect(batch.suggestionIds).toEqual([]);
+        expect(batch.totalSize).toBe(0);
+        expect(batch.status).toBe('pending');
+        expect(batch.acceptedCount).toBe(0);
+        expect(batch.rejectedCount).toBe(0);
+        expect(batch.modifiedCount).toBe(0);
     });
 
     test('should create batch with default timestamp', () => {
@@ -42,15 +40,15 @@ describe('SuggestionBatch Entity', () => {
         batch = new SuggestionBatch(testBatchId, testFilePath);
         const after = Date.now();
         
-        expect(batch.timestamp, before);
-        expect(batch.timestamp, after);
+        expect(batch.timestamp).toBe(before);
+        expect(batch.timestamp).toBe(after);
     });
 
     test('should accept FilePath object as file path', () => {
-        const filePath = new FilePath(testFilePath);
+        const filePath = testFilePath;
         batch = new SuggestionBatch(testBatchId, filePath, testTimestamp);
         
-        expect(batch.filePath, filePath);
+        expect(batch.filePath).toBe(filePath);
     });
 
     test('should add suggestion with string ID', () => {
@@ -60,20 +58,20 @@ describe('SuggestionBatch Entity', () => {
         
         batch.addSuggestion(suggestionId, size);
         
-        expect(batch.suggestionIds.length, 1);
-        expect(batch.suggestionIds[0], suggestionId);
-        expect(batch.totalSize, size);
+        expect(batch.suggestionIds.length).toBe(1);
+        expect(batch.suggestionIds[0]).toBe(suggestionId);
+        expect(batch.totalSize).toBe(size);
     });
 
     test('should add suggestion with SuggestionId object', () => {
         batch = new SuggestionBatch(testBatchId, testFilePath, testTimestamp);
-        const suggestionId = new SuggestionId('suggestion-1');
+        const suggestionId = 'suggestion-1';
         const size = 100;
         
         batch.addSuggestion(suggestionId, size);
         
-        expect(batch.suggestionIds.length, 1);
-        expect(batch.totalSize, size);
+        expect(batch.suggestionIds.length).toBe(1);
+        expect(batch.totalSize).toBe(size);
     });
 
     test('should not add duplicate suggestions', () => {
@@ -84,8 +82,8 @@ describe('SuggestionBatch Entity', () => {
         batch.addSuggestion(suggestionId, size);
         batch.addSuggestion(suggestionId, size);
         
-        expect(batch.suggestionIds.length, 1);
-        expect(batch.totalSize, size); // Not doubled
+        expect(batch.suggestionIds.length).toBe(1);
+        expect(batch.totalSize).toBe(size); // Not doubled
     });
 
     test('should add multiple suggestions', () => {
@@ -95,8 +93,8 @@ describe('SuggestionBatch Entity', () => {
         batch.addSuggestion('suggestion-2', 200);
         batch.addSuggestion('suggestion-3', 150);
         
-        expect(batch.suggestionIds.length, 3);
-        expect(batch.totalSize, 450);
+        expect(batch.suggestionIds.length).toBe(3);
+        expect(batch.totalSize).toBe(450);
     });
 
     test('should record accepted outcome', () => {
@@ -105,10 +103,10 @@ describe('SuggestionBatch Entity', () => {
         
         batch.recordOutcome('suggestion-1', 'accepted');
         
-        expect(batch.acceptedCount, 1);
-        expect(batch.rejectedCount, 0);
-        expect(batch.modifiedCount, 0);
-        expect(batch.status, 'fully_accepted');
+        expect(batch.acceptedCount).toBe(1);
+        expect(batch.rejectedCount).toBe(0);
+        expect(batch.modifiedCount).toBe(0);
+        expect(batch.status).toBe('fully_accepted');
     });
 
     test('should record rejected outcome', () => {
@@ -117,9 +115,9 @@ describe('SuggestionBatch Entity', () => {
         
         batch.recordOutcome('suggestion-1', 'rejected');
         
-        expect(batch.acceptedCount, 0);
-        expect(batch.rejectedCount, 1);
-        expect(batch.status, 'rejected');
+        expect(batch.acceptedCount).toBe(0);
+        expect(batch.rejectedCount).toBe(1);
+        expect(batch.status).toBe('rejected');
     });
 
     test('should record modified outcome', () => {
@@ -128,9 +126,9 @@ describe('SuggestionBatch Entity', () => {
         
         batch.recordOutcome('suggestion-1', 'modified');
         
-        expect(batch.acceptedCount, 0);
-        expect(batch.rejectedCount, 0);
-        expect(batch.modifiedCount, 1);
+        expect(batch.acceptedCount).toBe(0);
+        expect(batch.rejectedCount).toBe(0);
+        expect(batch.modifiedCount).toBe(1);
     });
 
     test('should ignore outcome for suggestion not in batch', () => {
@@ -139,8 +137,8 @@ describe('SuggestionBatch Entity', () => {
         
         batch.recordOutcome('suggestion-2', 'accepted');
         
-        expect(batch.acceptedCount, 0);
-        expect(batch.status, 'pending');
+        expect(batch.acceptedCount).toBe(0);
+        expect(batch.status).toBe('pending');
     });
 
     test('should update status to partially_accepted when some resolved', () => {
@@ -151,7 +149,7 @@ describe('SuggestionBatch Entity', () => {
         
         batch.recordOutcome('suggestion-1', 'accepted');
         
-        expect(batch.status, 'partially_accepted');
+        expect(batch.status).toBe('partially_accepted');
     });
 
     test('should update status to fully_accepted when all accepted', () => {
@@ -162,7 +160,7 @@ describe('SuggestionBatch Entity', () => {
         batch.recordOutcome('suggestion-1', 'accepted');
         batch.recordOutcome('suggestion-2', 'accepted');
         
-        expect(batch.status, 'fully_accepted');
+        expect(batch.status).toBe('fully_accepted');
     });
 
     test('should update status to partially_accepted with mixed outcomes', () => {
@@ -175,9 +173,9 @@ describe('SuggestionBatch Entity', () => {
         batch.recordOutcome('suggestion-2', 'rejected');
         batch.recordOutcome('suggestion-3', 'accepted');
         
-        expect(batch.status, 'partially_accepted');
-        expect(batch.acceptedCount, 2);
-        expect(batch.rejectedCount, 1);
+        expect(batch.status).toBe('partially_accepted');
+        expect(batch.acceptedCount).toBe(2);
+        expect(batch.rejectedCount).toBe(1);
     });
 
     test('should check if batch is fully resolved', () => {
@@ -241,7 +239,7 @@ describe('SuggestionBatch Entity', () => {
     test('should calculate acceptance rate', () => {
         batch = new SuggestionBatch(testBatchId, testFilePath, testTimestamp);
         
-        expect(batch.getAcceptanceRate(), 0); // No suggestions
+        expect(batch.getAcceptanceRate()).toBe(0); // No suggestions
         
         batch.addSuggestion('suggestion-1', 100);
         batch.addSuggestion('suggestion-2', 200);
@@ -252,7 +250,7 @@ describe('SuggestionBatch Entity', () => {
         batch.recordOutcome('suggestion-3', 'rejected');
         
         const rate = batch.getAcceptanceRate();
-        expect(rate, 2 / 3); // 2 out of 3 accepted
+        expect(rate).toBe(2 / 3); // 2 out of 3 accepted
     });
 
     test('should get batch age', () => {
@@ -264,7 +262,7 @@ describe('SuggestionBatch Entity', () => {
         
         const age = batch.getAge();
         
-        expect(age, 5000);
+        expect(age).toBe(5000);
         
         Date.now = originalNow;
     });
@@ -272,11 +270,11 @@ describe('SuggestionBatch Entity', () => {
     test('should get suggestion ID strings', () => {
         batch = new SuggestionBatch(testBatchId, testFilePath, testTimestamp);
         batch.addSuggestion('suggestion-1', 100);
-        batch.addSuggestion(new SuggestionId('suggestion-2'), 200);
+        batch.addSuggestion('suggestion-2', 200);
         
         const ids = batch.getSuggestionIdStrings();
         
-        expect(ids, ['suggestion-1', 'suggestion-2']);
+        expect(ids).toEqual(['suggestion-1', 'suggestion-2']);
     });
 
     test('should handle adapted status as modified', () => {
@@ -286,7 +284,7 @@ describe('SuggestionBatch Entity', () => {
         // 'adapted' should be treated as 'modified' for batch tracking
         batch.recordOutcome('suggestion-1', 'adapted');
         
-        expect(batch.modifiedCount, 0); // 'adapted' is not a recognized outcome
+        expect(batch.modifiedCount).toBe(0); // 'adapted' is not a recognized outcome
         // Note: In real usage, 'adapted' would need to be mapped to 'modified'
     });
 
@@ -297,13 +295,13 @@ describe('SuggestionBatch Entity', () => {
         batch.recordOutcome('suggestion-1', 'accepted');
         // Note: The current implementation doesn't prevent recording multiple outcomes
         // This test verifies the current behavior - first outcome is recorded
-        expect(batch.acceptedCount, 1);
-        expect(batch.rejectedCount, 0);
+        expect(batch.acceptedCount).toBe(1);
+        expect(batch.rejectedCount).toBe(0);
         
         // Recording again doesn't change counts (implementation doesn't track per-suggestion state)
         batch.recordOutcome('suggestion-1', 'rejected');
         // The implementation increments counters, so both are counted
-        expect(batch.acceptedCount, 1);
-        expect(batch.rejectedCount, 1);
+        expect(batch.acceptedCount).toBe(1);
+        expect(batch.rejectedCount).toBe(1);
     });
 });

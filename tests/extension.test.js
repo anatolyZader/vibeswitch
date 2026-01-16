@@ -1,27 +1,26 @@
-const assert = require('assert');
 const vscode = require('vscode');
 const fs = require('fs');
 const path = require('path');
 
-suite('VibeSwitch Extension Test Suite', () => {
+describe('VibeSwitch Extension Test Suite', () => {
     vscode.window.showInformationMessage('Starting VibeSwitch tests.');
 
     test('Extension should be present', () => {
-        assert.ok(vscode.extensions.getExtension('your-publisher-name.vibeswitch'));
+        expect(vscode.extensions.getExtension('your-publisher-name.vibeswitch').toBeTruthy());
     });
 
     test('Extension should activate', async function() {
         this.timeout(10000);
         const ext = vscode.extensions.getExtension('your-publisher-name.vibeswitch');
         await ext.activate();
-        assert.strictEqual(ext.isActive, true);
+        expect(ext.isActive).toBe(true);
     });
 
     test('Commands should be registered', async () => {
         const commands = await vscode.commands.getCommands(true);
-        assert.ok(commands.includes('vibeswitch.switchMode'));
-        assert.ok(commands.includes('vibeswitch.toVibe'));
-        assert.ok(commands.includes('vibeswitch.toDev'));
+        expect(commands.includes('vibeswitch.switchMode').toBeTruthy());
+        expect(commands.includes('vibeswitch.toVibe').toBeTruthy());
+        expect(commands.includes('vibeswitch.toDev').toBeTruthy());
     });
 
     test('Configuration settings should exist', () => {
@@ -29,13 +28,13 @@ suite('VibeSwitch Extension Test Suite', () => {
         assert.notStrictEqual(config, undefined);
         
         // Check default values
-        assert.strictEqual(config.get('showInStatusBar'), true);
-        assert.strictEqual(config.get('autoReload'), false);
-        assert.strictEqual(config.get('rulesPath'), '');
+        expect(config.get('showInStatusBar')).toBe(true);
+        expect(config.get('autoReload')).toBe(false);
+        expect(config.get('rulesPath')).toBe('');
     });
 });
 
-suite('Path Safety Tests', () => {
+describe('Path Safety Tests', () => {
     const extension = require('../../extension.js');
     
     test('isPathSafe should reject path traversal', () => {
@@ -44,18 +43,18 @@ suite('Path Safety Tests', () => {
         
         // Note: This requires exporting isPathSafe from extension.js for testing
         // For now, we'll test the behavior through file operations
-        assert.ok(true); // Placeholder - will enhance after refactoring
+        expect(true).toBeTruthy(); // Placeholder - will enhance after refactoring
     });
 
     test('isPathSafe should accept valid workspace paths', () => {
         const workspaceRoot = '/home/user/project';
         const validPath = path.join(workspaceRoot, '.cursor', 'rules.md');
         
-        assert.ok(validPath.startsWith(workspaceRoot));
+        expect(validPath.startsWith(workspaceRoot).toBeTruthy());
     });
 });
 
-suite('Mode Switching Tests', () => {
+describe('Mode Switching Tests', () => {
     let testWorkspacePath;
 
     suiteSetup(() => {
@@ -93,16 +92,16 @@ suite('Mode Switching Tests', () => {
             fs.writeFileSync(devRules, '# DEV MODE\nTest content');
         }
         
-        assert.ok(fs.existsSync(vibeRules), 'VIBE rules file should exist');
-        assert.ok(fs.existsSync(devRules), 'DEV rules file should exist');
+        expect(fs.existsSync(vibeRules).toBeTruthy(), 'VIBE rules file should exist');
+        expect(fs.existsSync(devRules).toBeTruthy(), 'DEV rules file should exist');
     });
 
     test('Should validate mode parameter', () => {
         const validModes = ['vibe', 'dev'];
-        assert.ok(validModes.includes('vibe'));
-        assert.ok(validModes.includes('dev'));
-        assert.ok(!validModes.includes('invalid'));
-        assert.ok(!validModes.includes('hacker'));
+        expect(validModes.includes('vibe').toBeTruthy());
+        expect(validModes.includes('dev').toBeTruthy());
+        expect(!validModes.includes('invalid').toBeTruthy());
+        expect(!validModes.includes('hacker').toBeTruthy());
     });
 
     test('Mode files should contain correct markers', () => {
@@ -112,17 +111,17 @@ suite('Mode Switching Tests', () => {
         
         if (fs.existsSync(vibeRules)) {
             const content = fs.readFileSync(vibeRules, 'utf8');
-            assert.ok(content.includes('VIBE MODE'), 'VIBE file should contain VIBE MODE marker');
+            expect(content.includes('VIBE MODE').toBeTruthy(), 'VIBE file should contain VIBE MODE marker');
         }
         
         if (fs.existsSync(devRules)) {
             const content = fs.readFileSync(devRules, 'utf8');
-            assert.ok(content.includes('DEV MODE'), 'DEV file should contain DEV MODE marker');
+            expect(content.includes('DEV MODE').toBeTruthy(), 'DEV file should contain DEV MODE marker');
         }
     });
 });
 
-suite('Settings Tests', () => {
+describe('Settings Tests', () => {
     test('VIBE settings should have correct values', () => {
         const expectedVibeSettings = {
             "cursor.chat.defaultMode": "agent",
@@ -133,11 +132,11 @@ suite('Settings Tests', () => {
             "files.autoSaveDelay": 1000
         };
         
-        assert.strictEqual(expectedVibeSettings['cursor.chat.defaultMode'], 'agent');
-        assert.strictEqual(expectedVibeSettings['cursor.agent.requireApproval'], false);
-        assert.strictEqual(expectedVibeSettings['cursor.agent.autoApplyEdits'], true);
-        assert.strictEqual(expectedVibeSettings['cursor.ai.autoApply'], true);
-        assert.strictEqual(expectedVibeSettings['files.autoSaveDelay'], 1000);
+        expect(expectedVibeSettings['cursor.chat.defaultMode']).toBe('agent');
+        expect(expectedVibeSettings['cursor.agent.requireApproval']).toBe(false);
+        expect(expectedVibeSettings['cursor.agent.autoApplyEdits']).toBe(true);
+        expect(expectedVibeSettings['cursor.ai.autoApply']).toBe(true);
+        expect(expectedVibeSettings['files.autoSaveDelay']).toBe(1000);
     });
 
     test('DEV settings should have correct values', () => {
@@ -150,72 +149,72 @@ suite('Settings Tests', () => {
             "files.autoSaveDelay": 3000
         };
         
-        assert.strictEqual(expectedDevSettings['cursor.chat.defaultMode'], 'ask');
-        assert.strictEqual(expectedDevSettings['cursor.agent.requireApproval'], true);
-        assert.strictEqual(expectedDevSettings['cursor.agent.autoApplyEdits'], false);
-        assert.strictEqual(expectedDevSettings['cursor.ai.autoApply'], false);
-        assert.strictEqual(expectedDevSettings['files.autoSaveDelay'], 3000);
+        expect(expectedDevSettings['cursor.chat.defaultMode']).toBe('ask');
+        expect(expectedDevSettings['cursor.agent.requireApproval']).toBe(true);
+        expect(expectedDevSettings['cursor.agent.autoApplyEdits']).toBe(false);
+        expect(expectedDevSettings['cursor.ai.autoApply']).toBe(false);
+        expect(expectedDevSettings['files.autoSaveDelay']).toBe(3000);
     });
 
     test('VIBE and DEV settings should be opposites for key values', () => {
         const vibe = { requireApproval: false, autoApply: true };
         const dev = { requireApproval: true, autoApply: false };
         
-        assert.strictEqual(vibe.requireApproval, !dev.requireApproval);
-        assert.strictEqual(vibe.autoApply, !dev.autoApply);
+        expect(vibe.requireApproval).toBe(!dev.requireApproval);
+        expect(vibe.autoApply).toBe(!dev.autoApply);
     });
 });
 
-suite('File Size Validation Tests', () => {
+describe('File Size Validation Tests', () => {
     test('Should reject files larger than 1MB', () => {
         const MAX_FILE_SIZE = 1024 * 1024; // 1MB
         const testSize = 2 * 1024 * 1024; // 2MB
         
-        assert.ok(testSize > MAX_FILE_SIZE, 'Test file size should exceed limit');
+        expect(testSize > MAX_FILE_SIZE).toBe('Test file size should exceed limit').toBeTruthy();
     });
 
     test('Should accept files smaller than 1MB', () => {
         const MAX_FILE_SIZE = 1024 * 1024; // 1MB
         const testSize = 500 * 1024; // 500KB
         
-        assert.ok(testSize < MAX_FILE_SIZE, 'Test file size should be within limit');
+        expect(testSize < MAX_FILE_SIZE).toBe('Test file size should be within limit').toBeTruthy();
     });
 });
 
-suite('Status Bar Tests', () => {
+describe('Status Bar Tests', () => {
     test('Status bar should show correct text for VIBE mode', () => {
         const vibeText = '$(dashboard) VIBE';
-        assert.ok(vibeText.includes('VIBE'));
-        assert.ok(vibeText.includes('$(dashboard)'));
+        expect(vibeText.includes('VIBE').toBeTruthy());
+        expect(vibeText.includes('$(dashboard).toBeTruthy()'));
     });
 
     test('Status bar should show correct text for DEV mode', () => {
         const devText = '$(book) DEV';
-        assert.ok(devText.includes('DEV'));
-        assert.ok(devText.includes('$(book)'));
+        expect(devText.includes('DEV').toBeTruthy());
+        expect(devText.includes('$(book).toBeTruthy()'));
     });
 
     test('Status bar should show correct text for unknown mode', () => {
         const unknownText = '$(gear) Mode?';
-        assert.ok(unknownText.includes('Mode?'));
-        assert.ok(unknownText.includes('$(gear)'));
+        expect(unknownText.includes('Mode?').toBeTruthy());
+        expect(unknownText.includes('$(gear).toBeTruthy()'));
     });
 });
 
-suite('Mode Detection Tests', () => {
+describe('Mode Detection Tests', () => {
     test('Should detect VIBE mode from file content', () => {
         const content = '# VIBE MODE - Autonomous Agent Configuration\nTest content';
-        assert.ok(content.includes('VIBE MODE'), 'Should contain VIBE MODE marker');
+        expect(content.includes('VIBE MODE').toBeTruthy(), 'Should contain VIBE MODE marker');
     });
 
     test('Should detect DEV mode from file content', () => {
         const content = '# DEV MODE - Collaborative Development Configuration\nTest content';
-        assert.ok(content.includes('DEV MODE'), 'Should contain DEV MODE marker');
+        expect(content.includes('DEV MODE').toBeTruthy(), 'Should contain DEV MODE marker');
     });
 
     test('Should return null for content without markers', () => {
         const content = '# Some random content\nNo mode markers here';
-        assert.ok(!content.includes('VIBE MODE') && !content.includes('DEV MODE'));
+        expect(!content.includes('VIBE MODE').toBeTruthy() && !content.includes('DEV MODE'));
     });
 });
 

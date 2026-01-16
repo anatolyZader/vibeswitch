@@ -4,7 +4,6 @@
  * Tests that SessionTracker correctly uses ReviewSession entities.
  */
 
-const { assert } = require('chai');
 const SessionTracker = require('../../../../../business_modules/awareness/domain/entities/sessionTracker');
 const ReviewSession = require('../../../../../business_modules/awareness/domain/entities/reviewSession');
 
@@ -51,7 +50,7 @@ describe('SessionTracker with ReviewSession', () => {
     test('should create ReviewSession when initializing session', () => {
         const session = sessionTracker.initializeSession(testFilePath);
         
-        expect(session, ReviewSession);
+        expect(session).toBe(ReviewSession);
         expect(sessionTracker.isTracking(testFilePath));
     });
 
@@ -59,7 +58,7 @@ describe('SessionTracker with ReviewSession', () => {
         const session1 = sessionTracker.initializeSession(testFilePath);
         const session2 = sessionTracker.initializeSession(testFilePath);
         
-        expect(session1, session2);
+        expect(session1).toBe(session2);
     });
 
     test('should update cursor activity on ReviewSession', () => {
@@ -69,7 +68,7 @@ describe('SessionTracker with ReviewSession', () => {
         
         sessionTracker.updateCursorActivity(testFilePath);
         
-        expect(session.cursorMovements, initialMovements + 1);
+        expect(session.cursorMovements).toBe(initialMovements + 1);
     });
 
     test('should update scroll activity on ReviewSession', () => {
@@ -80,16 +79,16 @@ describe('SessionTracker with ReviewSession', () => {
         
         sessionTracker.updateScrollActivity(testFilePath);
         
-        expect(session.scrollEvents, initialScrolls + 1);
-        expect(session.cursorMovements, initialMovements + 1); // Scroll counts as movement
+        expect(session.scrollEvents).toBe(initialScrolls + 1);
+        expect(session.cursorMovements).toBe(initialMovements + 1); // Scroll counts as movement
     });
 
     test('should get session for file', () => {
         sessionTracker.initializeSession(testFilePath);
         const session = sessionTracker.getSession(testFilePath);
         
-        expect(session, ReviewSession);
-        expect(session.filePath.toString(), testFilePath);
+        expect(session).toBe(ReviewSession);
+        expect(session.filePath, testFilePath);
     });
 
     test('should return null for non-tracked file', () => {
@@ -105,9 +104,9 @@ describe('SessionTracker with ReviewSession', () => {
         
         const sessions = sessionTracker.getAllSessions();
         
-        expect(sessions.length, 3);
+        expect(sessions.length).toBe(3);
         sessions.forEach(session => {
-            expect(session, ReviewSession);
+            expect(session).toBe(ReviewSession);
         });
     });
 
@@ -168,8 +167,8 @@ describe('SessionTracker with ReviewSession', () => {
         await new Promise(resolve => setTimeout(resolve, 10));
         
         expect(publishedEvent);
-        expect(publishedEvent.filePath, testFilePath);
-        expect(publishedEvent.eventType, 'ReviewSessionStartedEvent');
+        expect(publishedEvent.filePath).toBe(testFilePath);
+        expect(publishedEvent.eventType).toBe('ReviewSessionStartedEvent');
     });
 
     test('should publish ReviewSessionCompletedEvent when session completes', async () => {
@@ -204,9 +203,9 @@ describe('SessionTracker with ReviewSession', () => {
         await new Promise(resolve => setTimeout(resolve, 10));
         
         expect(publishedEvent);
-        expect(publishedEvent.eventType, 'ReviewSessionCompletedEvent');
-        expect(publishedEvent.filePath, testFilePath);
-        expect(isNumber(publishedEvent.engagementScore);
+        expect(publishedEvent.eventType).toBe('ReviewSessionCompletedEvent');
+        expect(publishedEvent.filePath).toBe(testFilePath);
+        expect(typeof publishedEvent.engagementScore).toBe('number');
         
         Date.now = originalNow;
     });
@@ -217,9 +216,9 @@ describe('SessionTracker with ReviewSession', () => {
         };
         
         // Should not throw
-        expect(doesNotThrow(() => {
+        expect(() => {
             sessionTracker.initializeSession(testFilePath);
-        });
+        }).not.toThrow();
     });
 
     test('should get tracking data in legacy format', () => {
@@ -229,11 +228,11 @@ describe('SessionTracker with ReviewSession', () => {
         
         const tracking = sessionTracker.getTracking(testFilePath);
         
-        expect(isObject(tracking);
-        expect(isNumber(tracking.sessionStart);
-        expect(isNumber(tracking.lastActivity);
-        expect(isNumber(tracking.cursorMovements);
-        expect(isNumber(tracking.scrollEvents);
+        expect(typeof tracking).toBe('object');
+        expect(typeof tracking.sessionStart).toBe('number');
+        expect(typeof tracking.lastActivity).toBe('number');
+        expect(typeof tracking.cursorMovements).toBe('number');
+        expect(typeof tracking.scrollEvents).toBe('number');
     });
 
     test('should clear all sessions', () => {

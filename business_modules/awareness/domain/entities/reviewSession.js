@@ -5,15 +5,16 @@
  * This is a domain entity with identity (filePath + sessionStart).
  */
 
-const FilePath = require('../value_objects/filePath');
-
 class ReviewSession {
     /**
-     * @param {string|FilePath} filePath - File being reviewed
+     * @param {string} filePath - File being reviewed (URI string)
      * @param {number} sessionStart - Timestamp when session started
      */
     constructor(filePath, sessionStart = Date.now()) {
-        this.filePath = filePath instanceof FilePath ? filePath : new FilePath(filePath);
+        if (!filePath || typeof filePath !== 'string') {
+            throw new Error('ReviewSession requires a non-empty filePath string');
+        }
+        this.filePath = filePath;
         this.sessionStart = sessionStart;
         this.lastActivity = sessionStart;
         this.cursorMovements = 0;
@@ -97,12 +98,11 @@ class ReviewSession {
 
     /**
      * Check if this session is for the given file
-     * @param {string|FilePath} filePath - File path to check
+     * @param {string} filePath - File path to check (URI string)
      * @returns {boolean} True if session is for this file
      */
     isForFile(filePath) {
-        const comparePath = filePath instanceof FilePath ? filePath : new FilePath(filePath);
-        return this.filePath.equals(comparePath);
+        return this.filePath === String(filePath);
     }
 
     /**

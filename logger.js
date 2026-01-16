@@ -227,8 +227,8 @@ class ThrottledLogger {
         // Always log to console for debugging
         console.log(message);
         
-        // Respect DISABLE_LOGGING flag for output channel
-        if (DISABLE_LOGGING) return;
+        // Respect LOGGING_ENABLED flag for output channel
+        if (!LOGGING_ENABLED) return;
         
         if (this.outputChannel) {
             this.outputChannel.appendLine(message);
@@ -254,9 +254,9 @@ class ThrottledLogger {
 
 // Create singleton instance
 let loggerInstance = null;
-let DISABLE_LOGGING = false;
+let LOGGING_ENABLED = true;
 
-function createLogger(outputChannel) {
+function initializeLogger(outputChannel) {
     loggerInstance = new ThrottledLogger(outputChannel);
     return loggerInstance;
 }
@@ -268,15 +268,54 @@ function getLogger() {
     return loggerInstance;
 }
 
-function setDisableLogging(disabled) {
-    DISABLE_LOGGING = disabled;
+function enableLogging() {
+    LOGGING_ENABLED = true;
+}
+
+function disableLogging() {
+    LOGGING_ENABLED = false;
+}
+
+/**
+ * Check if logging is enabled based on VS Code settings
+ * @param {Object} context - VS Code extension context
+ * @returns {boolean} True if logging is enabled
+ */
+function isLoggingEnabled(context) {
+    const vscode = require('vscode');
+    const config = vscode.workspace.getConfiguration('vibeswitch');
+    // Default to true (enable logging) unless explicitly disabled
+    // Can be overridden by NODE_ENV=production
+    if (process.env.NODE_ENV === 'production') {
+        return false;
+    }
+    return !config.get('disableLogging', false);
+}
+
+/**
+ * Create log wrapper function for extension-level code
+ * @returns {Function} Log function with signature: log(message, force, show)
+ * @param {string} message - Message to log
+ * @param {boolean} force - Force log even if throttled (for errors/important messages)
+ * @param {boolean} show - Show output channel to user
+ */
+function createLogWrapperFunc() {
+    const logger = getLogger();
+    return (message, force = false, show = false) => {
+        if (logger) {
+            logger.log(message, force, show);
+        }
+    };
 }
 
 module.exports = {
     ThrottledLogger,
-    createLogger,
+    initializeLogger,
     getLogger,
-    setDisableLogging
+    enableLogging,
+    disableLogging,
+    isLoggingEnabled,
+    createLogWrapperFunc
 };
 
 

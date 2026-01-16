@@ -28,13 +28,11 @@ class ChangeLedgerService {
         this.key = 'vibeswitch.changeLedger.v1';
         this.ckKey = 'vibeswitch.changeLedger.checkpoint.v1';
         
-        // Fix: In-memory buffer for batched writes
+        // In-memory buffer for batched writes
         this._memEntries = null; // Lazy load on first access
         this._dirty = false;
         this._flushTimer = null;
         this._flushIntervalMs = flushIntervalMs;
-        this._flushPending = false; // Mutex for flush operations
-        this._flushQueued = false; // Flag to queue another flush if one is pending
         
         // Fix: Default checkpoint to activation time (not 0) to avoid dumping full history
         this._activationTime = Date.now();
@@ -49,63 +47,29 @@ class ChangeLedgerService {
     }
 
     async _flush() {
-        // Mutex: prevent concurrent flushes, but queue another if needed
-        if (this._flushPending) {
-            this._flushQueued = true; // Mark that we need another flush after this one
-            return;
-        }
-        
         if (!this._dirty || !this._memEntries) {
             return;
         }
         
-        this._flushPending = true;
-        try {
-            // Trim old entries if over limit
-            if (this._memEntries.length > this.maxEntries) {
-                this._memEntries.splice(0, this._memEntries.length - this.maxEntries);
-            }
-            
-            // Use persistence port for saving
-            await this.persistencePort.save(this.key, this._memEntries);
-            this._dirty = false;
-        } finally {
-            this._flushPending = false;
-            
-            // Fix: If another flush was queued or dirty flag set, flush again
-            if (this._flushQueued || this._dirty) {
-                this._flushQueued = false;
-                // Fix: Use queueMicrotask for smoother scheduling (avoids starving if flush work piles up)
-                // queueMicrotask is available in Node.js and VS Code extension host
-                if (typeof queueMicrotask === 'function') {
-                    queueMicrotask(() => this._flush().catch(err => {
-                        if (this.loggerPort) {
-                            this.loggerPort.error('ChangeLedgerService: Queued flush error', err);
-                        }
-                    }));
-                } else {
-                    // Fallback for older Node versions
-                    Promise.resolve().then(() => this._flush().catch(err => {
-                        if (this.loggerPort) {
-                            this.loggerPort.error('ChangeLedgerService: Queued flush error', err);
-                        }
-                    }));
-                }
-            }
+        // Trim old entries if over limit
+        if (this._memEntries.length > this.maxEntries) {
+            this._memEntries.splice(0, this._memEntries.length - this.maxEntries);
         }
+        
+        // Save to persistence
+        await this.persistencePort.save(this.key, this._memEntries);
+        this._dirty = false;
     }
 
     _scheduleFlush() {
-        // Fix: If timer already scheduled, don't reset it (coalesce to earliest flush)
-        // This reduces timer churn and ensures we don't delay flushes unnecessarily
+        // If timer already scheduled, don't reset it (coalesce to earliest flush)
         if (this._flushTimer) {
-            return; // Keep existing scheduled flush
+            return;
         }
         
         this._flushTimer = setTimeout(() => {
-            this._flushTimer = null; // Clear timer ref
+            this._flushTimer = null;
             this._flush().catch(err => {
-                // Log but don't throw - ledger writes shouldn't crash the extension
                 if (this.loggerPort) {
                     this.loggerPort.error('ChangeLedgerService: Flush error', err);
                 }

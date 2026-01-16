@@ -37,8 +37,8 @@ describe('SuggestionBatchCreatedEvent', () => {
         });
         const after = new Date();
         
-        expect(event.occurredAt).toBeGreaterThanOrEqual(before);
-        expect(event.occurredAt).toBeLessThanOrEqual(after);
+        expect(event.occurredAt.getTime()).toBeGreaterThanOrEqual(before.getTime());
+        expect(event.occurredAt.getTime()).toBeLessThanOrEqual(after.getTime());
     });
 
     test('should serialize to JSON', () => {

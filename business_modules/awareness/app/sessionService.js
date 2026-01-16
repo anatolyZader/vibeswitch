@@ -5,21 +5,21 @@
  * and publishes domain events. This is an application service.
  */
 
-const { normalizeToUri } = require('./vscodeDocUtilities');
+const vscodeDocUtilities = require('./vscodeDocUtilities');
 const ReviewSession = require('../domain/entities/reviewSession');
 
 class SessionService {
     /**
      * @param {Object} debtService - Debt service (application service)
-     * @param {Object} suggestionService - Suggestion service (application service)
+     * @param {Object} suggestionLifecycleService - Suggestion service (application service)
      * @param {Function} onDebtCleared - Callback when debt is cleared
      * @param {Function} updateScore - Score update callback
      * @param {Function} updateFileColorsInExplorer - Callback to update file colors (optional)
      * @param {Object} messagingAdapter - Messaging adapter for domain events (optional)
      */
-    constructor(debtService, suggestionService, onDebtCleared, updateScore, updateFileColorsInExplorer = null, messagingAdapter = null) {
+    constructor(debtService, suggestionLifecycleService, onDebtCleared, updateScore, updateFileColorsInExplorer = null, messagingAdapter = null) {
         this.debtService = debtService;
-        this.suggestionService = suggestionService;
+        this.suggestionLifecycleService = suggestionLifecycleService;
         this.onDebtCleared = onDebtCleared;
         this.updateScore = updateScore;
         this.updateFileColorsInExplorer = updateFileColorsInExplorer;
@@ -36,7 +36,7 @@ class SessionService {
      * @returns {ReviewSession|null} Created session or null
      */
     initializeSession(filePathOrUri) {
-        const uri = normalizeToUri(filePathOrUri);
+        const uri = vscodeDocUtilities.normalizeToUri(null, filePathOrUri);
         if (!uri) return null;
         
         if (this.sessions.has(uri)) {
@@ -55,7 +55,7 @@ class SessionService {
 
         // Publish domain event if messaging adapter is available
         if (this.messagingAdapter) {
-            const ReviewSessionStartedEvent = require('../events/reviewSessionStartedEvent');
+            const ReviewSessionStartedEvent = require('../events/reviewSessionStartedEvent'); // Commented for consolidation
             const event = new ReviewSessionStartedEvent({
                 filePath: uri,
                 sessionStart: session.sessionStart
@@ -75,7 +75,7 @@ class SessionService {
      * @param {string} filePathOrUri - File path (fsPath) or URI string
      */
     updateCursorActivity(filePathOrUri) {
-        const uri = normalizeToUri(filePathOrUri);
+        const uri = vscodeDocUtilities.normalizeToUri(null, filePathOrUri);
         if (!uri) return;
         const session = this.sessions.get(uri);
         if (session) {
@@ -88,7 +88,7 @@ class SessionService {
      * @param {string} filePathOrUri - File path (fsPath) or URI string
      */
     updateScrollActivity(filePathOrUri) {
-        const uri = normalizeToUri(filePathOrUri);
+        const uri = vscodeDocUtilities.normalizeToUri(null, filePathOrUri);
         if (!uri) return;
         const session = this.sessions.get(uri);
         if (session) {
@@ -110,8 +110,8 @@ class SessionService {
         
         for (const [uri, session] of this.sessions.entries()) {
             const hasUnreviewedDebt = this.debtService && this.debtService.hasUnreviewedDebt(uri);
-            const hasPendingSuggestions = this.suggestionService ? 
-                this.suggestionService.getPendingSuggestionsForFile(uri).length > 0 : false;
+            const hasPendingSuggestions = this.suggestionLifecycleService ? 
+                this.suggestionLifecycleService.getPendingSuggestionsForFile(uri).length > 0 : false;
             
             // If no debt and no pending suggestions, remove session
             if (!hasUnreviewedDebt && !hasPendingSuggestions) {
@@ -145,7 +145,7 @@ class SessionService {
                         
                         // Publish domain event if messaging adapter is available
                         if (this.messagingAdapter) {
-                            const ReviewSessionCompletedEvent = require('../events/reviewSessionCompletedEvent');
+                            const ReviewSessionCompletedEvent = require('../events/reviewSessionCompletedEvent'); // Commented for consolidation
                             const event = new ReviewSessionCompletedEvent({
                                 filePath: uri,
                                 sessionStart: session.sessionStart,
@@ -177,11 +177,11 @@ class SessionService {
                 
                 // Mark all pending suggestions in this file as reviewed
                 // Use aggregate methods (single authority) instead of direct entity calls
-                if (hasPendingSuggestions && this.suggestionService) {
-                    const pendingSuggestions = this.suggestionService.getPendingSuggestionsForFile(uri);
+                if (hasPendingSuggestions && this.suggestionLifecycleService) {
+                    const pendingSuggestions = this.suggestionLifecycleService.getPendingSuggestionsForFile(uri);
                     for (const suggestion of pendingSuggestions) {
-                        // Delegate to SuggestionService which uses aggregate methods
-                        this.suggestionService.markSuggestionAsReviewed(suggestion.id, session.reviewTime);
+                        // Delegate to SuggestionLifecycleService which uses aggregate methods
+                        this.suggestionLifecycleService.markSuggestionAsReviewed(suggestion.id, session.reviewTime);
                         needsScoreUpdate = true;
                     }
                 }
@@ -206,7 +206,7 @@ class SessionService {
      * @returns {ReviewSession|null} Session or null
      */
     getSession(filePathOrUri) {
-        const uri = normalizeToUri(filePathOrUri);
+        const uri = vscodeDocUtilities.normalizeToUri(null, filePathOrUri);
         if (!uri) return null;
         return this.sessions.get(uri) || null;
     }
@@ -235,7 +235,7 @@ class SessionService {
      * @returns {boolean} True if file is being tracked
      */
     isTracking(filePathOrUri) {
-        const uri = normalizeToUri(filePathOrUri);
+        const uri = vscodeDocUtilities.normalizeToUri(null, filePathOrUri);
         if (!uri) return false;
         return this.sessions.has(uri);
     }

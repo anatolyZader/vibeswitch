@@ -11,8 +11,8 @@ const vscode = require('vscode');
 const { getLogger } = require('../logger');
 
 class UnreviewedFileDecor {
-    constructor(awarenessMonitor, getCurrentMode, logOutput, disableLogging = false) {
-        this.awarenessMonitor = awarenessMonitor;
+    constructor(awarenessEngine, getCurrentMode, logOutput, disableLogging = false) {
+        this.awarenessEngine = awarenessEngine;
         this.getCurrentMode = getCurrentMode;
         this.logOutput = logOutput;
         this.disableLogging = disableLogging;
@@ -93,13 +93,13 @@ class UnreviewedFileDecor {
                 return null;
             }
 
-            if (!this.awarenessMonitor) {
-                this.logger?.debug(`No awareness monitor available for ${fileName}`, false, `fileDecorations:noMonitor:${fileName}`);
+            if (!this.awarenessEngine) {
+                this.logger?.debug(`No awareness engine available for ${fileName}`, false, `fileDecorations:noEngine:${fileName}`);
                 return null;
             }
 
             // Get current score data
-            const scoreData = this.awarenessMonitor.getScore();
+            const scoreData = this.awarenessEngine.getScore();
             if (!scoreData) {
                 this.logger?.debug(`No score data available for ${fileName}`, false, `fileDecorations:noScore:${fileName}`);
                 return null;

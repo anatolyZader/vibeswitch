@@ -66,11 +66,19 @@ function isSkippableUri(uriOrScheme) {
 /**
  * Normalize file path or URI to canonical URI string
  * FIXED: Use URI as canonical identifier for remote workspace compatibility
+ * @param {IAwarenessVSCodePort} [vscodePort] - Optional VS Code port for URI creation
  * @param {string|vscode.Uri} filePathOrUri - File path (fsPath) or URI
  * @returns {string} Canonical URI string
  */
-function normalizeToUri(filePathOrUri) {
+function normalizeToUri(vscodePort, filePathOrUri) {
     if (!filePathOrUri) return null;
+    
+    // Handle optional first parameter (backward compatibility)
+    if (typeof vscodePort === 'string' || (vscodePort && typeof vscodePort === 'object' && vscodePort.toString)) {
+        // First param is actually filePathOrUri (old signature)
+        filePathOrUri = vscodePort;
+        vscodePort = null;
+    }
     
     // If already a URI string (starts with scheme), return as-is
     if (typeof filePathOrUri === 'string' && filePathOrUri.includes('://')) {
@@ -85,8 +93,13 @@ function normalizeToUri(filePathOrUri) {
     // If it's a file path (fsPath), convert to file:// URI
     if (typeof filePathOrUri === 'string') {
         try {
-            const uri = vscode.Uri.file(filePathOrUri);
-            return uri.toString();
+            const Uri = vscodePort?.Uri || vscode.Uri;
+            if (Uri && Uri.file) {
+                const uri = Uri.file(filePathOrUri);
+                return uri.toString();
+            }
+            // Fallback if Uri not available
+            return filePathOrUri;
         } catch (err) {
             // Fallback: treat as relative path or return as-is
             return filePathOrUri;
@@ -98,18 +111,27 @@ function normalizeToUri(filePathOrUri) {
 
 /**
  * Get relative path from workspace folder
+ * @param {IAwarenessVSCodePort} [vscodePort] - Optional VS Code port for workspace access
  * @param {string} filePath - Absolute file path
  * @returns {string} Relative path or basename if not in workspace
  */
-function getRelativePath(filePath) {
-    const workspaceFolders = vscode.workspace.workspaceFolders;
+function getRelativePath(vscodePort, filePath) {
+    if (!filePath) return '';
+    
+    // Handle optional first parameter (backward compatibility)
+    if (typeof vscodePort === 'string') {
+        filePath = vscodePort;
+        vscodePort = null;
+    }
+    
+    const workspaceFolders = vscodePort?.workspaceFolders || vscode.workspace.workspaceFolders || [];
     if (!workspaceFolders || workspaceFolders.length === 0) {
         return path.basename(filePath);
     }
     
     // Try each workspace folder
     for (const folder of workspaceFolders) {
-        const folderPath = folder.uri.fsPath;
+        const folderPath = folder.uri.fsPath || folder.uri.path || '';
         if (filePath.startsWith(folderPath)) {
             const relative = path.relative(folderPath, filePath);
             return relative || path.basename(filePath);
@@ -153,12 +175,14 @@ function rangesOverlap(range1, range2) {
 }
 
 module.exports = {
-    NON_CODE_SCHEMES,
-    CODE_EXTENSIONS,
-    isNonCodeDocument,
-    isSkippableUri,
     normalizeToUri,
     getRelativePath,
+    rangesOverlap,
     isPositionInRange,
-    rangesOverlap
+    isNonCodeDocument,
+    isSkippableUri,
+    NON_CODE_SCHEMES,
+    CODE_EXTENSIONS
 };
+
+

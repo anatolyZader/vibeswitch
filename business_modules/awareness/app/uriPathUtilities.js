@@ -17,33 +17,22 @@ class UriPathUtilities {
     static normalizeToUri(vscodePort, filePathOrUri) {
         if (!filePathOrUri) return null;
         
-        // If already a URI string (starts with scheme), return as-is
+        // Already URI string
         if (typeof filePathOrUri === 'string' && filePathOrUri.includes('://')) {
             return filePathOrUri;
         }
         
-        // If it's a vscode.Uri object, convert to string
-        if (filePathOrUri && typeof filePathOrUri === 'object' && filePathOrUri.toString) {
+        // Already URI object
+        if (filePathOrUri?.toString) {
             return filePathOrUri.toString();
         }
         
-        // If it's a file path (fsPath), convert to file:// URI
-        if (typeof filePathOrUri === 'string') {
-            try {
-                const Uri = vscodePort.Uri;
-                if (Uri && Uri.file) {
-                    const uri = Uri.file(filePathOrUri);
-                    return uri.toString();
-                }
-                // Fallback if Uri not available
-                return filePathOrUri;
-            } catch (err) {
-                // Fallback: treat as relative path or return as-is
-                return filePathOrUri;
-            }
+        // Convert file path to URI
+        try {
+            return vscodePort.Uri?.file(filePathOrUri)?.toString() || filePathOrUri;
+        } catch {
+            return filePathOrUri;
         }
-        
-        return filePathOrUri;
     }
 
     /**

@@ -50,11 +50,11 @@ function getScoreEmoji(score) {
  * Updates the awareness meter status bar item with current awareness score and metrics
  * 
  * @param {vscode.StatusBarItem} awarenessBarItem - The awareness meter status bar item
- * @param {Object} awarenessMonitor - The awareness monitor instance
+ * @param {Object} awarenessEngine - The awareness engine instance
  * @param {string|null} currentMode - Current mode ('vibe', 'dev', or null)
  * @param {vscode.OutputChannel} outputChannel - Optional output channel for logging
  */
-function updateAwarenessMeter(awarenessBarItem, awarenessMonitor, currentMode, outputChannel = null) {
+function updateAwarenessMeter(awarenessBarItem, awarenessEngine, currentMode, outputChannel = null) {
     if (!awarenessBarItem) {
         if (outputChannel) {
             outputChannel.appendLine('WARNING: awarenessBarItem not initialized');
@@ -62,7 +62,7 @@ function updateAwarenessMeter(awarenessBarItem, awarenessMonitor, currentMode, o
         return;
     }
     
-    if (!awarenessMonitor) {
+    if (!awarenessEngine) {
         if (currentMode === 'dev') {
             awarenessBarItem.text = '$(graph) --';
             awarenessBarItem.tooltip = 'Awareness meter: Initializing...';
@@ -89,7 +89,7 @@ function updateAwarenessMeter(awarenessBarItem, awarenessMonitor, currentMode, o
         // DEV mode: Show real-time awareness score
         let scoreData;
         try {
-            scoreData = awarenessMonitor.getScore();
+            scoreData = awarenessEngine.getScore();
         } catch (error) {
             if (outputChannel) {
                 outputChannel.appendLine(`ERROR getting score from awareness monitor: ${error.message}`);

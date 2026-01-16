@@ -1,38 +1,94 @@
 // extension.js
 
 const vscode = require('vscode');
-const { createLogger, setDisableLogging } = require('./logger');
+const { 
+    initializeLogger, 
+    enableLogging, 
+    disableLogging,
+    isLoggingEnabled,
+    createLogWrapperFunc
+} = require('./logger');
 const modeDetection = require('./business_modules/mode/app/modeDetection');
-const AwarenessService = require('./business_modules/awareness/app/awarenessService');
-const AwarenessController = require('./business_modules/awareness/input/awarenessController');
+const ExtensionState = require('./extensionState');
 const DIContainer = require('./diContainer');
-const initializeHelpers = require('./helpers/initializeHelpers');
-const { registerCommands, setupUsageStatsListeners } = require('./helpers/extensionSetup');
-const { createExtensionComposition } = require('./diCompositionRoot');
-const safe = require('./helpers/safe');
+const initializeHelpers = require('./initializeHelpers');
+const safe = require('./safe');
+const compositionRoot = require('./compositionRoot');
+
+
 
 /**
- * Get logging preference from VS Code settings
- * @param {vscode.ExtensionContext} context - Extension context
- * @returns {boolean} True if logging should be disabled
+ * Register all VS Code commands
+ * @param {vscode.ExtensionContext} context - VS Code extension context
+ * @param {Object} commandHandlers - Object mapping command IDs to handler functions
+ * @param {Function} log - Optional logging function
  */
-function getDisableLogging(context) {
-    const config = vscode.workspace.getConfiguration('vibeswitch');
-    // Default to false (enable logging) unless explicitly disabled
-    // Can be overridden by NODE_ENV=production
-    if (process.env.NODE_ENV === 'production') {
-        return true;
+function registerCommands(context, commandHandlers, log = null) {
+    if (!context || !commandHandlers) {
+        throw new Error('registerCommands: context and commandHandlers are required');
     }
-    return config.get('disableLogging', false);
+    
+    Object.entries(commandHandlers).forEach(([command, handler]) => {
+        if (!command || !handler) {
+            if (log && process.env.NODE_ENV !== 'production') {
+                log(`WARNING: Skipping invalid command handler - command: ${command || 'undefined'}, handler: ${handler ? 'exists' : 'missing'}`, false, false);
+            }
+            return;
+        }
+        context.subscriptions.push(vscode.commands.registerCommand(command, handler));
+    });
 }
 
 /**
- * Create disposable event listeners for domain events
+ * Setup usage statistics event listeners
+ * @param {vscode.ExtensionContext} context - VS Code extension context
+ * @param {Object} state - Extension state (must have usageStats property)
+ */
+function setupUsageStatsListeners(context, state) {
+    if (!context || !state) {
+        throw new Error('setupUsageStatsListeners: context and state are required');
+    }
+    
+    context.subscriptions.push(
+        vscode.workspace.onDidOpenTextDocument((doc) => {
+            safe('trackFileOpen', () => {
+                if (state.usageStats) {
+                    // Use URI string for consistency and remote workspace compatibility
+                    state.usageStats.trackFileOpen(doc.uri.toString());
+                }
+            });
+        }),
+        vscode.workspace.onDidChangeTextDocument((event) => {
+            safe('trackEdit', () => {
+                if (state.usageStats && event.contentChanges.length > 0) {
+                    const metadata = {
+                        // Use URI string for consistency
+                        document: event.document.uri.toString(),
+                        changeCount: event.contentChanges.length,
+                        timestamp: Date.now(),
+                    };
+                    state.usageStats.trackEdit(metadata);
+                }
+            });
+        }),
+        vscode.workspace.onDidSaveTextDocument((document) => {
+            safe('trackFileSave', () => {
+                if (state.usageStats) {
+                    state.usageStats.trackFileSave();
+                }
+            });
+        })
+    );
+}
+
+/**
+ * Create disposable event listeners for UsageStats integration
+ * Subscribes to awareness module domain events and forwards them to UsageStats
  * @param {EventEmitter} eventEmitter - Event emitter from messaging adapter
- * @param {Object} state - Extension state
+ * @param {Object} state - Extension state (must have usageStats property)
  * @returns {vscode.Disposable} Disposable that removes all listeners
  */
-function createEventListenersDisposable(eventEmitter, state) {
+function createUsageStatsEventListenersDisposable(eventEmitter, state) {
     const handlers = {
         aiSuggestion: (payload) => {
             safe('handleAISuggestionEvent', () => {
@@ -81,14 +137,13 @@ function createEventListenersDisposable(eventEmitter, state) {
 async function activate(context) {
     // Validate context parameter
     if (!context) {
-        // Cannot use logger here as it's not initialized yet
-        // Use console.error as fallback for critical initialization errors
         console.error('VibeSwitch: ERROR - activate() called with null/undefined context');
         return;
     }
     
-    // Create extension state
-    const state = new DIContainer();
+    // Create extension runtime state and DI container
+    const state = new ExtensionState();
+    const container = new DIContainer();
     state.extensionContext = context;
     
     // Initialize logger early for error reporting
@@ -99,106 +154,40 @@ async function activate(context) {
         state.outputChannel = vscode.window.createOutputChannel('VibeSwitch');
         context.subscriptions.push(state.outputChannel);
         
-        // Get logging preference from settings
-        const disableLogging = getDisableLogging(context);
+        // Get logging preference from settings and initialize logger
+        const loggingEnabled = isLoggingEnabled(context);
+        initializeLogger(state.outputChannel);
+        if (loggingEnabled) {
+            enableLogging();
+        } else {
+            disableLogging();
+        }
         
-        // Initialize logger with output channel and set logging preference centrally
-        createLogger(state.outputChannel);
-        setDisableLogging(disableLogging);
+        // Create log wrapper function for extension-level code
+        log = createLogWrapperFunc();
         
-        // Get logger function for error reporting
-        // Logger already writes to outputChannel, so we just use logger directly
-        const { getLogger } = require('./logger');
-        const rawLogger = getLogger();
+        // Compose all dependencies (adapters, services, domain services)
+        const { awarenessEngine, adapters } = compositionRoot.compose(context, state, container);
         
-        // Normalize logger interface for controllers/services (simple error/info methods)
-        // This decouples controllers from logger implementation details
-        const normalizedLogger = {
-            error: (message, error = null) => {
-                if (rawLogger) {
-                    const errorMessage = error ? `${message}: ${error.message || error}` : message;
-                    rawLogger.log(errorMessage, true, false); // force=true, show=false
-                }
-            },
-            info: (message) => {
-                if (rawLogger) {
-                    rawLogger.log(message, false, false);
-                }
-            }
-        };
-        
-        // Legacy log function for extension-level code
-        log = (message, showOutput = false, isError = false) => {
-            if (rawLogger) {
-                // logger.log() already writes to outputChannel via _writeLog()
-                // showOutput parameter controls whether to show the output channel
-                rawLogger.log(message, isError, showOutput);
-            }
-        };
-        
-        // ============================================
-        // Create Extension Composition
-        // ============================================
-        // This creates all adapters, domain services, and stores them in DI container
-        // Composes all modules: awareness, usage-stats, mode, etc.
-        const composition = createExtensionComposition(context, state);
-        
-        // Extract module compositions
-        const { adapters, domainServices } = composition.awareness;
-        const { usageStatsService } = composition.usageStats;
-        
-        // Initialize managers
-        state.usageStats = usageStatsService;
-        // Register UsageStatsManager for cleanup (it implements dispose())
+        // Subscribe usage stats service for cleanup
         context.subscriptions.push(state.usageStats);
         
-        // Create AwarenessService with explicit dependencies (Ports and Adapters pattern)
-        const awarenessService = new AwarenessService({
-            vscodeAdapter: adapters.vscodeAdapter,
-            persistenceAdapter: adapters.persistenceAdapter,
-            messagingAdapter: adapters.messagingAdapter,
-            loggerAdapter: adapters.loggerAdapter,
-            fileSystemAdapter: adapters.fileSystemAdapter,
-            idGeneratorAdapter: adapters.idGeneratorAdapter,
-            hashGeneratorAdapter: adapters.hashGeneratorAdapter,
-            rangeOperationServiceD: domainServices.rangeOperationServiceD,
-            uriPathOperationServiceD: domainServices.uriPathOperationServiceD,
-            changeClassificationServiceD: domainServices.changeClassificationServiceD
-        });
-        
-        // Register service in DI container (before creating controller)
-        state.register('awarenessService', awarenessService);
-        
-        // Create controller with explicit dependencies (not whole state container)
-        // Controller throws errors; composition root handles UI (no vscodeAdapter needed)
-        // Pass normalized logger interface (error/info methods)
-        const awarenessController = new AwarenessController({
-            awarenessService: awarenessService,
-            logger: normalizedLogger
-        });
-        state.register('awarenessController', awarenessController);
-        
-        // Store controller in state for backward compatibility with existing code
-        // (will be removed once all code uses DI container)
-        state.awarenessMonitor = awarenessController;
+        // Wire awarenessEngine to extension state
+        // awarenessEngine implements all required methods: start(), stop(), getScore(), updateScore(), getStatus(), handleExternallyCreatedFile()
+        state.awarenessEngine = awarenessEngine;
         
         // Initialize helpers with state
-        const helpers = initializeHelpers(state, disableLogging);
+        const loggingDisabled = !loggingEnabled; // Calculate from loggingEnabled (avoid shadowing imported function)
+        const helpers = initializeHelpers(state, loggingDisabled);
         const { 
-            log: helperLog, 
             switchModeInStatusBar, 
             updateFileColorsForMode, 
             commandHandlers,
             updateAwarenessMeter
         } = helpers;
         
-        // Use helper log function if available
-        log = helperLog || log;
-        
-        // Set callbacks for UI updates only (not UsageStats - that's handled by events)
-        // The service publishes domain events, and we subscribe to those events for UsageStats
-        // This avoids double-counting and keeps concerns separated
-        awarenessService.setCallbacks({
+        // Set callbacks for UI updates only
+        awarenessEngine.setCallbacks({
             onScoreUpdate: () => {
                 safe('onScoreUpdate', () => {
                     if (updateAwarenessMeter) {
@@ -209,12 +198,11 @@ async function activate(context) {
         });
         
         // Subscribe to domain events for UsageStats integration
-        // Use disposable pattern for proper cleanup
         const eventEmitter = adapters.messagingAdapter.getEventEmitter();
-        const eventListenersDisposable = createEventListenersDisposable(eventEmitter, state);
-        context.subscriptions.push(eventListenersDisposable);
+        const usageStatsEventListenersDisposable = createUsageStatsEventListenersDisposable(eventEmitter, state);
+        context.subscriptions.push(usageStatsEventListenersDisposable);
         
-        // Initialize status bar items using direct VS Code API (extension-level concern)
+        // Initialize status bar items using direct VS Code API
         state.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
         state.awarenessBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
         state.statusBarItem.command = 'vibeswitch.switchMode';
@@ -224,52 +212,55 @@ async function activate(context) {
         context.subscriptions.push(state.statusBarItem);
         context.subscriptions.push(state.awarenessBarItem);
         
+        // Explicitly show awareness bar item (updateAwarenessMeter may hide it if conditions aren't met)
+        state.awarenessBarItem.show();
+        
+        // Initialize awareness meter display (ensures bar item is shown if in dev mode)
+        if (updateAwarenessMeter) {
+            updateAwarenessMeter();
+        }
+        
         // Register all commands
         registerCommands(context, commandHandlers, log);
         
         // Detect initial mode from file
         let initialMode = null;
         try {
-            initialMode = modeDetection();
-            log(`VibeSwitch: Detected initial mode from file: ${initialMode}`);
+            const detectedMode = modeDetection();
+            initialMode = normalizeMode(detectedMode);
+            if (initialMode) {
+                log(`VibeSwitch: Detected initial mode from file: ${initialMode}`);
+            } else {
+                log(`VibeSwitch: No valid mode detected (got: ${detectedMode})`);
+            }
         } catch (error) {
-            log(`ERROR detecting initial mode: ${error.message}`, false, true);
-            // Continue with null mode - graceful degradation
+            log(`ERROR detecting initial mode: ${error.message}`, true, false);
         }
         
-        // Update status bar and file colors
-        switchModeInStatusBar(initialMode);
+        // Update status bar and file colors (only if valid mode detected)
         if (initialMode) {
+            switchModeInStatusBar(initialMode);
             updateFileColorsForMode();
+        } else {
+            // Set default mode if detection failed
+            log('VibeSwitch: Using default mode (vibe)');
+            switchModeInStatusBar('vibe');
+            updateFileColorsForMode(); // Also update file colors for default mode
         }
         
-        // Disable file-based mode detection completely
-        // This prevents all flashing and race conditions
         log('VibeSwitch: File watcher disabled - mode only changes on explicit user action');
         
         // Setup usage stats listeners
         setupUsageStatsListeners(context, state);
         
-        // Defer non-critical initialization to improve activation time
-        // Status bar is already shown, so we can defer heavy work
-        queueMicrotask(() => {
-            try {
-                // Non-critical initialization that can happen after activation
-                // This improves perceived performance
-            } catch (error) {
-                log(`Error in deferred initialization: ${error.message}`, false, true);
-            }
-        });
     } catch (error) {
-        // Use logger if available, otherwise fallback to console and output channel
         const errorMessage = `VibeSwitch: Error during activation: ${error.message}`;
         const stackTrace = error.stack ? `Stack trace: ${error.stack}` : '';
         
         if (log) {
             log(errorMessage, true, true);
-            log(stackTrace, false, true);
+            log(stackTrace, true, false);
         } else {
-            // Fallback for critical errors before logger is initialized
             console.error(errorMessage);
             if (state.outputChannel) {
                 state.outputChannel.appendLine(`ERROR: ${errorMessage}`);
@@ -278,21 +269,31 @@ async function activate(context) {
             }
         }
         
-        // Show user-facing error message using adapter from DI container
+        // Show user-facing error message
         try {
-            const errorAdapter = state.getAdapter('awareness', 'vscodeAdapter');
+            const errorAdapter = container.getAdapter('awareness', 'vscodeAdapter');
             if (errorAdapter) {
                 errorAdapter.showErrorMessage(`VibeSwitch activation failed: ${error.message}`);
             } else if (vscode && vscode.window) {
                 vscode.window.showErrorMessage(`VibeSwitch activation failed: ${error.message}`);
             }
         } catch (adapterError) {
-            // Fallback if adapter not available
             if (vscode && vscode.window) {
                 vscode.window.showErrorMessage(`VibeSwitch activation failed: ${error.message}`);
             }
         }
     }
+}
+
+/**
+ * Normalize mode value to valid mode or null
+ * @param {string|null|undefined} mode - Raw mode value
+ * @returns {string|null} 'vibe', 'dev', or null if invalid
+ */
+function normalizeMode(mode) {
+    if (!mode) return null;
+    const normalized = String(mode).trim().toLowerCase();
+    return (normalized === 'vibe' || normalized === 'dev') ? normalized : null;
 }
 
 // Deactivation function
@@ -301,8 +302,6 @@ function deactivate() {
         // Cleanup is handled by context.subscriptions
         // VS Code automatically disposes all subscriptions when extension deactivates
     } catch (error) {
-        // Log error but don't throw - deactivation should always succeed
-        // Use console.error as fallback since logger may not be available
         console.error('VibeSwitch: Error during deactivation:', error);
     }
 }

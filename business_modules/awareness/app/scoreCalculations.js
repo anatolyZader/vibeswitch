@@ -1,3 +1,6 @@
+// FILE 8/14: app/scoreCalculations.js
+// ============================================================================
+
 /**
  * Score Calculations - Pure functions for calculating awareness score components
  * 
@@ -154,3 +157,7 @@ module.exports = {
     calculateAdaptationScore,
     calculateDebtScore
 };
+
+
+
+// ============================================================================

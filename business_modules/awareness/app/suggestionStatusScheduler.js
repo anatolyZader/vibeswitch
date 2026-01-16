@@ -10,8 +10,9 @@ class SuggestionStatusScheduler {
      * @param {TimerRegistry} timerRegistry - Timer registry (required)
      * @param {Function} isActive - Function to check if service is active (required)
      * @param {string} instanceId - Instance ID for generation-based cancellation (required)
+     * @param {ILoggerPort} loggerPort - Logger port (optional)
      */
-    constructor(timerRegistry, isActive, instanceId) {
+    constructor(timerRegistry, isActive, instanceId, loggerPort = null) {
         if (!timerRegistry) {
             throw new Error('SuggestionStatusScheduler requires timerRegistry');
         }
@@ -25,77 +26,70 @@ class SuggestionStatusScheduler {
         this.timerRegistry = timerRegistry;
         this.isActive = isActive;
         this.instanceId = instanceId;
+        this.loggerPort = loggerPort;
         
         // Track outstanding timers per suggestion ID (one timer per suggestion)
-        this.outstandingTimers = new Map(); // suggestionId -> timer
+        this.scheduledChecks = new Map(); // suggestionId -> timer
     }
 
     /**
      * Schedule a status check for a suggestion
      * If a timer already exists for this suggestion, it will be cancelled and replaced.
      * @param {string} suggestionId - Suggestion ID
-     * @param {Function} checkCallback - Callback to execute (checkSuggestionStatus)
-     * @param {number} delayMs - Delay in milliseconds (default: 5000)
+     * @param {Function} callback - Callback to execute when the timer fires
+     * @param {number} delayMs - Delay in milliseconds before the callback is executed
      */
-    schedule(suggestionId, checkCallback, delayMs = 5000) {
-        if (!suggestionId || !checkCallback) {
+    schedule(suggestionId, callback, delayMs) {
+        if (!this.isActive()) {
+            this.loggerPort?.debug(`Scheduler: Not active, skipping schedule for ${suggestionId}`);
             return;
         }
 
-        // Cancel existing timer for this suggestion if any
+        // Cancel any existing timer for this suggestion
         this.cancel(suggestionId);
 
-        // Capture instance ID at timer creation for generation-based cancellation
-        const instanceId = this.instanceId;
+        const currentInstanceId = this.instanceId; // Capture instance ID for closure
 
-        // Create new timer through registry
         const timer = this.timerRegistry.setTimeout(() => {
-            // Remove from outstanding timers
-            this.outstandingTimers.delete(suggestionId);
-            
+            this.scheduledChecks.delete(suggestionId);
             // Generation-based cancellation: only execute if instance ID matches
-            if (this.instanceId !== instanceId) {
-                return; // Instance was restarted, ignore this timer
+            if (this.instanceId !== currentInstanceId) {
+                this.loggerPort?.debug(`Scheduler: Instance ID mismatch for ${suggestionId}, ignoring timer.`);
+                return;
             }
-            
-            // Only execute if service is still active
             if (this.isActive()) {
-                checkCallback();
+                callback();
+            } else {
+                this.loggerPort?.debug(`Scheduler: Service not active for ${suggestionId}, ignoring timer.`);
             }
-        }, delayMs);
+        }, delayMs, 'statusCheck'); // Tag timer with owner
 
-        // Track this timer
-        this.outstandingTimers.set(suggestionId, timer);
+        this.scheduledChecks.set(suggestionId, timer);
+        this.loggerPort?.debug(`Scheduler: Scheduled check for ${suggestionId} in ${delayMs}ms`);
     }
 
     /**
-     * Cancel a scheduled status check for a suggestion
-     * @param {string} suggestionId - Suggestion ID
+     * Cancel a scheduled status check for a specific suggestion
+     * @param {string} suggestionId - The ID of the suggestion whose check should be cancelled
      */
     cancel(suggestionId) {
-        const timer = this.outstandingTimers.get(suggestionId);
+        const timer = this.scheduledChecks.get(suggestionId);
         if (timer) {
             this.timerRegistry.clearTimeout(timer);
-            this.outstandingTimers.delete(suggestionId);
+            this.scheduledChecks.delete(suggestionId);
+            this.loggerPort?.debug(`Scheduler: Cancelled check for ${suggestionId}`);
         }
     }
 
     /**
-     * Cancel all outstanding status checks
+     * Cancel all scheduled status checks
      */
     cancelAll() {
-        for (const [suggestionId, timer] of this.outstandingTimers.entries()) {
+        for (const timer of this.scheduledChecks.values()) {
             this.timerRegistry.clearTimeout(timer);
         }
-        this.outstandingTimers.clear();
-    }
-
-    /**
-     * Get count of outstanding timers
-     * @returns {number} Number of outstanding timers
-     */
-    getOutstandingCount() {
-        return this.outstandingTimers.size;
+        this.scheduledChecks.clear();
+        this.loggerPort?.debug('Scheduler: Cancelled all scheduled checks.');
     }
 }
 

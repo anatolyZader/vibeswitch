@@ -3,7 +3,6 @@
  * Tests for AwarenessService and AwarenessController using mock adapters
  */
 
-const assert = require('assert');
 const AwarenessService = require('../../../../business_modules/awareness/app/awarenessService');
 const AwarenessController = require('../../../../business_modules/awareness/input/awarenessController');
 const AwarenessMockVSCodeAdapter = require('../../../../business_modules/awareness/infrastructure/adapters/awarenessMockVSCodeAdapter');
@@ -21,14 +20,14 @@ const DebtCalculationServiceD = require('../../../../business_modules/awareness/
 const SuggestionBatchServiceD = require('../../../../business_modules/awareness/domain/services/suggestionBatchServiceD');
 const DIContainer = require('../../../../diContainer');
 
-suite('AwarenessService with Adapters', () => {
+describe('AwarenessService with Adapters', () => {
     let mockVSCodeAdapter;
     let mockPersistenceAdapter;
     let awarenessService;
     let awarenessController;
     let mockContext;
     
-    setup(() => {
+    beforeEach(() => {
         mockVSCodeAdapter = new AwarenessMockVSCodeAdapter();
         mockPersistenceAdapter = new AwarenessMockPersistenceAdapter();
         mockContext = {
@@ -76,7 +75,7 @@ suite('AwarenessService with Adapters', () => {
         });
     });
     
-    teardown(async () => {
+    afterEach(async () => {
         if (awarenessService) {
             await awarenessService.stop();
         }
@@ -85,18 +84,18 @@ suite('AwarenessService with Adapters', () => {
     });
     
     test('should create AwarenessService with adapters', () => {
-        assert.ok(awarenessService);
-        assert.strictEqual(awarenessService.vscodeAdapter, mockVSCodeAdapter);
-        assert.strictEqual(awarenessService.persistenceAdapter, mockPersistenceAdapter);
+        expect(awarenessService).toBeTruthy();
+        expect(awarenessService.vscodeAdapter).toBe(mockVSCodeAdapter);
+        expect(awarenessService.persistenceAdapter).toBe(mockPersistenceAdapter);
     });
     
     test('should start monitoring with adapters', async () => {
         await awarenessController.startMonitoring(mockContext, null, 'dev');
         
         // Verify event handlers are registered
-        assert.strictEqual(mockVSCodeAdapter._textDocumentChangeHandlers.length, 1);
-        assert.strictEqual(mockVSCodeAdapter._fileCreateHandlers.length, 1);
-        assert.strictEqual(mockVSCodeAdapter._fileSaveHandlers.length, 1);
+        expect(mockVSCodeAdapter._textDocumentChangeHandlers.length).toBe(1);
+        expect(mockVSCodeAdapter._fileCreateHandlers.length).toBe(1);
+        expect(mockVSCodeAdapter._fileSaveHandlers.length).toBe(1);
     });
     
     test('should handle text document changes via adapter', async () => {
@@ -117,29 +116,29 @@ suite('AwarenessService with Adapters', () => {
         };
         
         // Simulate text document change
-        assert.doesNotThrow(() => {
+        expect(().not.toThrow() => {
             mockVSCodeAdapter.simulateTextDocumentChange(mockEvent);
         });
     });
     
     test('should stop monitoring and clean up', async () => {
         await awarenessController.startMonitoring(mockContext, null, 'dev');
-        assert.ok(awarenessService.eventHandlers);
+        expect(awarenessService.eventHandlers).toBeTruthy();
         
         await awarenessService.stop();
         // After stop, event handlers should be disposed
-        assert.ok(true);
+        expect(true).toBeTruthy();
     });
 });
 
-suite('AwarenessController with DI Container', () => {
+describe('AwarenessController with DI Container', () => {
     let mockVSCodeAdapter;
     let mockPersistenceAdapter;
     let diContainer;
     let awarenessController;
     let mockContext;
     
-    setup(() => {
+    beforeEach(() => {
         mockVSCodeAdapter = new AwarenessMockVSCodeAdapter();
         mockPersistenceAdapter = new AwarenessMockPersistenceAdapter();
         mockContext = {
@@ -192,7 +191,7 @@ suite('AwarenessController with DI Container', () => {
         });
     });
     
-    teardown(async () => {
+    afterEach(async () => {
         if (awarenessController) {
             await awarenessController.stopMonitoring();
         }
@@ -201,21 +200,21 @@ suite('AwarenessController with DI Container', () => {
     });
     
     test('should create AwarenessController with DI container', () => {
-        assert.ok(awarenessController);
+        expect(awarenessController).toBeTruthy();
     });
     
     test('should start monitoring via controller', async () => {
         await awarenessController.startMonitoring(mockContext, null, 'dev');
         
         // Verify event handlers are registered
-        assert.strictEqual(mockVSCodeAdapter._textDocumentChangeHandlers.length, 1);
+        expect(mockVSCodeAdapter._textDocumentChangeHandlers.length).toBe(1);
     });
     
     test('should get score via controller', async () => {
         await awarenessController.startMonitoring(mockContext, null, 'dev');
         const score = awarenessController.getScore();
-        assert.ok(score);
-        assert.ok(typeof score.total === 'number');
+        expect(score).toBeTruthy();
+        expect(typeof score.total === 'number').toBeTruthy();
     });
 });
 

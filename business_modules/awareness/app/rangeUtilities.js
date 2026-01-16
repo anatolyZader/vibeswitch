@@ -22,39 +22,26 @@ class RangeUtilities {
         }
 
         // Sort ranges by start position
-        const sortedRanges = [...ranges].sort((a, b) => {
-            const lineDiff = a.start.line - b.start.line;
-            if (lineDiff !== 0) return lineDiff;
-            return a.start.character - b.start.character;
-        });
+        const sorted = [...ranges].sort((a, b) => 
+            a.start.line - b.start.line || a.start.character - b.start.character
+        );
 
-        const mergedRanges = [];
-        for (const range of sortedRanges) {
-            if (mergedRanges.length === 0) {
-                mergedRanges.push(range);
-                continue;
-            }
-
-            const lastMerged = mergedRanges[mergedRanges.length - 1];
-            const isTouching = range.start.isEqual(lastMerged.end) ||
-                range.start.isBefore(lastMerged.end) ||
-                (range.start.line === lastMerged.end.line && range.start.character <= lastMerged.end.character);
-            const isOverlapping = range.intersection(lastMerged) !== undefined;
-
-            if (isOverlapping || isTouching) {
-                const start = range.start.isBefore(lastMerged.start)
-                    ? range.start
-                    : lastMerged.start;
-                const end = range.end.isAfter(lastMerged.end)
-                    ? range.end
-                    : lastMerged.end;
-                mergedRanges[mergedRanges.length - 1] = new Range(start, end);
+        const merged = [];
+        for (const range of sorted) {
+            const last = merged[merged.length - 1];
+            
+            // Merge if overlapping or touching (start is before or equal to last end)
+            if (last && (range.intersection(last) || range.start.isBefore(last.end) || range.start.isEqual(last.end))) {
+                merged[merged.length - 1] = new Range(
+                    last.start.isBefore(range.start) ? last.start : range.start,
+                    last.end.isAfter(range.end) ? last.end : range.end
+                );
             } else {
-                mergedRanges.push(range);
+                merged.push(range);
             }
         }
 
-        return mergedRanges;
+        return merged;
     }
 
     /**

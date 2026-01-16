@@ -1,29 +1,28 @@
 /**
  * AwarenessEventListener - Input layer event listener for awareness monitoring
  * 
- * Bridges VS Code events to AwarenessController. This is the input layer that receives
- * external events and delegates to the controller, maintaining isolation between
+ * Bridges VS Code events to AwarenessEngine. This is the input layer that receives
+ * external events and delegates to the engine, maintaining isolation between
  * input handling and business logic.
  */
 
 
-// No domain utility imports - all validation and business logic delegated to controller/service
 
 class AwarenessEventListener {
     /**
-     * @param {AwarenessController} controller - Awareness controller instance
+     * @param {AwarenessEngine} engine - Awareness engine instance
      */
-    constructor(controller) {
-        if (!controller) {
-            throw new Error('AwarenessEventListener requires controller');
+    constructor(engine) {
+        if (!engine) {
+            throw new Error('AwarenessEventListener requires engine');
         }
         
-        this.controller = controller;
+        this.engine = engine;
         
-        // Duplicate detection cache for file saves (primary key: uri + contentHash)
-        // Using contentHash instead of version because saves can happen without version bumps
-        // This is input-layer state for preventing duplicate save events
-        this.saveCache = new Map(); // `${uri}:${hash}` -> { timestamp: number }
+        this.activeReviewSuggestion = new Map(); // document URI -> { suggestionId, reviewStarted, reviewTime, dwellTimer }
+        
+        // Duplicate detection cache for file saves (primary key: uri + version)
+        this.saveCache = new Map(); // `${uri}:${version}` -> { hash: string, timestamp: number }
         
         // Track previous active document for flush on editor change
         this.previousActiveDocumentUri = null;
@@ -34,34 +33,27 @@ class AwarenessEventListener {
      * FIXED: Calls classifier once per event (not per change), single callback per document
      * @param {vscode.TextDocumentChangeEvent} event - Text document change event
      */
+    
     onTextChange(event) {
         if (event.contentChanges.length === 0) return;
         
-        // Delegate to controller - handles validation, logging, classification, and result processing
-        this.controller.classifyTextChange(event);
+        // Delegate to engine - handles validation, logging, classification, and result processing
+        this.engine.classifyTextChange(event);
     }
 
     /**
      * Handle file creation (AI creating new files)
-     * FIXED: Handles async calls with proper error handling to prevent unhandled rejections
+     * FIXED: Uses isSkippableUri for URI-only checks
      * @param {vscode.FileCreateEvent} event - File create event
      */
     onFilesCreated(event) {
-        // Collect all async tasks and handle errors to prevent unhandled rejections
-        const tasks = event.files.map(fileUri => 
-            this.controller.handleFileCreated(fileUri, {
+        // Delegate to engine - handles validation, logging, and processing
+        for (const fileUri of event.files) {
+            this.engine.handleFileCreated(fileUri, {
                 isFileCreation: true,
                 filePath: null // Let processFileAsSuggestion handle path extraction from URI
-            }).catch(err => {
-                // Log error but don't throw - prevent unhandled rejection crashes
-                this.controller.logError('AwarenessEventListener: Error handling file creation', err);
-                return null; // Return null on error
-            })
-        );
-        
-        // Fire and forget - errors are handled in catch above
-        // Using void to explicitly mark as intentionally not awaited
-        void Promise.all(tasks);
+            });
+        }
     }
 
     /**
@@ -70,49 +62,8 @@ class AwarenessEventListener {
      * @param {vscode.TextDocument} document - The saved document
      */
     onFileSaved(document) {
-        // Manage cache (input-layer state)
-        const uri = document.uri.toString();
-        const content = document.getText();
-        const contentHash = this.controller.getContentHash(content);
-        const cacheKey = `${uri}:${contentHash}`;
-        const cached = this.saveCache.get(cacheKey);
-        
-        // If we already processed this exact content, skip
-        if (cached) {
-            return; // Already processed
-        }
-        
-        // Delegate to controller - handles validation, logging, and processing
-        // Controller will return whether it was processed, then we update cache
-        const wasProcessed = this.controller.handleFileSaved(document);
-        
-        if (wasProcessed) {
-            // Update cache (primary key: uri + contentHash)
-            this.saveCache.set(cacheKey, {
-                timestamp: Date.now()
-            });
-            
-            // Clean old cache entries (keep last 100, with 5 minute TTL)
-            const now = Date.now();
-            const TTL_MS = 5 * 60 * 1000; // 5 minutes
-            
-            // Remove expired entries
-            for (const [key, value] of this.saveCache.entries()) {
-                if (now - value.timestamp > TTL_MS) {
-                    this.saveCache.delete(key);
-                }
-            }
-            
-            // If still too many, keep most recent 100
-            if (this.saveCache.size > 100) {
-                const entries = Array.from(this.saveCache.entries());
-                entries.sort((a, b) => b[1].timestamp - a[1].timestamp);
-                this.saveCache.clear();
-                entries.slice(0, 100).forEach(([key, value]) => {
-                    this.saveCache.set(key, value);
-                });
-            }
-        }
+        // Delegate to engine - handles validation, logging, and processing
+        this.engine.handleFileSaved(document);
     }
 
     /**
@@ -120,8 +71,8 @@ class AwarenessEventListener {
      * @param {vscode.TextDocument} document - The opened document
      */
     onFileOpened(document) {
-        // Delegate to controller - handles validation internally
-        this.controller.handleFileOpened(document);
+        // Delegate to engine - handles validation internally
+        this.engine.handleFileOpened(document.uri);
     }
 
     /**
@@ -132,17 +83,46 @@ class AwarenessEventListener {
     onDocumentClose(document) {
         if (!document) return;
         
+        const uri = document.uri.toString();
+        
         // Fix: Emit with source meta instead of silent flush to preserve evidence
         // Silent flush drops potentially important data (user closed file quickly)
         // Emit with source='close' so downstream can filter if needed
-        // Review tracking cleanup is handled by service dispose() - no need for separate call
-        this.controller.flushChanges(document, { source: 'close' });
+        this.engine.flushChanges(document, { source: 'close' });
+        
+        // Close any active review for this document
+        this._closeActiveReview(uri);
+    }
+
+    _closeActiveReview(uri) {
+        const activeReview = this.activeReviewSuggestion.get(uri);
+        if (!activeReview) return;
+        
+        // Fix: Clear dwell timer if it exists
+        if (activeReview.dwellTimer) {
+            clearTimeout(activeReview.dwellTimer);
+        }
+        
+        if (activeReview.reviewStarted) {
+            const suggestions = this.engine.getSuggestions();
+            const suggestion = suggestions.find(s => s.id === activeReview.suggestionId);
+            
+            if (suggestion) {
+                const reviewDuration = Date.now() - activeReview.reviewStarted;
+                // FIXED: Update review time in suggestion (for score calculation)
+                // But review state is stored separately (domain separation)
+                this.engine.updateSuggestionReviewTime(activeReview.suggestionId, (suggestion.reviewTime || 0) + reviewDuration);
+                // Fix: Only mark as reviewed if dwell time was met (handled by timer)
+                // Don't mark here - let the timer do it
+            }
+        }
+        
+        this.activeReviewSuggestion.delete(uri);
     }
 
     /**
      * Track cursor activity in files being reviewed
-     * FIXED: Delegates all review tracking to ReviewTrackingService (app layer)
-     * Input layer no longer mutates domain objects or manages timers
+     * FIXED: Review state stored separately from suggestion objects
      * @param {vscode.TextEditorSelectionChangeEvent} event - Cursor move event
      */
     onCursorMove(event) {
@@ -152,8 +132,68 @@ class AwarenessEventListener {
         const position = event.selections[0].active;
         const uri = editor.document.uri.toString();
         
-        // Delegate to controller - handles all review tracking logic
-        this.controller.handleCursorMove(uri, position);
+        // Delegate to engine - returns helper functions for review tracking
+        const helpers = this.engine.handleCursorMove(uri, position);
+        if (!helpers) return;
+        
+        const { getPendingSuggestions, isPositionInRange } = helpers;
+        const pendingSuggestions = getPendingSuggestions();
+        const activeReview = this.activeReviewSuggestion.get(uri);
+        
+        // First, close any active review that's no longer valid
+        if (activeReview) {
+            const activeSuggestion = pendingSuggestions.find(s => s.id === activeReview.suggestionId);
+            if (activeSuggestion && activeSuggestion.document === uri) {
+                // Check if cursor is still in this suggestion
+                if (!isPositionInRange(position, activeSuggestion.range)) {
+                    // Cursor left the suggestion - close review
+                    this._closeActiveReview(uri);
+                } else {
+                    // Still in active suggestion - continue tracking
+                    return;
+                }
+            } else {
+                // Active suggestion no longer exists or is in different document
+                this.activeReviewSuggestion.delete(uri);
+            }
+        }
+        
+        // Now check if cursor entered a new suggestion
+        for (const suggestion of pendingSuggestions) {
+            if (suggestion.document !== uri) continue;
+            
+            // Check if cursor is within suggestion range
+            if (isPositionInRange(position, suggestion.range)) {
+                // Initialize review time if needed
+                if (!suggestion.reviewTime) {
+                    suggestion.reviewTime = 0;
+                }
+                
+                // Fix: Require dwell time (1000ms) before marking as reviewed
+                // This avoids marking accidental cursor touches as "reviewed"
+                const reviewStarted = Date.now();
+                const dwellTimer = setTimeout(() => {
+                    // Only mark as reviewed after dwell time
+                    const currentReview = this.activeReviewSuggestion.get(uri);
+                    if (currentReview && currentReview.suggestionId === suggestion.id) {
+                        this.engine.markSuggestionAsReviewed(suggestion.id);
+                        // Fix: Trigger status check and updates immediately after marking as reviewed
+                        // This prevents UX feeling delayed/stuck until next scheduled status check
+                        this.engine.checkSuggestionStatus(suggestion.id);
+                        // updateFileColorsInExplorer and updateScore are handled by checkSuggestionStatus
+                    }
+                }, 1000); // 1000ms dwell time
+                
+                // FIXED: Store review state separately (domain separation)
+                this.activeReviewSuggestion.set(uri, {
+                    suggestionId: suggestion.id,
+                    reviewStarted: reviewStarted,
+                    reviewTime: 0, // Track separately
+                    dwellTimer: dwellTimer // Store timer for cleanup
+                });
+                return; // Only track one suggestion at a time
+            }
+        }
     }
 
     /**
@@ -167,7 +207,7 @@ class AwarenessEventListener {
         const uri = event.textEditor.document.uri.toString();
         
         // Update review tracking if this file has debt
-        this.controller.handleScroll(uri);
+        this.engine.handleScroll(uri);
     }
 
     /**
@@ -176,11 +216,16 @@ class AwarenessEventListener {
      * @param {vscode.TextEditor} editor - The active editor
      */
     onEditorChange(editor) {
-        // Delegate to controller - handles flushing previous document and review tracking cleanup
-        this.controller.handleEditorChange(editor, this.previousActiveDocumentUri);
+        // Delegate to engine - handles flushing previous document
+        this.engine.handleEditorChange(editor, this.previousActiveDocumentUri);
         
         // Store current document URI for next flush
         this.previousActiveDocumentUri = editor?.document?.uri.toString() || null;
+        
+        // Close all active reviews when switching editors
+        for (const uri of this.activeReviewSuggestion.keys()) {
+            this._closeActiveReview(uri);
+        }
         
         // Track as file opened if it has debt
         if (editor?.document) {
@@ -194,9 +239,13 @@ class AwarenessEventListener {
      */
     dispose() {
         // Flush all pending classifier changes (automatically handles classification results)
-        this.controller.flushAllChanges();
+        this.engine.flushAllChanges();
         
-        // Review tracking cleanup is handled by ReviewTrackingService.dispose() in AwarenessService.stop()
+        // Close all active reviews (cleans up dwell timers)
+        for (const uri of this.activeReviewSuggestion.keys()) {
+            this._closeActiveReview(uri);
+        }
+        this.activeReviewSuggestion.clear();
         
         // Clear caches
         this.saveCache.clear();

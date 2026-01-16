@@ -7,13 +7,16 @@
  * - Handles classification configuration
  * - Processes classification results (routing, batch recording, diff bullets)
  * - Provides a clean interface for classification workflow
+ * 
+ * Self-contained service with direct dependencies (no callbacks).
  */
 
-const ChangeClassifier = require('../domain/utils/changeClassifier');
+const ChangeClassifier = require('./classification/changeClassifier');
 const Change = require('../domain/entities/change');
 const IIdGeneratorPort = require('../domain/ports/IIdGeneratorPort');
 const ILoggerPort = require('../domain/ports/ILoggerPort');
 const { buildDiffBullets } = require('./diffBulletService');
+const { getClassifierConfig } = require('./classificationConfig');
 
 class ClassificationService {
     /**
@@ -21,11 +24,9 @@ class ClassificationService {
      * @param {string} mode - Current mode ('vibe', 'dev') for classifier config
      * @param {number} debounceMs - Debounce window in milliseconds (default: 200)
      * @param {ILoggerPort} loggerPort - Logger port (optional)
-     * @param {IAwarenessVSCodePort} vscodeAdapter - VS Code adapter (required for handleClassifiedChanges)
-     * @param {Function} recordChangeBatch - Function to record change batches (required for handleClassifiedChanges)
-     * @param {Function} generateDiffBullets - Function to generate diff bullets (optional, uses default if not provided)
-     * @param {Function} handleAISuggestionBatch - Function to handle AI suggestion batches (required for handleClassifiedChanges)
-     * @param {Function} handleUserEditBatch - Function to handle user edit batches (required for handleClassifiedChanges)
+     * @param {IAwarenessVSCodePort} vscodeAdapter - VS Code adapter (required)
+     * @param {ChangeLedgerService} changeLedgerService - Change ledger service for recording batches
+     * @param {SuggestionLifecycleService} suggestionLifecycleService - Suggestion service for handling AI/user batches
      */
     constructor({
         idGeneratorPort,
@@ -33,76 +34,34 @@ class ClassificationService {
         debounceMs = 200,
         loggerPort = null,
         vscodeAdapter = null,
-        recordChangeBatch = null,
-        generateDiffBullets: generateDiffBulletsFn = null,
-        handleAISuggestionBatch = null,
-        handleUserEditBatch = null
+        changeLedgerService = null,
+        suggestionLifecycleService = null
     }) {
         if (!idGeneratorPort) {
             throw new Error('ClassificationService requires idGeneratorPort');
+        }
+        if (!vscodeAdapter) {
+            throw new Error('ClassificationService requires vscodeAdapter');
+        }
+        if (!changeLedgerService) {
+            throw new Error('ClassificationService requires changeLedgerService');
+        }
+        if (!suggestionLifecycleService) {
+            throw new Error('ClassificationService requires suggestionLifecycleService');
         }
         
         this.idGeneratorPort = idGeneratorPort;
         this.loggerPort = loggerPort;
         this.mode = mode;
         this.vscodeAdapter = vscodeAdapter;
-        this.recordChangeBatch = recordChangeBatch;
-        this.generateDiffBulletsFn = generateDiffBulletsFn;
-        this.handleAISuggestionBatch = handleAISuggestionBatch;
-        this.handleUserEditBatch = handleUserEditBatch;
+        this.changeLedgerService = changeLedgerService;
+        this.suggestionLifecycleService = suggestionLifecycleService;
         
         // Get classification configuration for mode
-        const classifierConfig = this._getClassifierConfig(mode);
+        const classifierConfig = getClassifierConfig(mode);
         
         // Create change classifier with logger port for config validation warnings
         this.changeClassifier = new ChangeClassifier(debounceMs, classifierConfig, this.loggerPort);
-    }
-    
-    /**
-     * Get classification configuration for mode
-     * @param {string} mode - Current mode ('vibe', 'dev')
-     * @returns {Object} Configuration object
-     */
-    _getClassifierConfig(mode) {
-        const baseConfig = {
-            multiLineThreshold: 50,
-            pureInsertionCount: 3,
-            pureInsertionSize: 20,
-            largeInsertionThreshold: 100,
-            scatteredRangeCount: 5,
-            scatteredChangeCount: 5,
-            scatteredSizeThreshold: 200,
-            formatterRangeCount: 8,
-            formatterLineSpan: 50,
-            aiLineSpan: 30,
-            aiMultiLineSize: 50,
-            // Rapid scattered changes: AI agents often make many scattered edits quickly
-            rapidScatteredTimeWindow: 1000, // 1 second window
-            rapidScatteredEventCount: 8, // Minimum events in window
-            rapidScatteredRangeCount: 6, // Minimum distinct line ranges
-            rapidScatteredMinSize: 50, // Minimum total size
-            rapidBurstChangeCount: 10, // Minimum changes for rapid burst branch
-            // Behavioral inference mode: use heuristics as primary, markers as strong signal when present
-            markerOnly: false
-        };
-        
-        // VIBE: more permissive (lower thresholds) - behavioral inference enabled
-        if (mode === 'vibe') {
-            return {
-                ...baseConfig,
-                pureInsertionSize: 15,
-                largeInsertionThreshold: 80,
-                aiMultiLineSize: 40,
-                rapidScatteredEventCount: 6, // Lower threshold for vibe mode
-                rapidScatteredRangeCount: 5,
-                rapidScatteredMinSize: 40,
-                rapidBurstChangeCount: 8, // Lower threshold for vibe mode
-                markerOnly: false
-            };
-        }
-        
-        // DEV: default (conservative) - behavioral inference enabled
-        return baseConfig;
     }
     
     /**
@@ -131,13 +90,14 @@ class ClassificationService {
     
     /**
      * Classify a text document change event
+     * Automatically handles classified changes (records batch, routes to handlers)
      * @param {vscode.TextDocumentChangeEvent} event - VS Code text document change event
-     * @param {Function} onClassified - Callback function (document, classification, changes[])
+     * @param {Function} onClassified - Optional callback function (document, classification, changes[])
      *   - document: vscode.TextDocument
      *   - classification: {label, confidence, reasons, meta}
      *   - changes: Array<Change> - Domain entities
      */
-    classifyEvent(event, onClassified) {
+    classifyEvent(event, onClassified = null) {
         if (!event || !event.contentChanges || event.contentChanges.length === 0) {
             return;
         }
@@ -154,7 +114,10 @@ class ClassificationService {
                 change.classify(classification);
             });
             
-            // Call the provided callback with domain entities
+            // Automatically handle classified changes (records batch, routes to handlers)
+            this.handleClassifiedChanges(document, classification, changes);
+            
+            // Call the provided callback with domain entities (for external tracking)
             if (onClassified) {
                 onClassified(document, classification, changes);
             }
@@ -168,19 +131,24 @@ class ClassificationService {
      * @param {Array<Change>} changes - Array of Change domain entities
      */
     handleClassifiedChanges(document, classification, changes) {
-        const isAI = classification.label === 'ai';
-        const isFormatter = classification.label === 'formatter';
+        // Record change batch and diff bullets
+        this._recordChangeBatch(document, classification, changes);
         
-        // Convert Change entities to raw format for buildDiffBullets (if needed)
-        const rawChanges = changes.map(change => ({
-            range: change.range,
-            text: change.text,
-            rangeLength: change.rangeLength
-        }));
+        // Route to appropriate handlers based on classification
+        this._routeClassifiedChanges(document, classification, changes);
+    }
+    
+    /**
+     * Record change batch and diff bullets
+     * @private
+     */
+    _recordChangeBatch(document, classification, changes) {
+        if (!this.changeLedgerService) {
+            return;
+        }
         
-        // DIFF bullet tracking: record batch event and generate bullets
         const uri = document.uri.toString();
-        const file = this.vscodeAdapter ? this.vscodeAdapter.asRelativePath(document.uri) : document.uri.toString();
+        const file = this.vscodeAdapter.asRelativePath(document.uri);
         const inserted = changes.reduce((sum, c) => sum + c.size, 0);
         const deleted = changes.reduce((sum, c) => sum + c.deletedSize, 0);
         
@@ -190,44 +158,52 @@ class ClassificationService {
         const minLine = Math.min(...startLines, ...endLines);
         const maxLine = Math.max(...startLines, ...endLines);
         const lineSpan = maxLine - minLine;
+        const distinctRangeCount = new Set(changes.map(c => c.range.start.line)).size;
         
-        // Count distinct ranges (by start line for simplicity)
-        const distinctRanges = new Set(changes.map(c => c.range.start.line));
-        const distinctRangeCount = distinctRanges.size;
+        // Record batch
+        const batchId = this.changeLedgerService.append({
+            ts: Date.now(),
+            uri,
+            file,
+            label: classification.label,
+            confidence: classification.confidence,
+            reasons: classification.reasons,
+            changeCount: changes.length,
+            inserted,
+            deleted,
+            lineSpan,
+            distinctRangeCount,
+            kind: 'batch'
+        });
         
-        // Record change batch
-        if (this.recordChangeBatch) {
-            const batchId = this.recordChangeBatch({
+        // Generate and record diff bullets
+        const rawChanges = changes.map(c => ({
+            range: c.range,
+            text: c.text,
+            rangeLength: c.rangeLength
+        }));
+        const bullets = this._generateDiffBullets(document, rawChanges, classification);
+        if (bullets.length > 0) {
+            this.changeLedgerService.append({
                 ts: Date.now(),
                 uri,
                 file,
-                label: classification.label,
-                confidence: classification.confidence,
-                reasons: classification.reasons,
-                changeCount: changes.length,
-                inserted,
-                deleted,
-                lineSpan,
-                distinctRangeCount,
-                kind: 'batch'
+                kind: 'diff_bullets',
+                batchId,
+                bullets
             });
-            
-            // Generate and record DIFF bullet skeletons (explicitly linked via batchId)
-            const bullets = this._generateDiffBullets(document, rawChanges, classification);
-            if (bullets.length > 0) {
-                this.recordChangeBatch({
-                    ts: Date.now(),
-                    uri,
-                    file,
-                    kind: 'diff_bullets',
-                    batchId, // Fix: Explicit link to batch entry
-                    bullets
-                });
-            }
         }
+    }
+    
+    /**
+     * Route classified changes to appropriate handlers
+     * @private
+     */
+    _routeClassifiedChanges(document, classification, changes) {
+        const uri = document.uri.toString();
+        const label = classification.label;
         
-        // Route based on classification
-        if (isAI) {
+        if (label === 'ai') {
             const totalSize = changes.reduce((sum, c) => sum + c.size, 0);
             const reasonsStr = classification.reasons.join('; ');
             if (this.loggerPort) {
@@ -238,16 +214,10 @@ class ClassificationService {
                     `aiDetected:${uri}`
                 );
             }
-            // Record as single batch suggestion (not per-change)
-            // This prevents dozens of "pending suggestions" from a single AI refactor
-            // Pass Change entities directly (optimized - preserves classification metadata)
-            if (this.handleAISuggestionBatch) {
-                this.handleAISuggestionBatch(document, changes);
+            if (this.suggestionLifecycleService) {
+                this.suggestionLifecycleService.recordAISuggestionBatch(document, changes);
             }
-        } else if (isFormatter) {
-            // Formatters should not mark AI suggestions as adapted
-            // Treat formatter detection as "neutral" - don't call recordUserEdit
-            // This prevents auto-formatters from accidentally marking AI suggestions as adapted
+        } else if (label === 'formatter') {
             if (this.loggerPort) {
                 this.loggerPort.log(
                     `AwarenessMonitor: 🔧 Formatter detected: ${classification.reasons.join('; ')}`,
@@ -256,18 +226,13 @@ class ClassificationService {
                     `formatterDetected:${uri}`
                 );
             }
-            // Don't record formatter edits - they're not user edits and shouldn't affect suggestion status
-        } else if (classification.label === 'user') {
-            // Only record user edits for explicit 'user' label, not 'unknown'
-            // Unknown means we couldn't determine origin - don't assume it's user
-            // Pass Change entities directly
-            if (this.handleUserEditBatch) {
-                this.handleUserEditBatch(document, changes);
+            // Formatters are neutral - don't record as user edits
+        } else if (label === 'user') {
+            if (this.suggestionLifecycleService) {
+                this.suggestionLifecycleService.recordUserEditBatch(document, changes);
             }
-        } else {
-            // Unknown label - don't record as user edits (could be AI we missed, or ambiguous)
-            // Ledger will still capture it for audit trail, but don't mark suggestions as adapted
         }
+        // Unknown label: ledger captures it for audit, but don't mark suggestions as adapted
     }
     
     /**
@@ -278,16 +243,7 @@ class ClassificationService {
      * @returns {Array<string>} Array of diff bullet strings
      */
     _generateDiffBullets(document, rawChanges, classification) {
-        if (this.generateDiffBulletsFn) {
-            return this.generateDiffBulletsFn(document, rawChanges, classification);
-        }
-        
-        // Fallback to default implementation
-        if (this.vscodeAdapter) {
-            return buildDiffBullets(document, rawChanges, classification, this.vscodeAdapter);
-        }
-        
-        return [];
+        return buildDiffBullets(document, rawChanges, classification, this.vscodeAdapter);
     }
     
     /**
@@ -302,10 +258,11 @@ class ClassificationService {
     
     /**
      * Flush all pending changes
-     * @param {Function} onClassified - Callback for each classified batch
+     * Automatically handles classified changes (records batch, routes to handlers)
+     * @param {Function} onClassified - Optional callback for each classified batch
      *   (document, classification, changes[])
      */
-    flushAll(onClassified) {
+    flushAll(onClassified = null) {
         this.changeClassifier.flushAll((document, classification, rawChanges) => {
             const documentUri = document.uri.toString();
             const changes = this._convertToChangeEntities(rawChanges, documentUri);
@@ -315,7 +272,10 @@ class ClassificationService {
                 change.classify(classification);
             });
             
-            // Call the provided callback with domain entities
+            // Automatically handle classified changes (records batch, routes to handlers)
+            this.handleClassifiedChanges(document, classification, changes);
+            
+            // Call the provided callback with domain entities (for external tracking)
             if (onClassified) {
                 onClassified(document, classification, changes);
             }
