@@ -128,12 +128,13 @@ async function activate(context) {
         
         // Initialize helpers with state
         const loggingDisabled = !loggingEnabled; // Calculate from loggingEnabled (avoid shadowing imported function)
-        const helpers = initializeHelpers(state, loggingDisabled);
+        const helpers = initializeHelpers(state, container, loggingDisabled);
         const { 
             switchModeInStatusBar, 
             updateFileColorsForMode, 
             commandHandlers,
-            updateAwarenessMeter
+            updateAwarenessMeter,
+            startAwarenessMonitor
         } = helpers;
         
         // Set callbacks for UI updates and UsageStats integration
@@ -214,11 +215,16 @@ async function activate(context) {
         if (initialMode) {
             switchModeInStatusBar(initialMode);
             updateFileColorsForMode();
+            // Start awareness monitor if in DEV mode
+            if (initialMode === 'dev' && startAwarenessMonitor) {
+                startAwarenessMonitor();
+            }
         } else {
             // Set default mode if detection failed
             log('VibeSwitch: Using default mode (vibe)');
             switchModeInStatusBar('vibe');
             updateFileColorsForMode(); // Also update file colors for default mode
+            // Don't start monitor in vibe mode
         }
         
         log('VibeSwitch: File watcher disabled - mode only changes on explicit user action');

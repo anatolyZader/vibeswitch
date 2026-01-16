@@ -8,7 +8,7 @@
  */
 
 const vscode = require('vscode');
-const { getLogger } = require('../logger');
+const { getLogger } = require('../../logger');
 
 class UnreviewedFileDecor {
     constructor(awarenessEngine, getCurrentMode, logOutput, disableLogging = false) {
