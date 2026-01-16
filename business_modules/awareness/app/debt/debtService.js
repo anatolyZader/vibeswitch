@@ -7,6 +7,7 @@
 
 const FileDebt = require('../../domain/entities/fileDebt');
 const vscodeDocUtilities = require('../utilities/vscodeDocUtilities');
+const { calculateDebtScore, calculateRiskBasedDebtScore } = require('../scoring/scoreCalculations');
 
 class DebtService {
     /**
@@ -210,9 +211,14 @@ class DebtService {
      * - SuggestionDebt: Pending AI suggestions (suggestion-level, tracked via Suggestion entities)
      * 
      * @param {Array} aiSuggestions - Array of AI suggestions (for suggestion-level debt)
+     * @param {Object} options - Optional configuration
+     * @param {boolean} options.useRiskBased - Use risk-based calculation (default: true, research-aligned)
+     * @param {number} options.alpha - Provenance multiplier coefficient (default: 0.5, only used if useRiskBased=true)
      * @returns {number} Debt score (0-30)
      */
-    calculateDebtScore(aiSuggestions) {
+    calculateDebtScore(aiSuggestions, options = {}) {
+        const useRiskBased = options.useRiskBased !== false; // Default to true (new approach)
+        
         // File-level debt: unreviewed file changes
         const unreviewedFiles = Array.from(this.fileDebts.values())
             .filter(d => !d.isReviewed());
@@ -220,35 +226,15 @@ class DebtService {
         // Suggestion-level debt: pending AI suggestions (tracked separately)
         const pendingSuggestions = aiSuggestions ? aiSuggestions.filter(s => s && s.status === 'pending') : [];
         
-        // If no debt at all, return 0
-        if (unreviewedFiles.length === 0 && pendingSuggestions.length === 0) {
-            return 0;
+        if (useRiskBased) {
+            // New: Risk-based calculation (research-aligned)
+            return calculateRiskBasedDebtScore(this.fileDebts, pendingSuggestions, {
+                alpha: options.alpha
+            });
+        } else {
+            // Legacy: Count-based calculation (backward compatible)
+            return calculateDebtScore(this.fileDebts, pendingSuggestions);
         }
-        
-        const now = Date.now();
-        
-        // Calculate debt severity (combines both types)
-        let debtScore = 0;
-        
-        // 1. Number of unreviewed files (file-level debt) (0-10 points)
-        debtScore += Math.min(unreviewedFiles.length * 2, 10);
-        
-        // 2. Number of pending suggestions (suggestion-level debt) (0-10 points)
-        // Each pending suggestion is unreviewed AI-generated code that needs attention
-        debtScore += Math.min(pendingSuggestions.length * 2, 10);
-        
-        // 3. Age of oldest unreviewed file OR pending suggestion (0-10 points)
-        const fileDebtTimestamps = unreviewedFiles.map(d => d.modifiedAt || now);
-        const suggestionDebtTimestamps = pendingSuggestions.map(s => s.timestamp || now);
-        const allDebtTimestamps = [...fileDebtTimestamps, ...suggestionDebtTimestamps];
-        
-        if (allDebtTimestamps.length > 0) {
-            const oldestDebt = Math.min(...allDebtTimestamps);
-            const ageHours = (now - oldestDebt) / (1000 * 60 * 60);
-            debtScore += Math.min(ageHours * 1.5, 10);
-        }
-        
-        return Math.round(Math.min(debtScore, 30));
     }
     
 

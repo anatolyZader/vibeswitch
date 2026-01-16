@@ -21,7 +21,7 @@ const UriPathUtilities = require('./utilities/uriPathUtilities');
 const AwarenessEventListener = require('../input/awarenessEventListener');
 
 // Import pure calculation functions (moved from domain services)
-const { calculateReviewScore, calculateCriticalScore, calculateAdaptationScore, calculateDebtScore } = require('./scoring/scoreCalculations');
+const { calculateReviewScore, calculateCriticalScore, calculateAdaptationScore, calculateDebtScore, calculateRiskBasedDebtScore } = require('./scoring/scoreCalculations');
 
 // Import domain aggregates
 const SuggestionAggregate = require('../domain/aggregates/suggestionAggregate');
@@ -403,7 +403,9 @@ class AwarenessEngine {
             if (!this.debtService) return 0;
             // Use pure function for debt calculation (moved from domain service)
             const fileDebts = this.debtService.getDebtMap();
-            return calculateDebtScore(fileDebts, pendingSuggestions);
+            // Use risk-based debt calculation (research-aligned, default)
+            // Can fall back to count-based by passing useRiskBased: false
+            return this.debtService.calculateDebtScore(pendingSuggestions, { useRiskBased: true });
         };
         const getReviewDebtSummary = () => {
             if (!this.debtService) {

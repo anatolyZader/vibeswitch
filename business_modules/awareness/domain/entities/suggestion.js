@@ -67,6 +67,22 @@ class Suggestion {
         this.classificationLabel = options.classificationLabel || 'ai'; // Default to 'ai' since only AI creates suggestions
         this.classificationConfidence = options.classificationConfidence || null;
         this.classificationReasons = options.classificationReasons || [];
+        
+        // Verification signals (for risk-based debt calculation)
+        // These track evidence of user verification/validation after AI insertion
+        this.verificationSignals = options.verificationSignals || {
+            testFileModified: false,      // Did user modify test file after insertion?
+            navigationAfterInsert: false, // Did user navigate to other files after insertion?
+            saveAfterInsert: false,       // Did user save file after insertion?
+            timeToVerify: null            // Time between insert and first verification signal (ms)
+        };
+        
+        // Provenance score (for risk-based debt calculation)
+        // This is the AI-likelihood score from classification (0-1)
+        this.provenanceScore = options.provenanceScore || (options.classificationConfidence || 0.5);
+        
+        // Range count (for risk-based debt calculation - measures scatter)
+        this.rangeCount = options.rangeCount || 1;
     }
 
     /**
@@ -137,6 +153,55 @@ class Suggestion {
      */
     isForDocument(documentUri) {
         return this.document === documentUri;
+    }
+    
+    /**
+     * Update verification signals
+     * @param {Object} signals - Verification signal updates
+     * @param {boolean} signals.testFileModified - Test file was modified
+     * @param {boolean} signals.navigationAfterInsert - User navigated after insert
+     * @param {boolean} signals.saveAfterInsert - User saved after insert
+     */
+    updateVerificationSignals(signals) {
+        if (!this.verificationSignals) {
+            this.verificationSignals = {
+                testFileModified: false,
+                navigationAfterInsert: false,
+                saveAfterInsert: false,
+                timeToVerify: null
+            };
+        }
+        
+        if (signals.testFileModified !== undefined) {
+            this.verificationSignals.testFileModified = signals.testFileModified;
+        }
+        if (signals.navigationAfterInsert !== undefined) {
+            this.verificationSignals.navigationAfterInsert = signals.navigationAfterInsert;
+        }
+        if (signals.saveAfterInsert !== undefined) {
+            this.verificationSignals.saveAfterInsert = signals.saveAfterInsert;
+        }
+        
+        // Calculate time to verify if this is the first verification signal
+        if (this.verificationSignals.timeToVerify === null) {
+            const hasVerification = this.verificationSignals.testFileModified ||
+                                   this.verificationSignals.navigationAfterInsert ||
+                                   this.verificationSignals.saveAfterInsert;
+            if (hasVerification) {
+                this.verificationSignals.timeToVerify = Date.now() - this.timestamp;
+            }
+        }
+    }
+    
+    /**
+     * Check if suggestion has verification signals
+     * @returns {boolean} True if any verification signal is present
+     */
+    hasVerification() {
+        if (!this.verificationSignals) return false;
+        return this.verificationSignals.testFileModified ||
+               this.verificationSignals.navigationAfterInsert ||
+               this.verificationSignals.saveAfterInsert;
     }
 }
 

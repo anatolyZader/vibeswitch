@@ -73,7 +73,9 @@ class SuggestionAggregate {
             timestamp = Date.now(),
             classificationLabel,
             classificationConfidence,
-            classificationReasons
+            classificationReasons,
+            provenanceScore, // AI-likelihood score for risk-based debt
+            rangeCount // Number of ranges (scatter metric) for risk-based debt
         } = options;
 
         // Use ID generator port for ID generation
@@ -92,7 +94,9 @@ class SuggestionAggregate {
             timestamp,
             classificationLabel,
             classificationConfidence,
-            classificationReasons
+            classificationReasons,
+            provenanceScore,
+            rangeCount
         });
     }
 

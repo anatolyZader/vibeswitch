@@ -229,7 +229,7 @@ class ChangeClassifier {
         ];
         
         // Accumulate scores from detectors
-        const { aiScore, formatterScore, userScore, reasonObjects } = accumulateScores(detectors);
+        const { aiScore, formatterScore, userScore, reasonObjects, contributors } = accumulateScores(detectors);
         
         // Determine final label and confidence
         const { label, confidence } = determineLabel(aiScore, formatterScore, userScore);
@@ -237,7 +237,19 @@ class ChangeClassifier {
         // Filter reasons by tag prefix
         const filteredReasons = filterReasons(reasonObjects, label);
         
-        return { label, confidence, reasons: filteredReasons };
+        // Calculate top contributors and uncertainty for explainable UX
+        const { getTopContributors, calculateUncertainty } = require('./classificationScorer');
+        const topContributors = getTopContributors(contributors, label, confidence);
+        const uncertainty = calculateUncertainty(aiScore, formatterScore, userScore);
+        
+        return { 
+            label, 
+            confidence, 
+            reasons: filteredReasons,
+            topContributors,
+            uncertainty,
+            provenanceScore: label === 'ai' ? confidence : (label === 'formatter' ? 0 : (label === 'user' ? 0 : 0.2))
+        };
     }
     
     

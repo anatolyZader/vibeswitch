@@ -19,6 +19,9 @@ function accumulateScores(detectors) {
     // Some detectors may return reason without reasonTag (e.g., marker detection)
     const reasonObjects = [];
     
+    // Track contributors for explainable UX
+    const contributors = [];
+    
     for (const detector of detectors) {
         const result = detector();
         if (!result) continue;
@@ -33,6 +36,16 @@ function accumulateScores(detectors) {
         
         if (result.reason) {
             reasonObjects.push({ tag: result.reasonTag || null, text: result.reason });
+        }
+        
+        // Track contributors for explainability
+        if (result.score > 0) {
+            contributors.push({
+                feature: result.reasonTag || 'unknown',
+                score: result.score,
+                label: result.label,
+                reason: result.reason
+            });
         }
     }
     
@@ -50,7 +63,7 @@ function accumulateScores(detectors) {
         ? 1 - userScores.reduce((product, score) => product * (1 - score), 1)
         : 0;
     
-    return { aiScore, formatterScore, userScore, reasonObjects };
+    return { aiScore, formatterScore, userScore, reasonObjects, contributors };
 }
 
 function determineLabel(aiScore, formatterScore, userScore) {
@@ -77,8 +90,68 @@ function determineLabel(aiScore, formatterScore, userScore) {
     return { label, confidence };
 }
 
+/**
+ * Calculate top contributors for explainable UX
+ * Returns top 3 features that contributed to the final classification
+ * 
+ * @param {Array<Object>} contributors - Array of contributor objects from accumulateScores
+ * @param {string} finalLabel - Final classification label
+ * @param {number} finalScore - Final classification score
+ * @returns {Array<Object>} Top contributors with contribution percentages
+ */
+function getTopContributors(contributors, finalLabel, finalScore) {
+    if (!contributors || contributors.length === 0 || !finalScore || finalScore === 0) {
+        return [];
+    }
+    
+    // Filter contributors for the final label
+    const relevantContributors = contributors
+        .filter(c => c.label === finalLabel)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 3)
+        .map(c => ({
+            feature: c.feature,
+            contribution: finalScore > 0 ? (c.score / finalScore) : 0,
+            score: c.score,
+            reason: c.reason
+        }));
+    
+    return relevantContributors;
+}
+
+/**
+ * Calculate uncertainty level for classification
+ * 
+ * @param {number} aiScore - AI score
+ * @param {number} formatterScore - Formatter score
+ * @param {number} userScore - User score
+ * @returns {string} Uncertainty level ('low', 'medium', 'high')
+ */
+function calculateUncertainty(aiScore, formatterScore, userScore) {
+    const maxScore = Math.max(aiScore, formatterScore, userScore);
+    
+    // If max score is very low, high uncertainty
+    if (maxScore < 0.5) {
+        return 'high';
+    }
+    
+    // Calculate score difference between top 2
+    const scores = [aiScore, formatterScore, userScore].sort((a, b) => b - a);
+    const scoreDiff = scores[0] - scores[1];
+    
+    // If scores are close, medium uncertainty
+    if (scoreDiff < 0.2) {
+        return 'medium';
+    }
+    
+    // Otherwise, low uncertainty
+    return 'low';
+}
+
 module.exports = {
     accumulateScores,
-    determineLabel
+    determineLabel,
+    getTopContributors,
+    calculateUncertainty
 };
 

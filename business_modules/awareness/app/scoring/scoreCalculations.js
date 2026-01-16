@@ -151,11 +151,103 @@ function calculateDebtScore(fileDebts, pendingSuggestions) {
     return Math.round(Math.min(debtScore, 30));
 }
 
+/**
+ * Calculate risk-based debt score (0-30) - research-aligned approach
+ * 
+ * Separates provenance (AI-likelihood) from debt (risk/audit effort).
+ * Debt = BaseRisk(footprint, scatter, fileCriticality) × (1 + α × ProvenanceScore) × VerificationPenalty
+ * 
+ * This is the new approach that aligns with research recommendations.
+ * The old calculateDebtScore() is kept for backward compatibility.
+ * 
+ * @param {Map<string, FileDebt>} fileDebts - Map of file-level debt entities
+ * @param {Array<Suggestion>} pendingSuggestions - Pending suggestions (suggestion-level debt)
+ * @param {Object} options - Optional configuration
+ * @param {number} options.alpha - Provenance multiplier coefficient (default: 0.5)
+ * @param {Function} options.getFileCriticality - Function to get file criticality (default: uses fileCriticality utility)
+ * @returns {number} Risk-based debt score (0-30)
+ */
+function calculateRiskBasedDebtScore(fileDebts, pendingSuggestions, options = {}) {
+    if (!fileDebts) fileDebts = new Map();
+    if (!pendingSuggestions) pendingSuggestions = [];
+
+    const alpha = options.alpha !== undefined ? options.alpha : 0.5;
+    const getFileCriticality = options.getFileCriticality || (() => {
+        const { getFileCriticality: defaultGetFileCriticality } = require('../utilities/fileCriticality');
+        return defaultGetFileCriticality;
+    })();
+
+    // File-level debt: unreviewed file changes
+    const unreviewedFiles = Array.from(fileDebts.values())
+        .filter(d => d && !d.isReviewed());
+
+    // Suggestion-level debt: pending AI suggestions (tracked separately)
+    const pending = pendingSuggestions.filter(s => s && s.status === 'pending');
+
+    // If no debt at all, return 0
+    if (unreviewedFiles.length === 0 && pending.length === 0) {
+        return 0;
+    }
+
+    const now = Date.now();
+    let totalDebt = 0;
+
+    // Calculate file-level debt (risk-based)
+    for (const fileDebt of unreviewedFiles) {
+        const fileUri = fileDebt.fileUri || fileDebt.path || '';
+        const fileCriticality = getFileCriticality(fileUri);
+        
+        // Base risk: footprint (total changes) and file criticality
+        const footprint = fileDebt.totalChanges || 0;
+        const baseRisk = Math.min((footprint / 1000) * fileCriticality, 5); // Cap at 5 per file
+        
+        // Age multiplier (older = higher risk)
+        const ageHours = (now - (fileDebt.modifiedAt || now)) / (1000 * 60 * 60);
+        const ageMultiplier = 1 + Math.min(ageHours * 0.1, 1.0); // Max 2x multiplier
+        
+        const fileDebtValue = baseRisk * ageMultiplier;
+        totalDebt += fileDebtValue;
+    }
+
+    // Calculate suggestion-level debt (risk-based)
+    for (const suggestion of pending) {
+        const fileUri = suggestion.document || '';
+        const fileCriticality = getFileCriticality(fileUri);
+        
+        // Base risk: footprint (size), scatter (rangeCount), and file criticality
+        const footprint = suggestion.size || 0;
+        const scatter = suggestion.rangeCount || 1;
+        const baseRisk = Math.min(
+            ((footprint / 500) + (scatter / 10)) * fileCriticality,
+            3 // Cap at 3 per suggestion
+        );
+        
+        // Provenance multiplier: AI-likelihood increases risk
+        const provenanceScore = suggestion.provenanceScore || suggestion.classificationConfidence || 0.5;
+        const provenanceMultiplier = 1 + (alpha * provenanceScore);
+        
+        // Verification penalty: lack of verification increases debt
+        const hasVerification = suggestion.hasVerification ? suggestion.hasVerification() : false;
+        const verificationPenalty = hasVerification ? 0.5 : 1.0;
+        
+        // Age multiplier (older = higher risk)
+        const ageHours = (now - (suggestion.timestamp || now)) / (1000 * 60 * 60);
+        const ageMultiplier = 1 + Math.min(ageHours * 0.1, 1.0); // Max 2x multiplier
+        
+        const suggestionDebt = baseRisk * provenanceMultiplier * verificationPenalty * ageMultiplier;
+        totalDebt += suggestionDebt;
+    }
+
+    // Normalize to 0-30 range
+    return Math.round(Math.min(totalDebt, 30));
+}
+
 module.exports = {
     calculateReviewScore,
     calculateCriticalScore,
     calculateAdaptationScore,
-    calculateDebtScore
+    calculateDebtScore, // Legacy: count-based approach (backward compatible)
+    calculateRiskBasedDebtScore // New: risk-based approach (research-aligned)
 };
 
 

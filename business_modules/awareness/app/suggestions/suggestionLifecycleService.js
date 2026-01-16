@@ -136,8 +136,14 @@ class SuggestionLifecycleService {
         const classificationMeta = change instanceof Change && change.classification ? {
             classificationLabel: change.classification.label,
             classificationConfidence: change.classification.confidence,
-            classificationReasons: change.classification.reasons
+            classificationReasons: change.classification.reasons,
+            // Extract provenance score (AI-likelihood) from classification
+            provenanceScore: change.classification.provenanceScore || 
+                             (change.classification.label === 'ai' ? change.classification.confidence : 0.5)
         } : {};
+
+        // Range count is 1 for single change
+        const rangeCount = 1;
 
         // Create suggestion entity
         const suggestion = this.suggestionAggregate.createSuggestion({
@@ -145,7 +151,8 @@ class SuggestionLifecycleService {
             range: changeRange,
             text: changeText,
             size: changeSize,
-            ...classificationMeta
+            ...classificationMeta,
+            rangeCount // Add range count for risk-based debt calculation
         });
 
         // Add to aggregate and track
@@ -217,8 +224,14 @@ class SuggestionLifecycleService {
         const classificationMeta = changes[0]?.classification ? {
             classificationLabel: changes[0].classification.label,
             classificationConfidence: changes[0].classification.confidence,
-            classificationReasons: changes[0].classification.reasons
+            classificationReasons: changes[0].classification.reasons,
+            // Extract provenance score (AI-likelihood) from classification
+            provenanceScore: changes[0].classification.provenanceScore || 
+                             (changes[0].classification.label === 'ai' ? changes[0].classification.confidence : 0.5)
         } : {};
+
+        // Calculate range count (scatter metric) from changes
+        const rangeCount = changes.length; // Each change is a distinct range
 
         // Create suggestion entity with classification metadata
         const suggestion = this.suggestionAggregate.createSuggestion({
@@ -227,6 +240,7 @@ class SuggestionLifecycleService {
             text: mergedText,
             size: mergedSize,
             ...classificationMeta,
+            rangeCount, // Add range count for risk-based debt calculation
             ...meta
         });
 

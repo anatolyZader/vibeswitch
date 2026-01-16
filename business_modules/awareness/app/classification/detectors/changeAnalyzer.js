@@ -142,6 +142,85 @@ function calculateMetrics(changes, eventTimestamps = [], eventRangeSets = [], fi
     };
 }
 
+/**
+ * Calculate interaction metrics from episode data
+ * These metrics capture workflow patterns (focus switches, saves, jumpiness)
+ * 
+ * @param {Episode} episode - Episode entity (optional)
+ * @param {Array<Object>} contextSignals - Context signals array (optional, if episode not provided)
+ * @param {Array<Object>} editSpans - Edit spans array (optional, if episode not provided)
+ * @returns {Object} Interaction metrics
+ */
+function calculateInteractionMetrics(episode = null, contextSignals = null, editSpans = null) {
+    // Use episode data if provided, otherwise use direct arrays
+    const signals = episode ? episode.contextSignals : (contextSignals || []);
+    const spans = episode ? episode.editSpans : (editSpans || []);
+    const startTs = episode ? episode.startTs : (spans.length > 0 ? spans[0].timestamp : Date.now());
+    const duration = episode ? episode.getDuration() : 
+                     (spans.length > 0 ? spans[spans.length - 1].timestamp - startTs : 0);
+    
+    // Focus switches per minute
+    const focusSwitches = signals.filter(s => s.type === 'focus' || s.type === 'navigation').length;
+    const focusSwitchesPerMin = duration > 0 ? (focusSwitches / (duration / 60000)) : 0;
+    
+    // Save frequency
+    const saveCount = signals.filter(s => s.type === 'save').length;
+    const saveFrequency = duration > 0 ? (saveCount / (duration / 60000)) : 0;
+    
+    // Jumpiness: A→B→A pattern within short time window
+    let jumpiness = 0;
+    if (spans.length >= 3) {
+        const fileSequence = spans.map(s => s.fileUri || s.file);
+        for (let i = 0; i < fileSequence.length - 2; i++) {
+            if (fileSequence[i] === fileSequence[i + 2] && 
+                fileSequence[i] !== fileSequence[i + 1]) {
+                const timeWindow = spans[i + 2].timestamp - spans[i].timestamp;
+                if (timeWindow < 60000) { // Within 1 minute
+                    jumpiness++;
+                }
+            }
+        }
+    }
+    
+    // Time to touch N files
+    const fileTimestamps = new Map();
+    for (const span of spans) {
+        const uri = span.fileUri || span.file;
+        if (uri && !fileTimestamps.has(uri)) {
+            fileTimestamps.set(uri, span.timestamp);
+        }
+    }
+    const sortedTimestamps = Array.from(fileTimestamps.values()).sort((a, b) => a - b);
+    
+    const timeToTouchNFiles = {};
+    for (const n of [2, 3, 5]) {
+        if (sortedTimestamps.length >= n) {
+            timeToTouchNFiles[n] = sortedTimestamps[n - 1] - startTs;
+        } else {
+            timeToTouchNFiles[n] = null;
+        }
+    }
+    
+    // Verification strength (from context signals)
+    const testSignals = signals.filter(s => s.type === 'test').length;
+    const navigationSignals = signals.filter(s => s.type === 'navigation').length;
+    const verificationStrength = Math.min(
+        (testSignals * 0.5) + (navigationSignals * 0.3) + (saveCount * 0.2),
+        1.0
+    );
+    
+    return {
+        focusSwitchesPerMin,
+        saveFrequency,
+        jumpiness,
+        timeToTouchNFiles,
+        verificationStrength,
+        focusSwitchCount: focusSwitches,
+        saveCount
+    };
+}
+
 module.exports = {
-    calculateMetrics
+    calculateMetrics,
+    calculateInteractionMetrics
 };
