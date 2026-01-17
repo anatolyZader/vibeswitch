@@ -6,6 +6,7 @@
 const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
+const fsPromises = require('fs').promises;
 const modeSwitcher = require('./ui/mode-switcher');
 const userStatsUI = require('./ui/stats-dashboard');
 
@@ -131,16 +132,30 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
             }
             
             const testingPath = path.join(workspaceFolders[0].uri.fsPath, 'testing');
-            if (!fs.existsSync(testingPath)) {
+            try {
+                await fsPromises.access(testingPath);
+            } catch {
                 showWarningMessage('Testing folder not found');
                 return;
             }
             
-            const files = fs.readdirSync(testingPath)
-                .filter(f => f.endsWith('.js'))
-                .map(f => path.join(testingPath, f))
-                .filter(f => fs.existsSync(f) && fs.statSync(f).isFile())
-                .filter(f => fs.readFileSync(f, 'utf8').trim().length > 0);
+            const entries = await fsPromises.readdir(testingPath);
+            const files = [];
+            for (const entry of entries.filter(f => f.endsWith('.js'))) {
+                const filePath = path.join(testingPath, entry);
+                try {
+                    const stat = await fsPromises.stat(filePath);
+                    if (stat.isFile()) {
+                        const content = await fsPromises.readFile(filePath, 'utf8');
+                        if (content.trim().length > 0) {
+                            files.push(filePath);
+                        }
+                    }
+                } catch (err) {
+                    // Skip files that can't be read
+                    log(`Error reading file ${filePath}: ${err.message}`, false, false);
+                }
+            }
             
             let detected = 0;
             for (const filePath of files) {
@@ -160,7 +175,7 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
             }
         },
 
-        'vibeswitch.diagnoseMonitor': () => {
+        'vibeswitch.diagnoseMonitor': async () => {
             if (!state.awarenessEngine) {
                 showWarningMessage('Awareness Engine: Not initialized');
                 state.outputChannel?.appendLine('Awareness Monitor: Not initialized');
@@ -209,13 +224,15 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
             const wsFolders = workspaceFolders;
             if (wsFolders?.length) {
                 const testingPath = path.join(wsFolders[0].uri.fsPath, 'testing');
-                if (fs.existsSync(testingPath)) {
+                try {
+                    await fsPromises.access(testingPath);
                     message += '\n=== Testing Folder Files ===\n';
-                    const files = fs.readdirSync(testingPath)
+                    const entries = await fsPromises.readdir(testingPath);
+                    const files = entries
                         .filter(f => f.endsWith('.js'))
                         .map(f => path.join(testingPath, f));
                     
-                    files.forEach(filePath => {
+                    for (const filePath of files) {
                         const relativePath = path.relative(wsFolders[0].uri.fsPath, filePath);
                         const inDebt = scoreData?.debt?.files?.some(f => 
                             path.resolve(f.fullPath).toLowerCase() === path.resolve(filePath).toLowerCase()
@@ -226,18 +243,27 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
                         
                         message += `  ${relativePath}: ${inDebt ? '✅ IN DEBT' : inPending ? '⏳ IN PENDING' : '❌ NOT DETECTED'}\n`;
                         
-                        if (!inDebt && !inPending && fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-                            const content = fs.readFileSync(filePath, 'utf8');
-                            if (content.trim().length > 0) {
-                                try {
-                                    state.awarenessEngine.handleExternallyCreatedFile(filePath);
-                                    message += '      → Manually triggered detection\n';
-                                } catch (err) {
-                                    message += `      → Error triggering: ${err.message}\n`;
+                        if (!inDebt && !inPending) {
+                            try {
+                                const stat = await fsPromises.stat(filePath);
+                                if (stat.isFile()) {
+                                    const content = await fsPromises.readFile(filePath, 'utf8');
+                                    if (content.trim().length > 0) {
+                                        try {
+                                            state.awarenessEngine.handleExternallyCreatedFile(filePath);
+                                            message += '      → Manually triggered detection\n';
+                                        } catch (err) {
+                                            message += `      → Error triggering: ${err.message}\n`;
+                                        }
+                                    }
                                 }
+                            } catch (err) {
+                                // Skip files that can't be accessed
                             }
                         }
-                    });
+                    }
+                } catch {
+                    // Testing folder doesn't exist, skip
                 }
             }
             

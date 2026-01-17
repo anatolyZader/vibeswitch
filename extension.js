@@ -81,7 +81,7 @@ function setupUsageStatsListeners(context, state) {
     );
 }
 
-// Domain events removed - using callbacks instead for engine-based design
+
 
 // Main activation function
 async function activate(context) {
@@ -215,9 +215,9 @@ async function activate(context) {
         if (initialMode) {
             switchModeInStatusBar(initialMode);
             updateFileColorsForMode();
-            // Start awareness monitor if in DEV mode
+e            // Start awareness monitor if in DEV mode
             if (initialMode === 'dev' && startAwarenessMonitor) {
-                startAwarenessMonitor();
+                await startAwarenessMonitor();
             }
         } else {
             // Set default mode if detection failed

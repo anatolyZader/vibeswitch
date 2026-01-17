@@ -48,6 +48,7 @@ const { createPendingEntry, calculateEventRangeSet, addChangesWithCapping, recor
 const { accumulateScores, determineLabel } = require('./classificationScorer');
 const { applyDriftCap } = require('./versionDriftHandler');
 const { filterReasons } = require('./reasonFilter');
+const safe = require('../../../../safe');
 
 class ChangeClassifier {
     /**
@@ -178,7 +179,7 @@ class ChangeClassifier {
         // Emit classification (single callback, prevents double recording)
         // ALWAYS use classification object format (single protocol)
         if (onClassified && document) {
-            onClassified(document, classification, changes);
+            safe('onClassified', () => onClassified(document, classification, changes));
         }
     }
 

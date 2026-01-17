@@ -8,6 +8,7 @@
 const FileDebt = require('../../domain/entities/fileDebt');
 const vscodeDocUtilities = require('../utilities/vscodeDocUtilities');
 const { calculateDebtScore, calculateRiskBasedDebtScore } = require('../scoring/scoreCalculations');
+const safe = require('../../../../safe');
 
 class DebtService {
     /**
@@ -132,14 +133,10 @@ class DebtService {
         });
         
         // Update file colors immediately when debt changes
-        if (this.updateFileColorsInExplorer) {
-            this.updateFileColorsInExplorer();
-        }
+        safe('updateFileColors', () => this.updateFileColorsInExplorer?.());
         
         // Trigger immediate score update
-        if (updateScore) {
-            updateScore();
-        }
+        safe('updateScore', () => updateScore?.());
     }
 
     /**
@@ -175,9 +172,7 @@ class DebtService {
             });
             
             // Update file colors immediately when debt is cleared
-            if (this.updateFileColorsInExplorer) {
-                this.updateFileColorsInExplorer();
-            }
+            safe('updateFileColors', () => this.updateFileColorsInExplorer?.());
         }
     }
 

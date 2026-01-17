@@ -185,9 +185,7 @@ class AwarenessEngine {
         
         // Create debt cleared callback
         const debtClearedCallback = (data) => {
-            if (this.onDebtCleared) {
-                this.onDebtCleared(data);
-            }
+            safe('onDebtCleared', () => this.onDebtCleared?.(data));
         };
 
         // Create suggestion service for lifecycle management (includes review tracking and keep-all detection)
@@ -520,13 +518,9 @@ class AwarenessEngine {
      * @private
      */
     _triggerScoreCallbacks(suggestions, getReviewDebtSummary) {
-        // Trigger score update callback
-        if (this.onScoreUpdate) {
-            this.onScoreUpdate();
-        }
-        if (this.updateFileColorsInExplorer) {
-            this.updateFileColorsInExplorer();
-        }
+        // Trigger score update callback with safe error handling
+        safe('onScoreUpdate', () => this.onScoreUpdate?.());
+        safe('updateFileColors', () => this.updateFileColorsInExplorer?.());
     }
     
     /**

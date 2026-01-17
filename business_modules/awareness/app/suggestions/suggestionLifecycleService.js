@@ -159,14 +159,12 @@ class SuggestionLifecycleService {
         this._addSuggestionAndTrack(suggestion, changeSize);
 
         // Call optional callback (e.g., for UsageStats)
-        if (this.onAISuggestion) {
-            this.onAISuggestion({
-                filePath: uri,
-                size: suggestion.size,
-                timestamp: suggestion.timestamp,
-                isFileCreation: false
-            });
-        }
+        safe('onAISuggestion', () => this.onAISuggestion?.({
+            filePath: uri,
+            size: suggestion.size,
+            timestamp: suggestion.timestamp,
+            isFileCreation: false
+        }));
     }
 
     /**
@@ -256,16 +254,14 @@ class SuggestionLifecycleService {
 
         // Publish batch created event if this is a new batch
         // Call optional callback (e.g., for UsageStats)
-        if (this.onAISuggestion) {
-            this.onAISuggestion({
-                filePath: uri,
-                size: mergedSize,
-                timestamp: suggestion.timestamp,
-                isFileCreation: false,
-                batchId: batchId,
-                isNewBatch: isNewBatch
-            });
-        }
+        safe('onAISuggestion', () => this.onAISuggestion?.({
+            filePath: uri,
+            size: mergedSize,
+            timestamp: suggestion.timestamp,
+            isFileCreation: false,
+            batchId: batchId,
+            isNewBatch: isNewBatch
+        }));
     }
 
     /**
@@ -483,9 +479,7 @@ class SuggestionLifecycleService {
                             acceptanceCount: batch.acceptedCount
                         };
 
-                        if (this.onKeepAll) {
-                            this.onKeepAll(result);
-                        }
+                        safe('onKeepAll', () => this.onKeepAll?.(result));
                     }
                 } else {
                     // No user interaction yet - keep pending, schedule another check
@@ -500,23 +494,19 @@ class SuggestionLifecycleService {
             }
 
             // Call optional callback (e.g., for UsageStats)
-            if (this.onAISuggestionOutcome) {
-                this.onAISuggestionOutcome({
-                    filePath: suggestion.document,
-                    status: suggestion.status,
-                    size: suggestion.size,
-                    reviewTime: suggestion.reviewTime,
-                    editCount: suggestion.editCount,
-                    isFileCreation: suggestion.isFileCreation,
-                    isExternalCreation: suggestion.isExternalCreation,
-                    isFileWrite: suggestion.isFileWrite
-                });
-            }
+            safe('onAISuggestionOutcome', () => this.onAISuggestionOutcome?.({
+                filePath: suggestion.document,
+                status: suggestion.status,
+                size: suggestion.size,
+                reviewTime: suggestion.reviewTime,
+                editCount: suggestion.editCount,
+                isFileCreation: suggestion.isFileCreation,
+                isExternalCreation: suggestion.isExternalCreation,
+                isFileWrite: suggestion.isFileWrite
+            }));
 
             // Update score immediately when status changes
-            if (this.updateScore) {
-                this.updateScore();
-            }
+            safe('updateScore', () => this.updateScore?.());
         } catch (err) {
             if (this.loggerAdapter) {
                 this.loggerAdapter.error('SuggestionLifecycleService: Error checking suggestion status', err);
@@ -555,16 +545,12 @@ class SuggestionLifecycleService {
         if (this.debtService) {
             const uri = suggestion.document;
             this.debtService.addToDebt(uri, contentLength, () => {
-                if (this.updateScore) {
-                    this.updateScore();
-                }
+                safe('updateScore', () => this.updateScore?.());
             });
         }
 
         // Update file colors immediately when new suggestion is added
-        if (this.updateFileColorsInExplorer) {
-            this.updateFileColorsInExplorer();
-        }
+        safe('updateFileColors', () => this.updateFileColorsInExplorer?.());
 
         // Schedule status check after 5 seconds
         // Use scheduler to coalesce (cancels any existing timer for this suggestion)
@@ -575,9 +561,7 @@ class SuggestionLifecycleService {
         );
 
         // Immediately update score to reflect new activity
-        if (this.updateScore) {
-            this.updateScore();
-        }
+        safe('updateScore', () => this.updateScore?.());
     }
 
     /**
@@ -711,15 +695,13 @@ class SuggestionLifecycleService {
         }
         
         // Call optional callback (e.g., for UsageStats)
-        if (this.onKeepAll) {
-            this.onKeepAll({
-                count: recent.length,
-                fileCount: uniqueFiles.size,
-                totalSize: totalSize,
-                timestamp: now,
-                window: windowMs
-            });
-        }
+        safe('onKeepAll', () => this.onKeepAll?.({
+            count: recent.length,
+            fileCount: uniqueFiles.size,
+            totalSize: totalSize,
+            timestamp: now,
+            window: windowMs
+        }));
         
         // Clear the tracking array to avoid duplicate detections
         // (but keep the most recent one to allow for overlapping detections)

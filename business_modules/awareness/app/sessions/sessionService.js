@@ -7,6 +7,7 @@
 
 const vscodeDocUtilities = require('../utilities/vscodeDocUtilities');
 const ReviewSession = require('../../domain/entities/reviewSession');
+const safe = require('../../../../safe');
 
 class SessionService {
     /**
@@ -134,15 +135,13 @@ class SessionService {
                         // Session completed - no callback needed (not used by UsageStats)
                         
                         // Call optional callback with engagement score
-                        if (this.onDebtCleared) {
-                            this.onDebtCleared({
-                                filePath: uri,
-                                totalChanges: debt.totalChanges,
-                                totalReviewTime: debt.totalReviewTime + session.reviewTime,
-                                modificationCount: debt.modificationCount,
-                                engagementScore: session.getEngagementScore()
-                            });
-                        }
+                        safe('onDebtCleared', () => this.onDebtCleared?.({
+                            filePath: uri,
+                            totalChanges: debt.totalChanges,
+                            totalReviewTime: debt.totalReviewTime + session.reviewTime,
+                            modificationCount: debt.modificationCount,
+                            engagementScore: session.getEngagementScore()
+                        }));
                         
                         needsScoreUpdate = true;
                     }
@@ -162,12 +161,9 @@ class SessionService {
                 this.sessions.delete(uri);
                 
                 // Update file colors and score
-                if (needsScoreUpdate && this.updateFileColorsInExplorer) {
-                    this.updateFileColorsInExplorer();
-                }
-                
-                if (needsScoreUpdate && this.updateScore) {
-                    this.updateScore();
+                if (needsScoreUpdate) {
+                    safe('updateFileColors', () => this.updateFileColorsInExplorer?.());
+                    safe('updateScore', () => this.updateScore?.());
                 }
             }
         }

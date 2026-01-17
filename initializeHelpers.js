@@ -141,7 +141,7 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
     // STEP 4: Initialize monitor lifecycle helpers
     // ============================================================================
     // Boundary: Called from mode switching (command handler boundary)
-    const startAwarenessMonitor = () => {
+    const startAwarenessMonitor = async () => {
         if (!state.awarenessEngine || !state.extensionContext) {
             return;
         }
@@ -151,7 +151,7 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
         
         // Pass current mode to classifier for mode-specific thresholds
         const currentMode = state.getMode() || 'dev';
-        state.awarenessEngine.start(state.extensionContext, updateFileColorsInExplorer, currentMode);
+        await state.awarenessEngine.start(state.extensionContext, updateFileColorsInExplorer, currentMode);
         log('VibeSwitch: Started real-time awareness monitoring');
         initFileDecorations();
         
@@ -172,12 +172,12 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
     };
 
     // Boundary: Called from mode switching (command handler boundary)
-    const stopAwarenessMonitor = () => {
+    const stopAwarenessMonitor = async () => {
         if (!state.awarenessEngine) {
             return;
         }
         
-        state.awarenessEngine.stop();
+        await state.awarenessEngine.stop();
         log('VibeSwitch: Stopped awareness monitoring (VIBE mode)');
         
         if (state.fileDecorationProvider) {
@@ -216,8 +216,8 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
                     // Don't change currentMode here - we already set it
                     log(`VibeSwitch: Mode switched callback called with: ${newMode} (already set to ${state.getMode()})`);
                 },
-                onMonitorStart: startAwarenessMonitor,
-                onMonitorStop: stopAwarenessMonitor,
+                onMonitorStart: async () => await startAwarenessMonitor(),
+                onMonitorStop: async () => await stopAwarenessMonitor(),
                 usageStats: state.usageStats,
                 vscodeAdapter: container.getAdapter('awareness', 'vscodeAdapter'), // Pass adapter for Ports and Adapters pattern
                 awarenessEngine: state.awarenessEngine

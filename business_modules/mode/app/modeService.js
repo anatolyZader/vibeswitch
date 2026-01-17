@@ -13,6 +13,7 @@
 
 const vscode = require('vscode');
 const fs = require('fs');
+const fsPromises = require('fs').promises;
 const path = require('path');
 const Mode = require('../domain/value_objects/mode');
 const modeSettingsAdapter = require('../infrastructure/adapters/modeSettingsAdapter');
@@ -68,40 +69,44 @@ async function switchToMode(mode, options = {}) {
 
         // Create .cursor directory if it doesn't exist
         const cursorDir = path.join(workspaceRoot, '.cursor');
-        if (!fs.existsSync(cursorDir)) {
-            fs.mkdirSync(cursorDir, { recursive: true });
+        try {
+            await fsPromises.access(cursorDir);
+        } catch {
+            await fsPromises.mkdir(cursorDir, { recursive: true });
         }
 
         // Switch .cursor/rules.md to point to the mode file
         const rulesFile = path.join(cursorDir, 'rules.md');
         const targetModeFile = path.join(cursorDir, `rules.${mode}.md`);
 
-        if (fs.existsSync(targetModeFile)) {
-            // Copy mode-specific file to .cursor/rules.md
-            const modeContent = fs.readFileSync(targetModeFile, 'utf8');
-            fs.writeFileSync(rulesFile, modeContent, 'utf8');
-            
-            // Verify the write was successful by reading it back
-            const writtenContent = fs.readFileSync(rulesFile, 'utf8');
-            if (writtenContent !== modeContent) {
-                console.error(`VibeSwitch: File write verification failed - content mismatch`);
-                throw new Error('Failed to write .cursor/rules.md file correctly');
-            }
-            
-            // Update detection cache directly to prevent race conditions
-            // This is a bit of a hack but necessary since detectCurrentMode module maintains its own state
-            // We manually set the cache so subsequent detections see the right mode immediately
-            const detectModule = require.cache[require.resolve('./detectCurrentMode')];
-            if (detectModule && detectModule.exports) {
-                // The cache variables are not exported, but we can call with forceFresh
-                // to ensure next detection reads the file we just wrote
-            }
-            
-            console.log(`VibeSwitch: Switched .cursor/rules.md to ${mode} mode (verified)`);
-        } else {
+        try {
+            await fsPromises.access(targetModeFile);
+        } catch {
             console.error(`VibeSwitch: Target mode file not found: ${targetModeFile}`);
             throw new Error(`Mode file not found: .cursor/rules.${mode}.md`);
         }
+
+        // Copy mode-specific file to .cursor/rules.md
+        const modeContent = await fsPromises.readFile(targetModeFile, 'utf8');
+        await fsPromises.writeFile(rulesFile, modeContent, 'utf8');
+        
+        // Verify the write was successful by reading it back
+        const writtenContent = await fsPromises.readFile(rulesFile, 'utf8');
+        if (writtenContent !== modeContent) {
+            console.error(`VibeSwitch: File write verification failed - content mismatch`);
+            throw new Error('Failed to write .cursor/rules.md file correctly');
+        }
+        
+        // Update detection cache directly to prevent race conditions
+        // This is a bit of a hack but necessary since detectCurrentMode module maintains its own state
+        // We manually set the cache so subsequent detections see the right mode immediately
+        const detectModule = require.cache[require.resolve('./detectCurrentMode')];
+        if (detectModule && detectModule.exports) {
+            // The cache variables are not exported, but we can call with forceFresh
+            // to ensure next detection reads the file we just wrote
+        }
+        
+        console.log(`VibeSwitch: Switched .cursor/rules.md to ${mode} mode (verified)`);
 
         // Apply mode settings (skip cursor.* settings to avoid reload)
         await modeSettingsAdapter.applyModeSettings(mode, true);
