@@ -55,7 +55,19 @@ function getScoreEmoji(score) {
  * @param {vscode.OutputChannel} outputChannel - Optional output channel for logging
  */
 function updateAwarenessMeter(awarenessBarItem, awarenessEngine, currentMode, outputChannel = null) {
+    // #region agent log
+    const logData16 = {location:'ui/awareness-meter/index.js:57',message:'updateAwarenessMeter called',data:{hasAwarenessBarItem:awarenessBarItem!==null,currentMode:currentMode},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'};
+    console.log('[DEBUG]', JSON.stringify(logData16));
+    if (outputChannel) outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData16)}`);
+    fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData16)}).catch(()=>{});
+    // #endregion
     if (!awarenessBarItem) {
+        // #region agent log
+        const logData17 = {location:'ui/awareness-meter/index.js:59',message:'awarenessBarItem is null, returning early',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'};
+        console.log('[DEBUG]', JSON.stringify(logData17));
+        if (outputChannel) outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData17)}`);
+        fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData17)}).catch(()=>{});
+        // #endregion
         if (outputChannel) {
             outputChannel.appendLine('WARNING: awarenessBarItem not initialized');
         }
@@ -225,10 +237,28 @@ Click for detailed statistics`;
     // Show awareness meter only in DEV mode (meter doesn't depend on usage statistics)
     const config = vscode.workspace.getConfiguration('vibeswitch');
     const shouldShow = currentMode === 'dev' && config.get('showInStatusBar', true); // Default to true
+    // #region agent log
+    const logData18 = {location:'ui/awareness-meter/index.js:227',message:'Awareness meter visibility check',data:{currentMode:currentMode,shouldShow:shouldShow,showInStatusBar:config.get('showInStatusBar',true)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'};
+    console.log('[DEBUG]', JSON.stringify(logData18));
+    if (outputChannel) outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData18)}`);
+    fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData18)}).catch(()=>{});
+    // #endregion
     
     if (shouldShow) {
+        // #region agent log
+        const logData19 = {location:'ui/awareness-meter/index.js:230',message:'Calling awarenessBarItem.show()',data:{text:awarenessBarItem.text},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'};
+        console.log('[DEBUG]', JSON.stringify(logData19));
+        if (outputChannel) outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData19)}`);
+        fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData19)}).catch(()=>{});
+        // #endregion
         awarenessBarItem.show();
     } else {
+        // #region agent log
+        const logData20 = {location:'ui/awareness-meter/index.js:232',message:'Hiding awareness meter',data:{currentMode:currentMode},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'};
+        console.log('[DEBUG]', JSON.stringify(logData20));
+        if (outputChannel) outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData20)}`);
+        fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData20)}).catch(()=>{});
+        // #endregion
         awarenessBarItem.hide();
         if (outputChannel && currentMode !== 'dev') {
             outputChannel.appendLine(`Awareness meter hidden: currentMode=${currentMode}, showInStatusBar=${config.get('showInStatusBar', true)}`);

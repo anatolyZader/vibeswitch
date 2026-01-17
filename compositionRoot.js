@@ -19,7 +19,7 @@ function buildAdapters(context) {
     const AwarenessHashGeneratorAdapter = require('./business_modules/awareness/infrastructure/adapters/awarenessHashGeneratorAdapter');
     
     return {
-        vscodeAdapter: new AwarenessVSCodeAdapter(context),
+        vscodeAdapter: new AwarenessVSCodeAdapter(vscode),
         persistenceAdapter: new AwarenessWorkspaceStateAdapter(context),
         loggerAdapter: new AwarenessLoggerAdapter(),
         idGeneratorAdapter: new AwarenessIdGeneratorAdapter(),

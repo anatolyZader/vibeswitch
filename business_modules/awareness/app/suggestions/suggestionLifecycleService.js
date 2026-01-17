@@ -38,7 +38,7 @@ class SuggestionLifecycleService {
      * @param {Function} onAISuggestionOutcome - AI suggestion outcome callback (optional)
      * @param {Function} onKeepAll - Keep all callback (optional)
      * @param {Function} isActive - Function to check if service is active (required)
-     * @param {string} instanceId - Instance ID for generation-based timer cancellation (required)
+     * @param {Function} getInstanceId - Getter function for current instance ID (required)
      * @param {KeepAllDetectionPolicy} keepAllPolicy - Keep-all detection policy (optional, uses default if not provided)
      */
     constructor({
@@ -54,7 +54,7 @@ class SuggestionLifecycleService {
         onAISuggestionOutcome = null,
         onKeepAll = null,
         isActive,
-        instanceId,
+        getInstanceId,
         keepAllPolicy = null
     }) {
         if (!suggestionAggregate) {
@@ -75,8 +75,8 @@ class SuggestionLifecycleService {
         if (!isActive || typeof isActive !== 'function') {
             throw new Error('SuggestionLifecycleService requires isActive function');
         }
-        if (!instanceId) {
-            throw new Error('SuggestionLifecycleService requires instanceId for timer cancellation');
+        if (!getInstanceId || typeof getInstanceId !== 'function') {
+            throw new Error('SuggestionLifecycleService requires getInstanceId function for timer cancellation');
         }
 
         this.suggestionAggregate = suggestionAggregate;
@@ -91,13 +91,13 @@ class SuggestionLifecycleService {
         this.onAISuggestionOutcome = onAISuggestionOutcome;
         this.onKeepAll = onKeepAll;
         this.isActive = isActive;
-        this.instanceId = instanceId; // Store instance ID for generation-based cancellation
+        this.getInstanceId = getInstanceId; // Store getter for generation-based cancellation
         
         // Create status scheduler (coalesces timers per suggestion ID)
         this.statusScheduler = new SuggestionStatusScheduler(
             this.timerRegistry,
             this.isActive,
-            this.instanceId
+            this.getInstanceId
         );
         
         // Keep-all detection state (merged from KeepAllDetectorService)
@@ -109,7 +109,8 @@ class SuggestionLifecycleService {
         
         // Review tracking state (merged from ReviewTrackingService)
         this.activeReviews = new Map(); // URI -> { suggestionId, reviewStarted, reviewTime, dwellTimer }
-        this.DWELL_TIME_MS = 1000; // Dwell time threshold
+        this.DWELL_TIME_MS = 3000; // Dwell time threshold (increased from 1s to 3s to reduce false positives)
+        this.MIN_ENGAGEMENT_SIGNALS = 1; // Minimum cursor/scroll events to count as review
     }
 
     /**
@@ -232,11 +233,14 @@ class SuggestionLifecycleService {
         const rangeCount = changes.length; // Each change is a distinct range
 
         // Create suggestion entity with classification metadata
+        // Fix: Use effectiveRange consistently (text was extracted from effectiveRange, so store that)
         const suggestion = this.suggestionAggregate.createSuggestion({
             document: uri,
-            range: mergedRange,
+            range: effectiveRange, // Use effectiveRange (matches mergedText source)
             text: mergedText,
             size: mergedSize,
+            originalRange: mergedRange !== effectiveRange ? mergedRange : undefined, // Store original if different
+            effectiveRangeCapped: mergedRange !== effectiveRange, // Flag if range was capped
             ...classificationMeta,
             rangeCount, // Add range count for risk-based debt calculation
             ...meta
@@ -262,6 +266,59 @@ class SuggestionLifecycleService {
             batchId: batchId,
             isNewBatch: isNewBatch
         }));
+    }
+
+    /**
+     * Handle file saved event - processes saved file as potential AI suggestion
+     * Only processes files that were recently created or have AI provenance signals
+     * @param {vscode.TextDocument} document - The saved document
+     * @param {Object} options - Optional metadata (e.g., { source: 'agent', recentlyCreated: true })
+     * @returns {boolean} True if file was processed, false otherwise
+     */
+    handleFileSaved(document, options = {}) {
+        if (!this.suggestionAggregate) {
+            return false;
+        }
+        
+        const content = document.getText();
+        
+        // Narrow scope: Only process if explicitly marked as AI source or recently created
+        // This prevents false positives from normal human editing + saving
+        const isAISource = options.source === 'agent' || options.recentlyCreated === true;
+        if (!isAISource) {
+            return false; // Skip normal saves
+        }
+        
+        // Minimum threshold to avoid processing tiny files
+        if (content.length <= 200) {
+            return false; // Below threshold, skip
+        }
+        
+        // Fixed: Range math bug - lineCount is 1-based count, but line indices are 0-based
+        const lastLine = Math.max(0, document.lineCount - 1);
+        const lastLineText = document.lineAt(lastLine).text;
+        const lastChar = lastLineText.length;
+        
+        // Get Range constructor from adapter
+        const Range = this.vscodeAdapter.Range;
+        if (!Range) {
+            return false; // Cannot create range without Range constructor
+        }
+        
+        // Create range for entire file
+        const range = new Range(0, 0, lastLine, lastChar);
+        const uri = document.uri.toString();
+        
+        // Create and track suggestion
+        this.createSuggestionAndTrack({
+            document: uri,
+            range: range,
+            text: content,
+            size: content.length,
+            isFileWrite: true
+        }, content.length);
+        
+        return true; // Successfully processed
     }
 
     /**
@@ -748,7 +805,8 @@ class SuggestionLifecycleService {
                     // Cursor left the suggestion - close review
                     this._closeReview(uri);
                 } else {
-                    // Still in active suggestion - continue tracking
+                    // Still in active suggestion - increment engagement signal
+                    activeReview.engagementSignals = (activeReview.engagementSignals || 0) + 1;
                     return;
                 }
             } else {
@@ -778,8 +836,11 @@ class SuggestionLifecycleService {
      * @param {string} uri - Document URI string
      */
     onScroll(uri) {
-        // Scroll events can be used for engagement tracking
-        // Currently just ensure active review is maintained
+        // Increment engagement signal for active review
+        const activeReview = this.activeReviews.get(uri);
+        if (activeReview) {
+            activeReview.engagementSignals = (activeReview.engagementSignals || 0) + 1;
+        }
         if (this.activeReviews.has(uri)) {
             // Review is still active
             return;
@@ -806,18 +867,39 @@ class SuggestionLifecycleService {
         // Clear any existing review for this URI
         this._closeReview(uri, false);
         
+        // Capture generation at schedule time (critical for zombie timer prevention)
+        const scheduledGen = this.getInstanceId();
+        
         // Create dwell timer through timer registry (mandatory)
         const dwellTimer = this.timerRegistry.setTimeout(() => {
+            // Hard guard: generation must still match (prevents zombie timers after restart)
+            if (this.getInstanceId() !== scheduledGen) {
+                if (this.loggerAdapter) {
+                    this.loggerAdapter.debug(`Review tracking: Generation mismatch for ${suggestionId}, ignoring timer.`);
+                }
+                return;
+            }
+            
+            if (!this.isActive()) {
+                return;
+            }
+            
             const currentReview = this.activeReviews.get(uri);
             if (currentReview && currentReview.suggestionId === suggestionId) {
-                // Calculate review time (dwell time threshold)
-                const reviewTime = this.DWELL_TIME_MS;
+                // Check engagement signals (cursor/scroll events)
+                const engagementCount = currentReview.engagementSignals || 0;
                 
-                // Mark suggestion as reviewed
-                this.markSuggestionAsReviewed(suggestionId, reviewTime);
-                
-                // Trigger status check
-                this.checkSuggestionStatus(suggestionId);
+                // Only mark as reviewed if minimum engagement threshold met
+                if (engagementCount >= this.MIN_ENGAGEMENT_SIGNALS) {
+                    // Calculate review time (dwell time threshold)
+                    const reviewTime = this.DWELL_TIME_MS;
+                    
+                    // Mark suggestion as reviewed
+                    this.markSuggestionAsReviewed(suggestionId, reviewTime);
+                    
+                    // Trigger status check
+                    this.checkSuggestionStatus(suggestionId);
+                }
             }
         }, this.DWELL_TIME_MS);
         
@@ -826,6 +908,7 @@ class SuggestionLifecycleService {
             suggestionId,
             reviewStarted: now,
             reviewTime: 0,
+            engagementSignals: 0, // Track cursor/scroll events
             dwellTimer
         });
     }

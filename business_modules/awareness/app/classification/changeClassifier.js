@@ -1,35 +1,8 @@
 /**
  * Change Classifier
  * Debounced aggregation and AI/user classification for text changes
- * 
- * PRIMARY DETECTION: Behavioral inference via heuristics (edit patterns, batch characteristics, temporal patterns)
- * - Aggregates rapid changes within a time window
- * - Analyzes batch characteristics (total size, range count, distribution, scatteredness)
- * - Detects AI-like patterns: large multi-line insertions, pure insertions, scattered edits
- * - **Rapid scattered changes**: Measures many scattered edits within short time window (strong AI signal)
- *   - AI agents often make many scattered edits very quickly (within seconds)
- *   - Humans typically make more focused, sequential edits
- *   - This temporal pattern is a key behavioral differentiator
- * - Distinguishes formatters from AI edits (many scattered changes with deletes across wide span)
- * - This is the reliable method since markers cannot be guaranteed to survive edit pipeline
- * 
- * SECONDARY SIGNAL: @ai marker (strong signal when present)
- * - Checks for @ai marker in various comment formats (// @ai, # @ai, <!-- @ai -->, etc.)
- * - When marker is present, it's a definitive signal (100% accurate)
- * - When marker is absent, we cannot assume human origin - must use behavioral inference
- * 
- * Strategy: Behavioral heuristics are primary. Markers are helpful hints that strengthen
- * confidence when present, but absence of marker does NOT mean human origin.
- * 
- * DESIGN IMPROVEMENT: Composable detector pipeline
- * - Each detector returns {scoreDelta, reason, label}
- * - Final classification combines scores to determine label with confidence
- * - Returns {label: 'ai'|'user'|'formatter'|'unknown', confidence: 0..1, reasons: string[]}
- * 
- * FIXED: Stores callback once per document to prevent double recording
- * 
- * Moved from domain/utils to app/classification - this orchestrates classification logic.
- */
+ **/ 
+
 
 // Import detectors
 const { hasAIMarker } = require('./detectors/markerDetector');
@@ -45,7 +18,7 @@ const { detectSmallEdits } = require('./detectors/smallEditsDetector');
 // Import extracted modules
 const { createConfig } = require('./configManager');
 const { createPendingEntry, calculateEventRangeSet, addChangesWithCapping, recordEventMetadata } = require('./changeAggregator');
-const { accumulateScores, determineLabel } = require('./classificationScorer');
+const { accumulateScores, determineLabel } = require('../scoring/classificationScorer');
 const { applyDriftCap } = require('./versionDriftHandler');
 const { filterReasons } = require('./reasonFilter');
 const safe = require('../../../../safe');
@@ -239,7 +212,7 @@ class ChangeClassifier {
         const filteredReasons = filterReasons(reasonObjects, label);
         
         // Calculate top contributors and uncertainty for explainable UX
-        const { getTopContributors, calculateUncertainty } = require('./classificationScorer');
+        const { getTopContributors, calculateUncertainty } = require('../scoring/classificationScorer');
         const topContributors = getTopContributors(contributors, label, confidence);
         const uncertainty = calculateUncertainty(aiScore, formatterScore, userScore);
         

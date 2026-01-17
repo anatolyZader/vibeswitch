@@ -645,7 +645,6 @@ class UsageStatsManager {
     exportData() {
         return JSON.parse(JSON.stringify(this.data));
     }
-}
 
     /**
      * Dispose method for VS Code extension lifecycle

@@ -28,14 +28,20 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
     const vscodeAdapter = container.getAdapter('awareness', 'vscodeAdapter');
     
     // Helper functions to use adapter if available, fallback to direct vscode
-    const showErrorMessage = vscodeAdapter ? vscodeAdapter.showErrorMessage.bind(vscodeAdapter) : vscode.window.showErrorMessage;
-    const showInformationMessage = vscodeAdapter ? vscodeAdapter.showInformationMessage.bind(vscodeAdapter) : vscode.window.showInformationMessage;
-    const showWarningMessage = vscodeAdapter ? vscodeAdapter.showWarningMessage.bind(vscodeAdapter) : vscode.window.showWarningMessage;
-    const showQuickPick = vscodeAdapter ? vscodeAdapter.showQuickPick.bind(vscodeAdapter) : vscode.window.showQuickPick;
-    const showTextDocument = vscodeAdapter ? vscodeAdapter.showTextDocument.bind(vscodeAdapter) : vscode.window.showTextDocument;
-    const activeTextEditor = vscodeAdapter ? vscodeAdapter.activeTextEditor : vscode.window.activeTextEditor;
-    const workspaceFolders = vscodeAdapter ? vscodeAdapter.workspaceFolders : vscode.workspace.workspaceFolders;
-    const openTextDocument = vscodeAdapter ? vscodeAdapter.openTextDocument.bind(vscodeAdapter) : vscode.workspace.openTextDocument;
+    const showErrorMessage = (vscodeAdapter && vscodeAdapter.showErrorMessage) ? vscodeAdapter.showErrorMessage.bind(vscodeAdapter) : vscode.window.showErrorMessage;
+    const showInformationMessage = (vscodeAdapter && vscodeAdapter.showInformationMessage) ? vscodeAdapter.showInformationMessage.bind(vscodeAdapter) : vscode.window.showInformationMessage;
+    const showWarningMessage = (vscodeAdapter && vscodeAdapter.showWarningMessage) ? vscodeAdapter.showWarningMessage.bind(vscodeAdapter) : vscode.window.showWarningMessage;
+    const showQuickPick = (vscodeAdapter && vscodeAdapter.showQuickPick) ? vscodeAdapter.showQuickPick.bind(vscodeAdapter) : vscode.window.showQuickPick;
+    const showTextDocument = (vscodeAdapter && vscodeAdapter.showTextDocument) ? vscodeAdapter.showTextDocument.bind(vscodeAdapter) : vscode.window.showTextDocument;
+    const activeTextEditor = (vscodeAdapter && vscodeAdapter.activeTextEditor !== undefined) ? vscodeAdapter.activeTextEditor : vscode.window.activeTextEditor;
+    // workspaceFolders is a getter that accesses this.vscode, so check if vscode exists first
+    let workspaceFolders;
+    try {
+        workspaceFolders = (vscodeAdapter && vscodeAdapter.vscode) ? vscodeAdapter.workspaceFolders : vscode.workspace.workspaceFolders;
+    } catch (error) {
+        workspaceFolders = vscode.workspace.workspaceFolders;
+    }
+    const openTextDocument = (vscodeAdapter && vscodeAdapter.openTextDocument) ? vscodeAdapter.openTextDocument.bind(vscodeAdapter) : vscode.workspace.openTextDocument;
     return {
         'vibeswitch.switchMode': async () => {
             try {

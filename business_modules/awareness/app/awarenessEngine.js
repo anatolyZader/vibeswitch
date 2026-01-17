@@ -13,28 +13,20 @@ const SuggestionLifecycleService = require('./suggestions/suggestionLifecycleSer
 const ClassificationService = require('./classificationService');
 const TimerRegistry = require('./utilities/timerRegistry');
 
-// Import app layer utilities (technical/infrastructure operations)
-const RangeUtilities = require('./utilities/rangeUtilities');
-const UriPathUtilities = require('./utilities/uriPathUtilities');
-
-// Import input layer
 const AwarenessEventListener = require('../input/awarenessEventListener');
 
-// Import pure calculation functions (moved from domain services)
-const { calculateReviewScore, calculateCriticalScore, calculateAdaptationScore, calculateDebtScore, calculateRiskBasedDebtScore } = require('./scoring/scoreCalculations');
+const ScoreService = require('./scoring/scoreService');
 
 // Import domain aggregates
 const SuggestionAggregate = require('../domain/aggregates/suggestionAggregate');
 
-// Import domain utilities
-const { rangesOverlap, isPositionInRange: checkPositionInRange } = require('./utilities/vscodeDocUtilities');
+const { isPositionInRange: checkPositionInRange, getRelativePath } = require('./utilities/vscodeDocUtilities');
 const { buildDiffBullets } = require('./utilities/diffBulletService');
 
 // Domain events removed - using callbacks instead for engine-based design
 
 // Import utilities
-const { getLogger } = require('../../../../logger');
-const safe = require('../../../../safe');
+const safe = require('../../../safe');
 
 class AwarenessEngine {
     /**
@@ -91,12 +83,8 @@ class AwarenessEngine {
         this.rangeOperationServiceD = rangeOperationServiceD; // Domain logic: rangesOverlap, isPositionInRange
         this.uriPathOperationServiceD = uriPathOperationServiceD; // Domain validation: isCodeDocument, isSkippableUri
         
-        // Optional callbacks for external tracking (e.g., UsageStats)
-        this.onAISuggestion = null;
-        this.onAISuggestionOutcome = null;
-        this.onKeepAll = null;
-        this.onDebtCleared = null;
-        this.onScoreUpdate = null;
+        // Optional callbacks for external tracking (e.g., UsageStats, UI updates)
+        // Initialized via setCallbacks() method
         
         // Internal components (initialized in start())
         this.debtService = null;
@@ -105,17 +93,9 @@ class AwarenessEngine {
         this.sessionTracker = null;
         // FileWatcherService removed - using VS Code events only
         this.changeLedger = null;
-        this.classificationService = null; // Classification service
+        this.classificationService = null; // Classification service (determines AI/user/formatter)
+        this.scoreService = null; // Score service (calculates and stores awareness metrics)
         this.eventHandlers = null;
-        
-        // Score state (merged from ScoreService)
-        this.currentScore = 0;
-        this.scores = {
-            review: 0,      // 0-40 points
-            critical: 0,    // 0-30 points
-            adaptation: 0,  // 0-30 points
-            debt: 0         // 0-30 points
-        };
         
         // Centralized timer registry
         this.timerRegistry = new TimerRegistry();
@@ -141,6 +121,9 @@ class AwarenessEngine {
         this.onKeepAll = callbacks.onKeepAll || null;
         this.onDebtCleared = callbacks.onDebtCleared || null;
         this.onScoreUpdate = callbacks.onScoreUpdate || null;
+        
+        // Lifecycle state machine: 'stopped' | 'starting' | 'running' | 'stopping'
+        this.state = 'stopped';
     }
     
     /**
@@ -154,17 +137,41 @@ class AwarenessEngine {
             throw new Error('AwarenessEngine.start() called with null/undefined context');
         }
         
-        getLogger().log('AwarenessService: Starting real-time monitoring');
+        // State machine: prevent re-entrancy
+        if (this.state === 'starting') {
+            return;
+        }
+        if (this.state === 'stopping') {
+            // Wait for stop to complete before starting
+            while (this.state === 'stopping') {
+                await new Promise(resolve => setTimeout(resolve, 10));
+            }
+        }
         
-        // Stop any existing monitoring first
-        this.stop();
+        if (this.state === 'running') {
+            // Already running, stop first
+            await this.stop();
+        }
+        
+        this.state = 'starting';
+        
+        if (this.loggerAdapter) {
+            this.loggerAdapter.log('AwarenessService: Starting real-time monitoring');
+        }
+        
+        // Stop any existing monitoring first (CRITICAL: await to prevent race conditions)
+        await this.stop();
         
         // Generate new instance ID to invalidate any zombie timers
         this.instanceId = this.idGeneratorAdapter.generateUUID();
         
+        // Provide getter for instance ID (allows services to check current generation)
+        this.getInstanceId = () => this.instanceId;
+        
         this.context = context;
         this.updateFileColorsInExplorer = updateFileColorsInExplorer;
         this.isActive = true;
+        this.state = 'running';
         
         // Initialize application services
         this.debtService = new DebtService(
@@ -202,7 +209,7 @@ class AwarenessEngine {
             onAISuggestionOutcome: this.onAISuggestionOutcome,
             onKeepAll: this.onKeepAll,
             isActive: () => this.isActive,
-            instanceId: this.instanceId // Pass instance ID for generation-based cancellation
+            getInstanceId: this.getInstanceId // Pass getter for generation-based cancellation
         });
 
         this.sessionTracker = new SessionService(
@@ -223,7 +230,11 @@ class AwarenessEngine {
             this.loggerAdapter // Adapter implements ILoggerPort
         );
 
+        // Create score service (calculates awareness metrics from suggestions and debt)
+        this.scoreService = new ScoreService(this.loggerAdapter);
+
         // Create classification service (self-contained with direct dependencies)
+        // Note: Classification determines AI/user/formatter, scoring calculates awareness metrics
         this.classificationService = new ClassificationService({
             idGeneratorPort: this.idGeneratorAdapter,
             mode: mode,
@@ -304,18 +315,25 @@ class AwarenessEngine {
             });
         }, 10000);
         
-        getLogger().log('AwarenessService: Monitoring started successfully');
+        if (this.loggerAdapter) {
+            this.loggerAdapter.log('AwarenessService: Monitoring started successfully');
+        }
     }
     
     /**
      * Stop monitoring (called when switching away from DEV mode)
+     * Safe to call multiple times (idempotent)
      */
     async stop() {
-        if (!this.isActive) {
-            return;
+        if (this.state === 'stopped' || this.state === 'stopping') {
+            return; // Already stopped or stopping
         }
         
-        getLogger().log('AwarenessService: Stopping monitoring');
+        this.state = 'stopping';
+        
+        if (this.loggerAdapter) {
+            this.loggerAdapter.log('AwarenessService: Stopping monitoring');
+        }
         
         this.isActive = false;
         
@@ -379,250 +397,85 @@ class AwarenessEngine {
             });
         }
         
-        // Keep: suggestionAggregate, debtService, score state
-        // (preserve state for when monitoring restarts)
-        // Note: keepAllDetectorService merged into suggestionService
+        // Note: We recreate services on start() for clean state
+        // This ensures no zombie timers or stale references
+        // State is preserved through persistence (debtService.saveDebt/loadDebt)
         
-        getLogger().log('AwarenessService: Monitoring stopped');
+        this.state = 'stopped';
+        
+        if (this.loggerAdapter) {
+            this.loggerAdapter.log('AwarenessService: Monitoring stopped');
+        }
     }
     
     /**
      * Update awareness score and trigger callbacks/events
-     * Merged from ScoreService - handles score orchestration inline
+     * Delegates to ScoreService for calculation logic
      */
     updateScore() {
-        if (!this.isActive) {
+        if (!this.isActive || !this.scoreService) {
             return;
         }
         
         const suggestions = this.suggestionAggregate ? this.suggestionAggregate.getSuggestions() : [];
-        const pendingSuggestions = suggestions.filter(s => s && s.status === 'pending');
-        const getDebtScore = () => {
-            if (!this.debtService) return 0;
-            // Use pure function for debt calculation (moved from domain service)
-            const fileDebts = this.debtService.getDebtMap();
-            // Use risk-based debt calculation (research-aligned, default)
-            // Can fall back to count-based by passing useRiskBased: false
-            return this.debtService.calculateDebtScore(pendingSuggestions, { useRiskBased: true });
-        };
-        const getReviewDebtSummary = () => {
-            if (!this.debtService) {
-                return { total: 0, files: [] };
-            }
-            return this.debtService.getDebtSummary();
-        };
         
-        // Score calculation logic (merged from ScoreService)
-        const now = Date.now();
-        const TEN_SECONDS = 10 * 1000;
+        // Calculate score using ScoreService (uses default 10-second window)
+        // ScoreService now stores state internally (single source of truth)
+        this.scoreService.calculateScore({
+            suggestions,
+            debtService: this.debtService
+        });
         
-        // Filter suggestions from last 10 seconds for "recent activity" calculation
-        const recentSuggestions = suggestions.filter(
-            s => (now - s.timestamp) <= TEN_SECONDS
-        );
-        
-        // BUT: If we have older suggestions but no recent ones, and we have review debt,
-        // preserve the score based on debt rather than resetting to zero
-        const hasOlderSuggestions = suggestions.length > 0 && recentSuggestions.length === 0;
-        const debtScore = getDebtScore();
-        const hasDebt = debtScore > 0;
-        
-        // Rate-limited debug logging via logger port
-        if (this.loggerAdapter) {
-            this.loggerAdapter.debug(`Updating score: ${recentSuggestions.length} recent, ${suggestions.length} total, debt: ${debtScore}`, 'awarenessService:updateScore');
-        }
-        
-        // Only calculate if we have suggestions in the last 10 seconds
-        if (recentSuggestions.length === 0) {
-            // Even with no recent suggestions, calculate debt score if there's review debt
-            if (debtScore > 0) {
-                // If there's review debt but no pending, show debt score
-                this.currentScore = Math.min(debtScore, 100); // Cap at 100
-                this.scores = { review: 0, critical: 0, adaptation: 0, debt: debtScore };
-            } else if (hasOlderSuggestions && hasDebt) {
-                // We have older suggestions and debt - preserve a minimum score based on debt
-                // This prevents the meter from dropping to zero when monitor restarts
-                this.currentScore = Math.max(debtScore, 20); // Minimum 20 to show activity
-                this.scores = { review: 0, critical: 0, adaptation: 0, debt: debtScore };
-            } else {
-                // No recent activity and no debt
-                // Use explicit state: score of 0 represents "no activity" (not magic value -1)
-                this.currentScore = 0;
-                this.scores = { review: 0, critical: 0, adaptation: 0, debt: 0 };
-            }
-            // Trigger callbacks
-            this._triggerScoreCallbacks(suggestions, getReviewDebtSummary);
-            return;
-        }
-        
-        // Include pending suggestions in score calculation (they count as activity)
-        // This ensures meter shows activity even when suggestions are still pending
-        const allRecent = recentSuggestions;
-        
-        // Filter to completed suggestions only for detailed scoring
-        const completed = recentSuggestions.filter(s => s.status !== 'pending');
-        const pending = recentSuggestions.filter(s => s.status === 'pending');
-        
-        if (completed.length === 0 && allRecent.length > 0) {
-            // Still pending, but we have activity - show partial score based on pending count
-            // This ensures meter shows activity instead of "No Activity"
-            this.currentScore = 50; // Neutral - pending activity detected
-            this.scores = { 
-                review: 0, 
-                critical: 0, 
-                adaptation: 0, 
-                debt: debtScore // Still calculate debt
-            };
-            
-            // Trigger callbacks
-            this._triggerScoreCallbacks(suggestions, getReviewDebtSummary);
-            return;
-        }
-        
-        if (completed.length === 0) {
-            // No suggestions at all
-            // Use explicit state: score of 0 represents "no activity" (not magic value -1)
-            this.currentScore = 0;
-            this.scores = { review: 0, critical: 0, adaptation: 0, debt: 0 };
-            this._triggerScoreCallbacks(suggestions, getReviewDebtSummary);
-            return;
-        }
-        
-        // Use pure functions for scoring calculations (moved from domain services)
-        // 1. Code Review Rate (40 points)
-        this.scores.review = calculateReviewScore(completed);
-        
-        // 2. Critical Evaluation (30 points)
-        this.scores.critical = calculateCriticalScore(completed);
-        
-        // 3. Code Adaptation (30 points)
-        this.scores.adaptation = calculateAdaptationScore(completed);
-        
-        // 4. Review Debt (30 points)
-        this.scores.debt = debtScore;
-        
-        // Total score (max 130, normalized to 100)
-        const rawScore = this.scores.review + 
-                        this.scores.critical + 
-                        this.scores.adaptation + 
-                        this.scores.debt;
-        
-        this.currentScore = Math.round(Math.min(rawScore, 100));
-        
-        // Trigger callbacks
-        this._triggerScoreCallbacks(suggestions, getReviewDebtSummary);
+        // Trigger callbacks (get state from ScoreService)
+        this._triggerScoreCallbacks(suggestions);
     }
     
     /**
      * Trigger score update callbacks and events (helper method)
      * @private
      */
-    _triggerScoreCallbacks(suggestions, getReviewDebtSummary) {
-        // Trigger score update callback with safe error handling
-        safe('onScoreUpdate', () => this.onScoreUpdate?.());
+    _triggerScoreCallbacks(suggestions) {
+        // Get current score state from ScoreService (single source of truth)
+        const scoreState = this.scoreService ? this.scoreService.getScoreState() : { currentScore: 0, scores: { review: 0, critical: 0, adaptation: 0, debt: 0 } };
+        
+        // Trigger score update callback with safe error handling and payload
+        safe('onScoreUpdate', () => this.onScoreUpdate?.({
+            currentScore: scoreState.currentScore,
+            scores: scoreState.scores,
+            suggestionsCount: suggestions.length
+        }));
         safe('updateFileColors', () => this.updateFileColorsInExplorer?.());
     }
     
     /**
      * Get current awareness score
-     * Merged from ScoreService - returns score data with breakdown
+     * Delegates to ScoreService for data formatting
      * @returns {Object} Score data with total, components, suggestions, debt, and debug info
      */
     getScore() {
+        if (!this.scoreService) {
+            return {
+                total: 0,
+                components: { review: 0, critical: 0, adaptation: 0, debt: 0 },
+                suggestions: { total: 0, pending: 0, accepted: 0, rejected: 0, adapted: 0, recentTotal: 0, pendingFiles: [] },
+                debt: { unreviewedFiles: 0, files: [] },
+                debug: { lastActivity: 'None', monitoringActive: false, totalDebtEntries: 0, recentWindowCount: 0, totalTrackedCount: 0 }
+            };
+        }
+        
         const suggestions = this.suggestionAggregate ? this.suggestionAggregate.getSuggestions() : [];
-        const getReviewDebtSummary = () => {
-            if (!this.debtService) {
-                return { total: 0, files: [] };
-            }
-            return this.debtService.getDebtSummary();
-        };
         
-        const debtSummary = getReviewDebtSummary();
-        const now = Date.now();
-        const TEN_SECONDS = 10 * 1000;
+        // Get current score state from ScoreService (single source of truth)
+        const scoreState = this.scoreService.getScoreState();
         
-        // Filter suggestions from last 10 seconds for score calculation
-        const recentSuggestions = suggestions.filter(
-            s => (now - s.timestamp) <= TEN_SECONDS
-        );
-        
-        // For display: show ALL suggestions (not just last 10 seconds) so meter shows activity
-        // But use recentSuggestions for actual score calculation
-        const allSuggestions = suggestions;
-        
-        // Get pending suggestions with file paths
-        // const { getRelativePath } = require('./vscodeDocUtilities'); // Commented for consolidation
-        const pendingSuggestions = allSuggestions
-            .filter(s => s.status === 'pending')
-            .map(s => {
-                // Extract file path from document URI
-                let filePath = null;
-                if (s.document) {
-                    try {
-                        // Use VS Code adapter for URI creation
-                        const Uri = this.vscodeAdapter ? this.vscodeAdapter.Uri : null;
-                        if (!Uri) {
-                            return null; // Skip if no adapter available
-                        }
-                        const uri = Uri.parse(s.document);
-                        if (uri.scheme === 'file') {
-                            filePath = uri.fsPath;
-                        }
-                    } catch (err) {
-                        if (this.loggerAdapter) {
-                            this.loggerAdapter.error('AwarenessEngine: Error parsing document URI', err);
-                        }
-                    }
-                }
-                return {
-                    path: filePath ? getRelativePath(filePath) : 'Unknown',
-                    fullPath: filePath || '',
-                    ageMinutes: Math.round((now - s.timestamp) / (1000 * 60)),
-                    type: s.isFileCreation ? 'file creation' : 
-                          s.isExternalCreation ? 'external file' :
-                          s.isFileWrite ? 'file write' : 'text change'
-                };
-            })
-            .filter(Boolean); // Remove null entries
-        
-        return {
-            total: this.currentScore,
-            components: { ...this.scores },
-            suggestions: {
-                // Show all suggestions for meter display (so it doesn't disappear after 10s)
-                total: allSuggestions.length,
-                pending: allSuggestions.filter(s => s.status === 'pending').length,
-                accepted: allSuggestions.filter(s => s.status === 'accepted').length,
-                rejected: allSuggestions.filter(s => s.status === 'rejected').length,
-                adapted: allSuggestions.filter(s => s.status === 'adapted').length,
-                // Also include recent count for debugging
-                recentTotal: recentSuggestions.length,
-                // Include pending suggestions with file info
-                pendingFiles: pendingSuggestions
-            },
-            // Review debt information
-            debt: {
-                unreviewedFiles: debtSummary.total,
-                files: debtSummary.files.map(f => ({
-                    path: getRelativePath(f.path), // Relative path instead of just filename
-                    fullPath: f.path,
-                    ageMinutes: Math.round(f.age / (1000 * 60)),
-                    modifications: f.modificationCount
-                }))
-            },
-            // Add debug info for troubleshooting
-            debug: {
-                lastActivity: recentSuggestions.length > 0 ? 
-                    new Date(recentSuggestions[recentSuggestions.length - 1].timestamp).toLocaleTimeString() : 
-                    (suggestions.length > 0 ? 
-                    new Date(suggestions[suggestions.length - 1].timestamp).toLocaleTimeString() : 
-                        'None'),
-                monitoringActive: this.updateTimer !== null,
-                totalDebtEntries: debtSummary.total,
-                recentWindowCount: recentSuggestions.length,
-                totalTrackedCount: suggestions.length
-            }
-        };
+        return this.scoreService.getScoreData({
+            suggestions,
+            debtService: this.debtService,
+            currentScore: scoreState.currentScore,
+            scores: scoreState.scores,
+            vscodeAdapter: this.vscodeAdapter,
+            updateTimer: this.updateTimer
+        });
     }
     
     /**
@@ -652,11 +505,19 @@ class AwarenessEngine {
     }
 
     // ============================================
-    // Delegation Methods - Delegate to SuggestionService
+    // Public API: Delegation Methods
     // ============================================
+    // These methods are part of the public API contract.
+    // They delegate to internal services but provide a stable interface for:
+    // - AwarenessEventListener (input layer)
+    // - External callers that need to interact with suggestions
+    // 
+    // Rationale: The engine acts as a facade, hiding internal service structure
+    // while providing a clean, stable API for event handlers and external code.
 
     /**
      * Record a detected AI suggestion
+     * @public
      * @param {vscode.TextDocument} document - The document
      * @param {vscode.TextDocumentContentChangeEvent} change - The change event
      */
@@ -668,6 +529,7 @@ class AwarenessEngine {
 
     /**
      * Record a batch of AI changes as a single suggestion
+     * @public
      * @param {vscode.TextDocument} document - The document
      * @param {Array<vscode.TextDocumentContentChangeEvent>} aggregatedChanges - Batch of changes
      * @param {Object} meta - Optional metadata
@@ -680,6 +542,7 @@ class AwarenessEngine {
 
     /**
      * Process a file as an AI-generated suggestion
+     * @public
      * @param {vscode.Uri} fileUri - URI of the file
      * @param {Object} options - Processing options
      * @returns {Promise<Object|null>} Suggestion entity or null
@@ -693,6 +556,7 @@ class AwarenessEngine {
 
     /**
      * Record a batch of user edits (might be adapting AI suggestions)
+     * @public
      * @param {vscode.TextDocument} document - The document
      * @param {Array<vscode.TextDocumentContentChangeEvent>} aggregatedChanges - Batch of changes
      */
@@ -704,6 +568,7 @@ class AwarenessEngine {
 
     /**
      * Record user edits (might be adapting AI suggestions)
+     * @public
      * @deprecated Use recordUserEditBatch for batch processing
      * @param {vscode.TextDocument} document - The document
      * @param {vscode.TextDocumentContentChangeEvent} change - The change event
@@ -716,6 +581,7 @@ class AwarenessEngine {
 
     /**
      * Check if suggestion was accepted, rejected, or adapted
+     * @public
      * @param {string} suggestionId - ID of the suggestion to check
      */
     async checkSuggestionStatus(suggestionId) {
@@ -726,6 +592,7 @@ class AwarenessEngine {
 
     /**
      * Get all suggestions
+     * @public
      * @returns {Array} Array of suggestions
      */
     getSuggestions() {
@@ -734,6 +601,7 @@ class AwarenessEngine {
 
     /**
      * Get suggestions by status
+     * @public
      * @param {string} status - Status to filter by
      * @returns {Array} Filtered suggestions
      */
@@ -743,6 +611,7 @@ class AwarenessEngine {
 
     /**
      * Check if file has pending suggestions
+     * @public
      * @param {string} documentUri - Document URI string
      * @returns {boolean} True if file has pending suggestions
      */
@@ -752,6 +621,7 @@ class AwarenessEngine {
 
     /**
      * Get pending suggestions for a file
+     * @public
      * @param {string} documentUri - Document URI string
      * @returns {Array} Array of pending suggestions
      */
@@ -761,7 +631,7 @@ class AwarenessEngine {
 
     /**
      * Create a suggestion and add it to tracking
-     * Public method for use by domain entities
+     * @public
      * @param {Object} options - Suggestion properties
      * @param {number} contentLength - Length of content
      * @returns {Suggestion} Created suggestion entity
@@ -779,6 +649,10 @@ class AwarenessEngine {
      */
     getStatus() {
         const suggestions = this.suggestionAggregate ? this.suggestionAggregate.getSuggestions() : [];
+        
+        // Get current score state from ScoreService (single source of truth)
+        const scoreState = this.scoreService ? this.scoreService.getScoreState() : { currentScore: 0, scores: { review: 0, critical: 0, adaptation: 0, debt: 0 } };
+        
         return {
             isActive: this.isActive,
             hasContext: !!this.context,
@@ -786,8 +660,8 @@ class AwarenessEngine {
             hasCallbacks: !!(this.onAISuggestion || this.onAISuggestionOutcome || this.onKeepAll || this.onDebtCleared),
             aiSuggestionsCount: suggestions.length,
             reviewDebtCount: this.debtService ? this.debtService.getDebtSize() : 0,
-            currentScore: this.currentScore,
-            scores: { ...this.scores },
+            currentScore: scoreState.currentScore,
+            scores: { ...scoreState.scores },
             hasFileSystemWatcher: false, // FileWatcherService removed - using VS Code events only
             hasUpdateTimer: !!this.updateTimer,
             watchedDirectories: [], // FileWatcherService removed
@@ -823,6 +697,7 @@ class AwarenessEngine {
      * @param {Object} options - Options
      * @returns {Promise} Promise resolving to suggestion or null
      */
+    
     async handleFileCreated(fileUri, options = {}) {
         if (this.suggestionLifecycleService) {
             return await this.suggestionLifecycleService.processFileAsSuggestion(fileUri, options);
@@ -832,46 +707,15 @@ class AwarenessEngine {
     
     /**
      * Handle file saved event
+     * Delegates to SuggestionLifecycleService (business logic moved to service)
      * @param {vscode.TextDocument} document - The saved document
      * @returns {boolean} True if file was processed, false otherwise
      */
     handleFileSaved(document) {
-        if (!this.suggestionLifecycleService) {
-            return false;
+        if (this.suggestionLifecycleService) {
+            return this.suggestionLifecycleService.handleFileSaved(document);
         }
-        
-        const content = document.getText();
-        
-        // Lowered threshold to catch more AI file operations (business logic)
-        if (content.length <= 200) {
-            return false; // Below threshold, skip
-        }
-        
-        // Fixed: Range math bug - lineCount is 1-based count, but line indices are 0-based
-        const lastLine = Math.max(0, document.lineCount - 1);
-        const lastLineText = document.lineAt(lastLine).text;
-        const lastChar = lastLineText.length;
-        
-        // Get Range constructor from adapter
-        const Range = this.getRange();
-        if (!Range) {
-            return false; // Cannot create range without Range constructor
-        }
-        
-        // Create range for entire file
-        const range = new Range(0, 0, lastLine, lastChar);
-        const uri = document.uri.toString();
-        
-        // Create and track suggestion
-        this.suggestionLifecycleService.createSuggestionAndTrack({
-            document: uri,
-            range: range,
-            text: content,
-            size: content.length,
-            isFileWrite: true
-        }, content.length);
-        
-        return true; // Successfully processed
+        return false;
     }
     
     /**
@@ -948,8 +792,8 @@ class AwarenessEngine {
     handleEditorChange(editor, previousActiveDocumentUri) {
         // Flush previous document if it exists
         if (previousActiveDocumentUri && this.vscodeAdapter) {
-            // Get document from URI
-            const documents = this.vscodeAdapter.getTextDocuments();
+            // Get document from URI (use consistent adapter API)
+            const documents = this.getTextDocuments();
             const previousDocument = documents.find(doc => doc.uri.toString() === previousActiveDocumentUri);
             
             if (previousDocument) {
@@ -1052,8 +896,21 @@ class AwarenessEngine {
         return checkPositionInRange(position, range);
     }
     
+    // ============================================
+    // Public API: Utility Wrapper Methods
+    // ============================================
+    // These methods provide convenient access to adapter functionality.
+    // They are part of the public API and used by:
+    // - ClassificationService (asRelativePath)
+    // - Internal engine methods (getRange, getTextDocuments)
+    // - Domain services (isValidCodeDocument, isValidUri)
+    //
+    // Rationale: These wrappers provide a stable interface that hides
+    // adapter implementation details and provides convenient access patterns.
+
     /**
-     * Get relative path from URI (delegates to domain service, passes adapter as port)
+     * Get relative path from URI
+     * @public
      * @param {vscode.Uri} uri - URI to convert
      * @returns {string} Relative path
      */
@@ -1062,7 +919,8 @@ class AwarenessEngine {
     }
     
     /**
-     * Get Range constructor (uses app layer utility)
+     * Get Range constructor
+     * @public
      * @returns {Function} Range constructor
      */
     getRange() {
@@ -1070,7 +928,8 @@ class AwarenessEngine {
     }
     
     /**
-     * Get text documents from workspace (uses app layer utility)
+     * Get text documents from workspace
+     * @public
      * @returns {Array<vscode.TextDocument>} Array of text documents
      */
     getTextDocuments() {
@@ -1078,7 +937,8 @@ class AwarenessEngine {
     }
     
     /**
-     * Validate if document is a code document (delegates to domain service)
+     * Validate if document is a code document
+     * @public
      * @param {vscode.TextDocument} document - Document to validate
      * @returns {boolean} True if document should be processed
      */
@@ -1087,7 +947,8 @@ class AwarenessEngine {
     }
     
     /**
-     * Validate if URI should be processed (delegates to domain service)
+     * Validate if URI should be processed
+     * @public
      * @param {vscode.Uri|string} uriOrScheme - URI or scheme string
      * @returns {boolean} True if URI should be processed
      */

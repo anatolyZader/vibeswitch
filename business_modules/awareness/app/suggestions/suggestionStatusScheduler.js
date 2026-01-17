@@ -3,29 +3,30 @@
  * 
  * Ensures only one outstanding timer per suggestion ID to prevent duplicate checks/events.
  * All timers are managed through TimerRegistry for proper cleanup.
+ * Uses generation-based cancellation to prevent zombie timers after engine restarts.
  */
 
 class SuggestionStatusScheduler {
     /**
      * @param {TimerRegistry} timerRegistry - Timer registry (required)
      * @param {Function} isActive - Function to check if service is active (required)
-     * @param {string} instanceId - Instance ID for generation-based cancellation (required)
+     * @param {Function} getInstanceId - Getter function for current instance ID (required)
      * @param {ILoggerPort} loggerPort - Logger port (optional)
      */
-    constructor(timerRegistry, isActive, instanceId, loggerPort = null) {
+    constructor(timerRegistry, isActive, getInstanceId, loggerPort = null) {
         if (!timerRegistry) {
             throw new Error('SuggestionStatusScheduler requires timerRegistry');
         }
         if (!isActive || typeof isActive !== 'function') {
             throw new Error('SuggestionStatusScheduler requires isActive function');
         }
-        if (!instanceId) {
-            throw new Error('SuggestionStatusScheduler requires instanceId');
+        if (!getInstanceId || typeof getInstanceId !== 'function') {
+            throw new Error('SuggestionStatusScheduler requires getInstanceId function');
         }
 
         this.timerRegistry = timerRegistry;
         this.isActive = isActive;
-        this.instanceId = instanceId;
+        this.getInstanceId = getInstanceId;
         this.loggerPort = loggerPort;
         
         // Track outstanding timers per suggestion ID (one timer per suggestion)
@@ -48,19 +49,29 @@ class SuggestionStatusScheduler {
         // Cancel any existing timer for this suggestion
         this.cancel(suggestionId);
 
-        const currentInstanceId = this.instanceId; // Capture instance ID for closure
+        // Capture generation at schedule time (critical for zombie timer prevention)
+        const scheduledGen = this.getInstanceId();
 
         const timer = this.timerRegistry.setTimeout(() => {
+            // Delete first to ensure cleanup even if callback throws
             this.scheduledChecks.delete(suggestionId);
-            // Generation-based cancellation: only execute if instance ID matches
-            if (this.instanceId !== currentInstanceId) {
-                this.loggerPort?.debug(`Scheduler: Instance ID mismatch for ${suggestionId}, ignoring timer.`);
+            
+            // Hard guard: generation must still match (prevents zombie timers after restart)
+            if (this.getInstanceId() !== scheduledGen) {
+                this.loggerPort?.debug(`Scheduler: Generation mismatch for ${suggestionId}, ignoring timer.`);
                 return;
             }
-            if (this.isActive()) {
-                callback();
-            } else {
+            
+            if (!this.isActive()) {
                 this.loggerPort?.debug(`Scheduler: Service not active for ${suggestionId}, ignoring timer.`);
+                return;
+            }
+            
+            // Execute callback with error handling
+            try {
+                callback();
+            } catch (error) {
+                this.loggerPort?.error(`Scheduler: Error in callback for ${suggestionId}`, error);
             }
         }, delayMs, 'statusCheck'); // Tag timer with owner
 
@@ -74,11 +85,12 @@ class SuggestionStatusScheduler {
      */
     cancel(suggestionId) {
         const timer = this.scheduledChecks.get(suggestionId);
-        if (timer) {
-            this.timerRegistry.clearTimeout(timer);
-            this.scheduledChecks.delete(suggestionId);
-            this.loggerPort?.debug(`Scheduler: Cancelled check for ${suggestionId}`);
-        }
+        if (!timer) return;
+        
+        // Delete first to ensure cleanup even if clearTimeout throws
+        this.scheduledChecks.delete(suggestionId);
+        this.timerRegistry.clearTimeout(timer);
+        this.loggerPort?.debug(`Scheduler: Cancelled check for ${suggestionId}`);
     }
 
     /**

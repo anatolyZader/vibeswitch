@@ -91,12 +91,24 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
     // Called when mode changes to update mode indicator and show/hide awareness meter
     // NOTE: File colors are updated separately via updateFileColorsForMode()
     const switchModeInStatusBar = (forceMode = null) => {
+        // #region agent log
+        const logData13 = {location:'initializeHelpers.js:93',message:'switchModeInStatusBar called',data:{forceMode:forceMode,hasStatusBarItem:state.statusBarItem!==null,hasModeSwitcher:modeSwitcher!==null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
+        console.log('[DEBUG]', JSON.stringify(logData13));
+        if (state.outputChannel) state.outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData13)}`);
+        fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData13)}).catch(()=>{});
+        // #endregion
         // Only update if mode is explicitly provided or already set
         if (forceMode !== null) {
             state.setMode(forceMode);
         }
         
         const currentMode = state.getMode();
+        // #region agent log
+        const logData14 = {location:'initializeHelpers.js:99',message:'Before updateStatusBar call',data:{currentMode:currentMode,hasStatusBarItem:state.statusBarItem!==null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
+        console.log('[DEBUG]', JSON.stringify(logData14));
+        if (state.outputChannel) state.outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData14)}`);
+        fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData14)}).catch(()=>{});
+        // #endregion
         
         // If no mode set at all, show neutral state (don't detect)
         if (!currentMode) {
@@ -107,6 +119,12 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
         
         // Update mode indicator in status bar
         modeSwitcher.updateStatusBar(state.statusBarItem, currentMode, state.outputChannel);
+        // #region agent log
+        const logData15 = {location:'initializeHelpers.js:109',message:'After updateStatusBar call',data:{currentMode:currentMode},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
+        console.log('[DEBUG]', JSON.stringify(logData15));
+        if (state.outputChannel) state.outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData15)}`);
+        fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData15)}).catch(()=>{});
+        // #endregion
         // Update awareness meter (will show in 'dev' mode, hide in 'vibe' mode)
         updateAwarenessMeter();
         // NOTE: File colors are updated separately - not mixed with status bar updates
@@ -236,7 +254,7 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
             log(`ERROR in switchToMode: ${error.message}`, true, true);
             // Use adapter if available, fallback to direct vscode
             const vscodeAdapter = container.getAdapter('awareness', 'vscodeAdapter');
-            const showError = vscodeAdapter ? vscodeAdapter.showErrorMessage.bind(vscodeAdapter) : vscode.window.showErrorMessage;
+            const showError = (vscodeAdapter && vscodeAdapter.showErrorMessage) ? vscodeAdapter.showErrorMessage.bind(vscodeAdapter) : vscode.window.showErrorMessage;
             showError(`Failed to switch mode: ${error.message}`);
             throw error; // Re-throw so caller knows it failed
         }
@@ -245,12 +263,19 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
     // ============================================================================
     // STEP 6: Initialize command handlers (depends on all above helpers)
     // ============================================================================
+    console.log('[DEBUG] Creating commandHandlers via factory');
     const commandHandlers = commandHandlersFactory({
         log,
         switchToMode,
         updateFileColorsInExplorer,
         state,
         container
+    });
+    console.log('[DEBUG] commandHandlers created', {
+        hasCommandHandlers:commandHandlers!==null,
+        commandCount:commandHandlers?Object.keys(commandHandlers).length:0,
+        hasShowStatusBar:commandHandlers?'vibeswitch.showStatusBar' in commandHandlers:false,
+        allCommands:commandHandlers?Object.keys(commandHandlers):[]
     });
 
     // ============================================================================

@@ -9,6 +9,9 @@
  * - Provides a clean interface for classification workflow
  * 
  * Self-contained service with direct dependencies (no callbacks).
+ * 
+ * Note: Event validation (empty events, missing contentChanges) is handled by
+ * ChangeClassifier to avoid duplication. This service only validates document URI.
  */
 
 const ChangeClassifier = require('./classification/changeClassifier');
@@ -16,7 +19,7 @@ const Change = require('../domain/entities/change');
 const IIdGeneratorPort = require('../domain/ports/IIdGeneratorPort');
 const ILoggerPort = require('../domain/ports/ILoggerPort');
 const { buildDiffBullets } = require('./utilities/diffBulletService');
-const { getClassifierConfig } = require('./scoring/classificationConfig');
+const { getClassifierConfig } = require('./classification/config');
 
 class ClassificationService {
     /**
@@ -98,13 +101,14 @@ class ClassificationService {
      *   - changes: Array<Change> - Domain entities
      */
     classifyEvent(event, onClassified = null) {
-        if (!event || !event.contentChanges || event.contentChanges.length === 0) {
-            return;
+        // Validation is handled by ChangeClassifier (no duplicate check needed)
+        const documentUri = event?.document?.uri?.toString();
+        if (!documentUri) {
+            return; // Only validate document URI exists (ChangeClassifier handles event validation)
         }
         
-        const documentUri = event.document.uri.toString();
-        
         // Register with classifier - it will debounce and call our callback
+        // ChangeClassifier handles event validation (empty events, missing contentChanges, etc.)
         this.changeClassifier.addEvent(event, (document, classification, rawChanges) => {
             // Convert raw changes to Change domain entities
             const changes = this._convertToChangeEntities(rawChanges, documentUri);

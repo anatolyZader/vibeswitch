@@ -13,7 +13,7 @@
  * - Data cleanup/transformation hooks
  */
 
-const { getLogger } = require('../logger');
+const { getLogger } = require('../../../../logger');
 
 class PersistInContext {
     /**

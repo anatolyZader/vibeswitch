@@ -17,7 +17,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { getLogger } = require('../logger');
+const { getLogger } = require('../../../../logger');
 
 class PersistInSystem {
     /**

@@ -2,7 +2,10 @@
  * Classification Scorer
  * Accumulates detector scores and determines final classification label and confidence
  * 
- * Moved from domain/utils to app/classification - these are pure functions, not domain logic.
+ * This is scoring logic used by classification - accumulates scores from detectors
+ * and determines the final classification label based on those scores.
+ * 
+ * Moved to scoring/ directory because this is scoring functionality (even though used for classification).
  */
 
 function accumulateScores(detectors) {
@@ -154,4 +157,3 @@ module.exports = {
     getTopContributors,
     calculateUncertainty
 };
-
