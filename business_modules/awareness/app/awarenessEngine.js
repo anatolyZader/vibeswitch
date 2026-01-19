@@ -109,6 +109,19 @@ class AwarenessEngine {
         this.disposables = [];
         this.updateTimer = null;
         this.isActive = false;
+
+        // Optional LLM enrichment (wired from composition root)
+        this.llmInsightService = null;
+        this.llmInsightStore = null;
+    }
+
+    /**
+     * Wire LLM services (optional).
+     * Kept as a setter to avoid forcing the awareness module to construct llm dependencies.
+     */
+    setLLMServices({ insightService = null, insightStore = null } = {}) {
+        this.llmInsightService = insightService;
+        this.llmInsightStore = insightStore;
     }
     
     /**
@@ -178,7 +191,8 @@ class AwarenessEngine {
             this.onScoreUpdate,
             updateFileColorsInExplorer,
             this.persistenceAdapter, // Adapter implements IAwarenessPersistencePort
-            this.loggerAdapter // Adapter implements ILoggerPort
+            this.loggerAdapter, // Adapter implements ILoggerPort
+            this.llmInsightStore ? this.llmInsightStore.getSemanticRiskMultiplier.bind(this.llmInsightStore) : null
         );
         this.debtService.loadDebt();
         
@@ -242,7 +256,10 @@ class AwarenessEngine {
             loggerPort: this.loggerAdapter,
             vscodeAdapter: this.vscodeAdapter,
             changeLedgerService: this.changeLedger,
-            suggestionLifecycleService: this.suggestionLifecycleService
+            suggestionLifecycleService: this.suggestionLifecycleService,
+            llmInsightService: this.llmInsightService,
+            // LLM insights are eventual enrichment; when they arrive, recompute score + refresh UI.
+            onInsightUpdate: () => this.updateScore()
         });
 
         // Create event listener in input layer (passes self as engine)
@@ -413,18 +430,36 @@ class AwarenessEngine {
      * Delegates to ScoreService for calculation logic
      */
     updateScore() {
+        // #region agent log
+        const logData30 = {location:'business_modules/awareness/app/awarenessEngine.js:415',message:'updateScore called',data:{isActive:this.isActive,hasScoreService:!!this.scoreService},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'};
+        console.log('[DEBUG]', JSON.stringify(logData30));
+        if (this.loggerAdapter) this.loggerAdapter.debug(`[DEBUG] ${JSON.stringify(logData30)}`);
+        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData30)})?.catch?.(()=>{});
+        // #endregion
         if (!this.isActive || !this.scoreService) {
             return;
         }
         
         const suggestions = this.suggestionAggregate ? this.suggestionAggregate.getSuggestions() : [];
+        // #region agent log
+        const logData31 = {location:'business_modules/awareness/app/awarenessEngine.js:421',message:'updateScore calculating',data:{suggestionsCount:suggestions.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'};
+        console.log('[DEBUG]', JSON.stringify(logData31));
+        if (this.loggerAdapter) this.loggerAdapter.debug(`[DEBUG] ${JSON.stringify(logData31)}`);
+        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData31)})?.catch?.(()=>{});
+        // #endregion
         
         // Calculate score using ScoreService (uses default 10-second window)
         // ScoreService now stores state internally (single source of truth)
-        this.scoreService.calculateScore({
+        const scoreResult = this.scoreService.calculateScore({
             suggestions,
             debtService: this.debtService
         });
+        // #region agent log
+        const logData32 = {location:'business_modules/awareness/app/awarenessEngine.js:428',message:'updateScore calculated',data:{scoreResult:scoreResult},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'};
+        console.log('[DEBUG]', JSON.stringify(logData32));
+        if (this.loggerAdapter) this.loggerAdapter.debug(`[DEBUG] ${JSON.stringify(logData32)}`);
+        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData32)})?.catch?.(()=>{});
+        // #endregion
         
         // Trigger callbacks (get state from ScoreService)
         this._triggerScoreCallbacks(suggestions);
@@ -435,6 +470,12 @@ class AwarenessEngine {
      * @private
      */
     _triggerScoreCallbacks(suggestions) {
+        // #region agent log
+        const logData35 = {location:'business_modules/awareness/app/awarenessEngine.js:455',message:'_triggerScoreCallbacks called',data:{hasOnScoreUpdate:!!this.onScoreUpdate,suggestionsCount:suggestions.length,currentScore:this.scoreService?.getScoreState()?.currentScore},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'};
+        console.log('[DEBUG]', JSON.stringify(logData35));
+        if (this.loggerAdapter) this.loggerAdapter.debug(`[DEBUG] ${JSON.stringify(logData35)}`);
+        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData35)})?.catch?.((e)=>{console.error('Log fetch error:',e);});
+        // #endregion
         // Get current score state from ScoreService (single source of truth)
         const scoreState = this.scoreService ? this.scoreService.getScoreState() : { currentScore: 0, scores: { review: 0, critical: 0, adaptation: 0, debt: 0 } };
         
@@ -454,6 +495,12 @@ class AwarenessEngine {
      */
     getScore() {
         if (!this.scoreService) {
+            // #region agent log
+            const logData27 = {location:'business_modules/awareness/app/awarenessEngine.js:455',message:'getScore called but scoreService is null',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'};
+            console.log('[DEBUG]', JSON.stringify(logData27));
+            if (this.loggerAdapter) this.loggerAdapter.debug(`[DEBUG] ${JSON.stringify(logData27)}`);
+            globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData27)})?.catch?.(()=>{});
+            // #endregion
             return {
                 total: 0,
                 components: { review: 0, critical: 0, adaptation: 0, debt: 0 },
@@ -467,8 +514,14 @@ class AwarenessEngine {
         
         // Get current score state from ScoreService (single source of truth)
         const scoreState = this.scoreService.getScoreState();
+        // #region agent log
+        const logData28 = {location:'business_modules/awareness/app/awarenessEngine.js:469',message:'getScore preparing data',data:{suggestionsCount:suggestions.length,scoreStateCurrentScore:scoreState.currentScore,scoreStateScores:scoreState.scores},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'};
+        console.log('[DEBUG]', JSON.stringify(logData28));
+        if (this.loggerAdapter) this.loggerAdapter.debug(`[DEBUG] ${JSON.stringify(logData28)}`);
+        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData28)})?.catch?.(()=>{});
+        // #endregion
         
-        return this.scoreService.getScoreData({
+        const result = this.scoreService.getScoreData({
             suggestions,
             debtService: this.debtService,
             currentScore: scoreState.currentScore,
@@ -476,6 +529,13 @@ class AwarenessEngine {
             vscodeAdapter: this.vscodeAdapter,
             updateTimer: this.updateTimer
         });
+        // #region agent log
+        const logData29 = {location:'business_modules/awareness/app/awarenessEngine.js:478',message:'getScore returning',data:{resultTotal:result.total,resultComponents:result.components},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'};
+        console.log('[DEBUG]', JSON.stringify(logData29));
+        if (this.loggerAdapter) this.loggerAdapter.debug(`[DEBUG] ${JSON.stringify(logData29)}`);
+        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData29)})?.catch?.(()=>{});
+        // #endregion
+        return result;
     }
     
     /**

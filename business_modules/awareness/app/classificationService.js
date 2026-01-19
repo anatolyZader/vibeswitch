@@ -38,7 +38,9 @@ class ClassificationService {
         loggerPort = null,
         vscodeAdapter = null,
         changeLedgerService = null,
-        suggestionLifecycleService = null
+        suggestionLifecycleService = null,
+        llmInsightService = null,
+        onInsightUpdate = null
     }) {
         if (!idGeneratorPort) {
             throw new Error('ClassificationService requires idGeneratorPort');
@@ -59,6 +61,8 @@ class ClassificationService {
         this.vscodeAdapter = vscodeAdapter;
         this.changeLedgerService = changeLedgerService;
         this.suggestionLifecycleService = suggestionLifecycleService;
+        this.llmInsightService = llmInsightService;
+        this.onInsightUpdate = typeof onInsightUpdate === 'function' ? onInsightUpdate : null;
         
         // Get classification configuration for mode
         const classifierConfig = getClassifierConfig(mode);
@@ -136,10 +140,22 @@ class ClassificationService {
      */
     handleClassifiedChanges(document, classification, changes) {
         // Record change batch and diff bullets
-        this._recordChangeBatch(document, classification, changes);
+        const recordResult = this._recordChangeBatch(document, classification, changes);
         
         // Route to appropriate handlers based on classification
         this._routeClassifiedChanges(document, classification, changes);
+
+        // Optional LLM enrichment (async, never blocks typing)
+        if (this.llmInsightService && recordResult?.batchId) {
+            this._enrichWithLLMAsync({
+                document,
+                classification,
+                changes,
+                batchId: recordResult.batchId,
+                metrics: recordResult.metrics,
+                diffBullets: recordResult.diffBullets
+            });
+        }
     }
     
     /**
@@ -148,7 +164,7 @@ class ClassificationService {
      */
     _recordChangeBatch(document, classification, changes) {
         if (!this.changeLedgerService) {
-            return;
+            return { batchId: null, metrics: null, diffBullets: [] };
         }
         
         const uri = document.uri.toString();
@@ -163,6 +179,14 @@ class ClassificationService {
         const maxLine = Math.max(...startLines, ...endLines);
         const lineSpan = maxLine - minLine;
         const distinctRangeCount = new Set(changes.map(c => c.range.start.line)).size;
+
+        const metrics = {
+            changeCount: changes.length,
+            inserted,
+            deleted,
+            lineSpan,
+            distinctRangeCount
+        };
         
         // Record batch
         const batchId = this.changeLedgerService.append({
@@ -197,6 +221,54 @@ class ClassificationService {
                 bullets
             });
         }
+
+        return { batchId, metrics, diffBullets: bullets };
+    }
+
+    _enrichWithLLMAsync({ document, classification, changes, batchId, metrics, diffBullets }) {
+        // Fire-and-forget; do not block the classifier pipeline.
+        Promise.resolve().then(async () => {
+            const uri = document.uri.toString();
+            const file = this.vscodeAdapter.asRelativePath(document.uri);
+
+            // Minimal snippet: inserted text only, bounded; service may redact or omit based on config.
+            const snippet = changes
+                .slice(0, 2)
+                .map(c => c.text || '')
+                .join('\n')
+                .slice(0, 800);
+
+            const insight = await this.llmInsightService.analyzeBatch({
+                uri,
+                file,
+                classification,
+                metrics,
+                diffBullets,
+                snippet,
+                batchId
+            });
+
+            if (!insight) return;
+
+            // Persist insight (no raw code) for audit/debugging.
+            this.changeLedgerService.append({
+                ts: Date.now(),
+                uri,
+                file,
+                kind: 'llm_insight',
+                batchId,
+                insight
+            });
+
+            // Trigger score/UI refresh (eventual consistency).
+            if (this.onInsightUpdate) {
+                this.onInsightUpdate();
+            }
+        }).catch(err => {
+            if (this.loggerPort?.error) {
+                this.loggerPort.error('ClassificationService: LLM enrichment error', err);
+            }
+        });
     }
     
     /**

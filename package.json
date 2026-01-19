@@ -129,6 +129,82 @@
           "type": "boolean",
           "default": true,
           "description": "Enable real-time awareness monitoring and long-term statistics (100% local, never sent anywhere)"
+        },
+        "vibeswitch.llm.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable LLM-based semantic insights for awareness scoring (optional, async enrichment)"
+        },
+        "vibeswitch.llm.provider": {
+          "type": "string",
+          "default": "local",
+          "enum": ["local", "openai"],
+          "description": "LLM provider. 'local' uses deterministic heuristics and sends nothing externally."
+        },
+        "vibeswitch.llm.timeoutMs": {
+          "type": "number",
+          "default": 8000,
+          "description": "LLM request timeout in milliseconds"
+        },
+        "vibeswitch.llm.triggerOnAI": {
+          "type": "boolean",
+          "default": true,
+          "description": "Trigger LLM insight generation for AI-labeled batches"
+        },
+        "vibeswitch.llm.triggerOnLargeBatches": {
+          "type": "boolean",
+          "default": false,
+          "description": "Trigger LLM insight generation for large batches even if not AI-labeled"
+        },
+        "vibeswitch.llm.largeBatchThreshold": {
+          "type": "number",
+          "default": 800,
+          "description": "Large batch threshold (inserted+deleted characters) for triggering LLM insights"
+        },
+        "vibeswitch.llm.sendDiffBullets": {
+          "type": "boolean",
+          "default": true,
+          "description": "Send diff bullets (high-level summaries) to the LLM provider"
+        },
+        "vibeswitch.llm.maxDiffBullets": {
+          "type": "number",
+          "default": 8,
+          "description": "Maximum number of diff bullets sent to the LLM provider"
+        },
+        "vibeswitch.llm.sendSnippets": {
+          "type": "boolean",
+          "default": false,
+          "description": "Send small inserted-text snippets to the LLM provider (privacy-sensitive; OFF by default)"
+        },
+        "vibeswitch.llm.snippetCharLimit": {
+          "type": "number",
+          "default": 400,
+          "description": "Maximum snippet size (characters) if snippets are enabled"
+        },
+        "vibeswitch.llm.maxPerMinute": {
+          "type": "number",
+          "default": 6,
+          "description": "Max LLM insight requests per minute"
+        },
+        "vibeswitch.llm.maxPerDay": {
+          "type": "number",
+          "default": 200,
+          "description": "Max LLM insight requests per day"
+        },
+        "vibeswitch.llm.cacheTtlMs": {
+          "type": "number",
+          "default": 86400000,
+          "description": "Cache TTL for LLM insight results in milliseconds"
+        },
+        "vibeswitch.llm.openai.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "OpenAI API key (only used when provider=openai). Consider using environment variables if possible."
+        },
+        "vibeswitch.llm.openai.model": {
+          "type": "string",
+          "default": "gpt-4.1-mini",
+          "description": "OpenAI model name (only used when provider=openai)"
         }
       }
     }

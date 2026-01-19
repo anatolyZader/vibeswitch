@@ -84,6 +84,19 @@ function compose(context, state, container) {
     // Build services using the same adapter instances
     const awarenessEngine = buildAwarenessEngine(adapters, domainServices);
     const usageStatsService = buildUsageStatsService(context);
+
+    // Optional LLM module (separate bounded context)
+    try {
+        const { composeLLM } = require('./business_modules/llm/compose');
+        const llm = composeLLM({ context, loggerPort: adapters.loggerAdapter });
+        awarenessEngine.setLLMServices({
+            insightService: llm.insightService,
+            insightStore: llm.insightStore
+        });
+    } catch (err) {
+        // LLM module is optional; never fail extension startup.
+        adapters.loggerAdapter?.error?.('compositionRoot: Failed to compose LLM module', err);
+    }
     
     // Store adapters in DI container
     container.setAdapter('awareness', 'vscodeAdapter', adapters.vscodeAdapter);

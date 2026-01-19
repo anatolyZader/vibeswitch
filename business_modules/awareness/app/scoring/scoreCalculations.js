@@ -176,6 +176,9 @@ function calculateRiskBasedDebtScore(fileDebts, pendingSuggestions, options = {}
         const { getFileCriticality: defaultGetFileCriticality } = require('../utilities/fileCriticality');
         return defaultGetFileCriticality;
     })();
+    const getSemanticRiskMultiplier = typeof options.getSemanticRiskMultiplier === 'function'
+        ? options.getSemanticRiskMultiplier
+        : (() => 1);
 
     // File-level debt: unreviewed file changes
     const unreviewedFiles = Array.from(fileDebts.values())
@@ -196,10 +199,11 @@ function calculateRiskBasedDebtScore(fileDebts, pendingSuggestions, options = {}
     for (const fileDebt of unreviewedFiles) {
         const fileUri = fileDebt.fileUri || fileDebt.path || '';
         const fileCriticality = getFileCriticality(fileUri);
+        const semanticMultiplier = getSemanticRiskMultiplier(fileUri, { kind: 'fileDebt', fileDebt }) || 1;
         
         // Base risk: footprint (total changes) and file criticality
         const footprint = fileDebt.totalChanges || 0;
-        const baseRisk = Math.min((footprint / 1000) * fileCriticality, 5); // Cap at 5 per file
+        const baseRisk = Math.min(((footprint / 1000) * fileCriticality) * semanticMultiplier, 6); // Cap per file (slightly higher with semantic multiplier)
         
         // Age multiplier (older = higher risk)
         const ageHours = (now - (fileDebt.modifiedAt || now)) / (1000 * 60 * 60);
@@ -213,12 +217,13 @@ function calculateRiskBasedDebtScore(fileDebts, pendingSuggestions, options = {}
     for (const suggestion of pending) {
         const fileUri = suggestion.document || '';
         const fileCriticality = getFileCriticality(fileUri);
+        const semanticMultiplier = getSemanticRiskMultiplier(fileUri, { kind: 'suggestion', suggestion }) || 1;
         
         // Base risk: footprint (size), scatter (rangeCount), and file criticality
         const footprint = suggestion.size || 0;
         const scatter = suggestion.rangeCount || 1;
         const baseRisk = Math.min(
-            ((footprint / 500) + (scatter / 10)) * fileCriticality,
+            (((footprint / 500) + (scatter / 10)) * fileCriticality) * semanticMultiplier,
             3 // Cap at 3 per suggestion
         );
         

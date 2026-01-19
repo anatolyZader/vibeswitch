@@ -16,8 +16,9 @@ class DebtService {
      * @param {Function} updateFileColorsInExplorer - Callback to update file colors
      * @param {IAwarenessPersistencePort} persistencePort - Persistence port (interface)
      * @param {ILoggerPort} loggerPort - Logger port (interface, optional)
+     * @param {Function|null} getSemanticRiskMultiplier - Optional semantic risk multiplier provider
      */
-    constructor(onScoreUpdate, updateFileColorsInExplorer = null, persistencePort, loggerPort = null) {
+    constructor(onScoreUpdate, updateFileColorsInExplorer = null, persistencePort, loggerPort = null, getSemanticRiskMultiplier = null) {
         if (!persistencePort) {
             throw new Error('DebtService requires persistencePort');
         }
@@ -26,6 +27,7 @@ class DebtService {
         this.updateFileColorsInExplorer = updateFileColorsInExplorer;
         this.persistencePort = persistencePort;
         this.loggerPort = loggerPort;
+        this.getSemanticRiskMultiplier = typeof getSemanticRiskMultiplier === 'function' ? getSemanticRiskMultiplier : null;
         this.fileDebts = new Map(); // URI string -> FileDebt entity (file-level debt only)
         // Note: Suggestion-level debt is tracked via Suggestion entities (status === 'pending')
     }
@@ -224,7 +226,8 @@ class DebtService {
         if (useRiskBased) {
             // New: Risk-based calculation (research-aligned)
             return calculateRiskBasedDebtScore(this.fileDebts, pendingSuggestions, {
-                alpha: options.alpha
+                alpha: options.alpha,
+                getSemanticRiskMultiplier: options.getSemanticRiskMultiplier || this.getSemanticRiskMultiplier || undefined
             });
         } else {
             // Legacy: Count-based calculation (backward compatible)
