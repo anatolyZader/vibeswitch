@@ -17,7 +17,7 @@ const { detectSmallEdits } = require('./detectors/smallEditsDetector');
 
 // Import extracted modules
 const { createConfig } = require('./configManager');
-const { createPendingEntry, calculateEventRangeSet, addEventWithCapping } = require('./changeAggregator');
+const { createPendingEntry, calculateEventRangeSet, addEventWithCapping } = require('./editsBatchAnalyzer');
 const { accumulateScores, determineLabel } = require('../scoring/classificationScorer');
 const { filterReasons } = require('./reasonFilter');
 const safe = require('../../../../safe');

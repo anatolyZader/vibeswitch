@@ -1,8 +1,9 @@
 /**
- * Change Aggregator
- * Manages pending changes aggregation: tracking, capping, and event metadata
+ * Edits Batch Analyzer
+ * Manages pending edits aggregation: tracking, capping, and event metadata
  * 
- * Moved from domain/utils to app/classification - these are pure functions, not domain logic.
+ * Uses event-based batching for O(k) performance instead of O(n²) per-change shifts.
+ * Stores events as {timestamp, rangeSet, changes[]} for efficient whole-event drops.
  */
 
 function createPendingEntry() {
