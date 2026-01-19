@@ -18,14 +18,14 @@ function updateStatusBar(statusBarItem, currentMode, outputChannel = null) {
     const logData4 = {location:'ui/mode-switcher/index.js:16',message:'updateStatusBar called',data:{hasStatusBarItem:statusBarItem!==null,currentMode:currentMode},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'};
     console.log('[DEBUG]', JSON.stringify(logData4));
     if (outputChannel) outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData4)}`);
-    fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData4)}).catch(()=>{});
+    globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData4)})?.catch?.(()=>{});
     // #endregion
     if (!statusBarItem) {
         // #region agent log
         const logData5 = {location:'ui/mode-switcher/index.js:18',message:'statusBarItem is null, returning early',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'};
         console.log('[DEBUG]', JSON.stringify(logData5));
         if (outputChannel) outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData5)}`);
-        fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData5)}).catch(()=>{});
+        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData5)})?.catch?.(()=>{});
         // #endregion
         if (outputChannel) {
             outputChannel.appendLine('WARNING: statusBarItem not initialized');
@@ -65,7 +65,7 @@ function updateStatusBar(statusBarItem, currentMode, outputChannel = null) {
     const logData6 = {location:'ui/mode-switcher/index.js:51',message:'Checking showInStatusBar config',data:{shouldShow:shouldShow,currentMode:currentMode,text:statusBarItem.text},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'};
     console.log('[DEBUG]', JSON.stringify(logData6));
     if (outputChannel) outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData6)}`);
-    fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData6)}).catch(()=>{});
+    globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData6)})?.catch?.(()=>{});
     // #endregion
     
     // Always show status bar - it's the primary way to access the extension
@@ -74,7 +74,7 @@ function updateStatusBar(statusBarItem, currentMode, outputChannel = null) {
         const logData7 = {location:'ui/mode-switcher/index.js:55',message:'Calling statusBarItem.show()',data:{text:statusBarItem.text},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'};
         console.log('[DEBUG]', JSON.stringify(logData7));
         if (outputChannel) outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData7)}`);
-        fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData7)}).catch(()=>{});
+        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData7)})?.catch?.(()=>{});
         // #endregion
         statusBarItem.show();
         if (outputChannel) {
@@ -82,7 +82,7 @@ function updateStatusBar(statusBarItem, currentMode, outputChannel = null) {
         }
     } else {
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ui/mode-switcher/index.js:60',message:'Hiding status bar due to showInStatusBar=false',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ui/mode-switcher/index.js:60',message:'Hiding status bar due to showInStatusBar=false',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})})?.catch?.(()=>{});
         // #endregion
         statusBarItem.hide();
         if (outputChannel) {

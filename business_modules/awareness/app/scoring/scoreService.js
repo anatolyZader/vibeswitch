@@ -136,6 +136,12 @@ class ScoreService {
         // Total score (max 130, normalized to 100)
         const rawScore = reviewScore + criticalScore + adaptationScore + debtScore;
         const currentScore = Math.round(Math.min(rawScore, 100));
+        // #region agent log
+        const logData24 = {location:'business_modules/awareness/app/scoring/scoreService.js:138',message:'Score calculation result',data:{rawScore:rawScore,currentScore:currentScore,reviewScore:reviewScore,criticalScore:criticalScore,adaptationScore:adaptationScore,debtScore:debtScore,completedCount:completed.length,recentCount:recentSuggestions.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'};
+        console.log('[DEBUG]', JSON.stringify(logData24));
+        if (this.loggerAdapter) this.loggerAdapter.debug(`[DEBUG] ${JSON.stringify(logData24)}`);
+        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData24)})?.catch?.(()=>{});
+        // #endregion
 
         // Update internal state (single source of truth)
         this.currentScore = currentScore;
@@ -170,6 +176,12 @@ class ScoreService {
      * @returns {Object} Formatted score data
      */
     getScoreData({ suggestions, debtService, currentScore, scores, vscodeAdapter, recentWindowMs = DEFAULT_RECENT_WINDOW_MS, updateTimer = null }) {
+        // #region agent log
+        const logData25 = {location:'business_modules/awareness/app/scoring/scoreService.js:172',message:'getScoreData called',data:{currentScore:currentScore,scores:scores,suggestionsCount:suggestions.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'};
+        console.log('[DEBUG]', JSON.stringify(logData25));
+        if (this.loggerAdapter) this.loggerAdapter.debug(`[DEBUG] ${JSON.stringify(logData25)}`);
+        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData25)})?.catch?.(()=>{});
+        // #endregion
         const getReviewDebtSummary = () => {
             if (!debtService) {
                 return { total: 0, files: [] };
@@ -181,6 +193,12 @@ class ScoreService {
         const now = Date.now();
         const recentSuggestions = this._filterRecentSuggestions(suggestions, now, recentWindowMs);
         const allSuggestions = suggestions;
+        // #region agent log
+        const logData26 = {location:'business_modules/awareness/app/scoring/scoreService.js:183',message:'getScoreData returning',data:{total:currentScore,recentSuggestionsCount:recentSuggestions.length,allSuggestionsCount:allSuggestions.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'};
+        console.log('[DEBUG]', JSON.stringify(logData26));
+        if (this.loggerAdapter) this.loggerAdapter.debug(`[DEBUG] ${JSON.stringify(logData26)}`);
+        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData26)})?.catch?.(()=>{});
+        // #endregion
 
         // Get pending suggestions with file paths
         const pendingSuggestions = allSuggestions

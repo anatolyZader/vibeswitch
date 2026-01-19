@@ -169,6 +169,11 @@ async function activate(context) {
         // Set callbacks for UI updates and UsageStats integration
         awarenessEngine.setCallbacks({
             onScoreUpdate: () => {
+                // #region agent log
+                const logData34 = {location:'extension.js:171',message:'onScoreUpdate callback triggered',data:{hasUpdateAwarenessMeter:!!updateAwarenessMeter},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'};
+                console.log('[DEBUG]', JSON.stringify(logData34));
+                globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData34)})?.catch?.((e)=>{console.error('Log fetch error:',e);});
+                // #endregion
                 safe('onScoreUpdate', () => {
                     if (updateAwarenessMeter) {
                         updateAwarenessMeter();
@@ -210,7 +215,7 @@ async function activate(context) {
         const logData1 = {location:'extension.js:185',message:'Creating status bar items',data:{hasWindow:vscode.window!==null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'};
         console.log('[DEBUG]', JSON.stringify(logData1));
         if (state.outputChannel) state.outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData1)}`);
-        fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData1)}).catch(()=>{});
+        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData1)})?.catch?.(()=>{});
         // #endregion
         state.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
         state.awarenessBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
@@ -218,9 +223,11 @@ async function activate(context) {
         const logData2 = {location:'extension.js:188',message:'Status bar items created',data:{statusBarItem:state.statusBarItem!==null,awarenessBarItem:state.awarenessBarItem!==null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'};
         console.log('[DEBUG]', JSON.stringify(logData2));
         if (state.outputChannel) state.outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData2)}`);
-        fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData2)}).catch(()=>{});
+        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData2)})?.catch?.(()=>{});
         // #endregion
         state.statusBarItem.command = 'vibeswitch.switchMode';
+        // Make the awareness meter clickable (opens the detailed report/dashboard).
+        state.awarenessBarItem.command = 'vibeswitch.showStats';
         
         // Register status bar items for cleanup
         context.subscriptions.push(state.statusBarItem);
@@ -233,7 +240,7 @@ async function activate(context) {
         const logData3 = {location:'extension.js:196',message:'Calling show() on statusBarItem',data:{text:state.statusBarItem.text},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'};
         console.log('[DEBUG]', JSON.stringify(logData3));
         if (state.outputChannel) state.outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData3)}`);
-        fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData3)}).catch(()=>{});
+        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData3)})?.catch?.(()=>{});
         // #endregion
         state.statusBarItem.show();
         
@@ -265,7 +272,7 @@ async function activate(context) {
         const logData8 = {location:'extension.js:222',message:'Before switchModeInStatusBar call',data:{initialMode:initialMode,hasSwitchModeInStatusBar:switchModeInStatusBar!==null,statusBarItem:state.statusBarItem!==null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
         console.log('[DEBUG]', JSON.stringify(logData8));
         if (state.outputChannel) state.outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData8)}`);
-        fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData8)}).catch(()=>{});
+        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData8)})?.catch?.(()=>{});
         // #endregion
         if (initialMode) {
             switchModeInStatusBar(initialMode);
@@ -273,7 +280,7 @@ async function activate(context) {
             const logData9 = {location:'extension.js:224',message:'After switchModeInStatusBar with initialMode',data:{initialMode:initialMode},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
             console.log('[DEBUG]', JSON.stringify(logData9));
             if (state.outputChannel) state.outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData9)}`);
-            fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData9)}).catch(()=>{});
+            globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData9)})?.catch?.(()=>{});
             // #endregion
             updateFileColorsForMode();
             // Start awareness monitor if in DEV mode
@@ -291,14 +298,14 @@ async function activate(context) {
             const logData10 = {location:'extension.js:236',message:'Calling switchModeInStatusBar with default vibe mode',data:{hasSwitchModeInStatusBar:switchModeInStatusBar!==null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'};
             console.log('[DEBUG]', JSON.stringify(logData10));
             if (state.outputChannel) state.outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData10)}`);
-            fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData10)}).catch(()=>{});
+            globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData10)})?.catch?.(()=>{});
             // #endregion
             switchModeInStatusBar('vibe');
             // #region agent log
             const logData11 = {location:'extension.js:237',message:'After switchModeInStatusBar with default vibe',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'};
             console.log('[DEBUG]', JSON.stringify(logData11));
             if (state.outputChannel) state.outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData11)}`);
-            fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData11)}).catch(()=>{});
+            globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData11)})?.catch?.(()=>{});
             // #endregion
             updateFileColorsForMode(); // Also update file colors for default mode
             // Don't start monitor in vibe mode
@@ -320,7 +327,7 @@ async function activate(context) {
         const logData12 = {location:'extension.js:250',message:'Activation error caught',data:{error:error.message,hasStatusBarItem:state.statusBarItem!==null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'};
         console.log('[DEBUG]', JSON.stringify(logData12));
         if (state.outputChannel) state.outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData12)}`);
-        fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData12)}).catch(()=>{});
+        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData12)})?.catch?.(()=>{});
         // #endregion
         
         if (log) {

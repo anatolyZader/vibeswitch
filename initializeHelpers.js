@@ -95,7 +95,7 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
         const logData13 = {location:'initializeHelpers.js:93',message:'switchModeInStatusBar called',data:{forceMode:forceMode,hasStatusBarItem:state.statusBarItem!==null,hasModeSwitcher:modeSwitcher!==null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
         console.log('[DEBUG]', JSON.stringify(logData13));
         if (state.outputChannel) state.outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData13)}`);
-        fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData13)}).catch(()=>{});
+        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData13)})?.catch?.(()=>{});
         // #endregion
         // Only update if mode is explicitly provided or already set
         if (forceMode !== null) {
@@ -107,7 +107,7 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
         const logData14 = {location:'initializeHelpers.js:99',message:'Before updateStatusBar call',data:{currentMode:currentMode,hasStatusBarItem:state.statusBarItem!==null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
         console.log('[DEBUG]', JSON.stringify(logData14));
         if (state.outputChannel) state.outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData14)}`);
-        fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData14)}).catch(()=>{});
+        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData14)})?.catch?.(()=>{});
         // #endregion
         
         // If no mode set at all, show neutral state (don't detect)
@@ -123,7 +123,7 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
         const logData15 = {location:'initializeHelpers.js:109',message:'After updateStatusBar call',data:{currentMode:currentMode},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
         console.log('[DEBUG]', JSON.stringify(logData15));
         if (state.outputChannel) state.outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData15)}`);
-        fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData15)}).catch(()=>{});
+        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData15)})?.catch?.(()=>{});
         // #endregion
         // Update awareness meter (will show in 'dev' mode, hide in 'vibe' mode)
         updateAwarenessMeter();
