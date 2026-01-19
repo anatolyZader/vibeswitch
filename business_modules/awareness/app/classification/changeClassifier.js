@@ -17,9 +17,8 @@ const { detectSmallEdits } = require('./detectors/smallEditsDetector');
 
 // Import extracted modules
 const { createConfig } = require('./configManager');
-const { createPendingEntry, calculateEventRangeSet, addChangesWithCapping, recordEventMetadata } = require('./changeAggregator');
+const { createPendingEntry, calculateEventRangeSet, addEventWithCapping } = require('./changeAggregator');
 const { accumulateScores, determineLabel } = require('../scoring/classificationScorer');
-const { applyDriftCap } = require('./versionDriftHandler');
 const { filterReasons } = require('./reasonFilter');
 const safe = require('../../../../safe');
 
@@ -31,12 +30,11 @@ class ChangeClassifier {
      */
     constructor(debounceMs = 200, config = null, loggerPort = null) {
         this.debounceMs = debounceMs;
-        this.pendingChanges = new Map(); // document URI -> { changes: [], timer: null, lastChangeTime: 0, documentVersion: null, onClassified: null }
+        this.pendingChanges = new Map(); // document URI -> { changes: [], timer: null, lastChangeTime: 0, onClassified: null }
         this.maxChangesPerDocumentBatch = 200; // Cap changes per document batch (safety)
         
         // Production: Metrics for observability
         this.metrics = {
-            versionDriftCount: 0, // Track how often drift happens
             totalClassifications: 0
         };
         
@@ -75,16 +73,12 @@ class ChangeClassifier {
             pending.onClassified = onClassified;
         }
         pending.document = event.document; // Update document reference
-        pending.documentVersion = event.document.version;
         
         // Calculate event range set for scatteredness detection
         const eventRangeSet = calculateEventRangeSet(event.contentChanges);
         
-        // Add changes with capping
-        addChangesWithCapping(pending, event.contentChanges, this.maxChangesPerDocumentBatch, now);
-        
-        // Record event metadata
-        recordEventMetadata(pending, now, eventRangeSet, event.contentChanges.length);
+        // Add event with capping (O(1) event-level drops, not O(n²) per-change shifts)
+        addEventWithCapping(pending, event.contentChanges, eventRangeSet, now, this.maxChangesPerDocumentBatch);
         
         // Fix: Removed lastBatchFingerprint - fingerprint comparison was ineffective
         // (compared same array to itself). Using version drift alone is the actual signal.
@@ -117,9 +111,8 @@ class ChangeClassifier {
         const eventRangeSets = pending.eventRangeSets || [];
         const document = pending.document;
         const onClassified = pending.onClassified;
-        const documentVersion = pending.documentVersion;
         
-        // Classify changes
+        // Classify changes based on current code state (always fresh, no drift tracking)
         let classification = this._classify(changes, eventTimestamps, eventRangeSets, pending.firstChangeTime);
         
         // Fix: Ensure classification has meta object for source tracking
@@ -131,11 +124,6 @@ class ChangeClassifier {
         if (pending.flushSource) {
             classification.meta.source = pending.flushSource;
         }
-        
-        // Apply version drift cap if document changed externally
-        const lastSeenVersion = documentVersion;
-        const lastSeenTs = pending.lastChangeTime || pending.firstChangeTime;
-        applyDriftCap(classification, document, lastSeenVersion, lastSeenTs, this.metrics);
         
         // Production: Track total classifications
         this.metrics.totalClassifications++;
