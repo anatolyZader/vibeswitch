@@ -6,6 +6,8 @@
  * Stores events as {timestamp, rangeSet, changes[]} for efficient whole-event drops.
  */
 
+const { calculateRangeSet } = require('./utils/rangeUtils');
+
 function createPendingEntry() {
     const pending = {
         // Store events as batches: {ts, rangeSet, changes[]}
@@ -56,13 +58,8 @@ function createPendingEntry() {
 }
 
 function calculateEventRangeSet(contentChanges) {
-    const eventRangeSet = new Set();
-    for (const change of contentChanges) {
-        // Use line-based key to reduce noise from character-level variations
-        const lineKey = `${change.range.start.line}-${change.range.end.line}`;
-        eventRangeSet.add(lineKey);
-    }
-    return eventRangeSet;
+    // Use shared utility for range set calculation
+    return calculateRangeSet(contentChanges);
 }
 
 /**

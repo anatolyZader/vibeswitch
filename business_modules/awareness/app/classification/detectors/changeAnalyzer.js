@@ -5,6 +5,8 @@
  * Moved from domain/utils/detectors to app/classification/detectors - this is a pure function utility.
  */
 
+const { calculateRangeKey } = require('../utils/rangeUtils');
+
 /**
  * Calculate metrics from changes for detector analysis
  * @param {Array<vscode.TextDocumentContentChangeEvent>} changes - Aggregated changes
@@ -38,9 +40,8 @@ function calculateMetrics(changes, eventTimestamps = [], eventRangeSets = [], fi
             pureInsertionCount++;
         }
         
-        // Use line-based key for scatteredness detection (more stable than character-precise)
-        const lineKey = `${change.range.start.line}-${change.range.end.line}`;
-        distinctRanges.add(lineKey);
+        // Use shared utility for range key calculation (line-based for stable scatteredness detection)
+        distinctRanges.add(calculateRangeKey(change));
         
         startLines.push(change.range.start.line);
         endLines.push(change.range.end.line);
