@@ -64,7 +64,8 @@ async function switchToMode(mode, options = {}) {
 
         // Stop monitor if switching away from DEV mode
         if (currentMode === 'dev' && mode !== 'dev' && onMonitorStop) {
-            onMonitorStop();
+            // Ensure async monitor stop completes (prevents stale listeners/timers)
+            await onMonitorStop();
         }
 
         // Create .cursor directory if it doesn't exist
@@ -113,7 +114,8 @@ async function switchToMode(mode, options = {}) {
 
         // Start monitor if switching to DEV mode
         if (mode === 'dev' && onMonitorStart) {
-            onMonitorStart();
+            // Ensure async monitor start completes (surface errors, avoid silent failures)
+            await onMonitorStart();
         }
 
         // Call mode switched callback

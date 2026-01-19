@@ -27,6 +27,21 @@ function getScoreMeter(score) {
 }
 
 /**
+ * Normalize a component score to the 0-100 range.
+ * Components like debt are naturally 0-30; the meter/emoji thresholds assume 0-100.
+ *
+ * @param {number} value - Component value (e.g., 0-30)
+ * @param {number} max - Component max (e.g., 30)
+ * @returns {number} Normalized score (0-100)
+ */
+function normalizeTo100(value, max) {
+    const safeMax = (typeof max === 'number' && max > 0) ? max : 1;
+    const safeValue = (typeof value === 'number' && Number.isFinite(value)) ? value : 0;
+    const normalized = Math.round((safeValue / safeMax) * 100);
+    return Math.max(0, Math.min(100, normalized));
+}
+
+/**
  * Helper function: Returns an emoji indicator based on awareness score
  * 
  * In DEV mode, score interpretation is INVERTED:
@@ -40,6 +55,11 @@ function getScoreMeter(score) {
  */
 function getScoreEmoji(score) {
     // INVERTED LOGIC: In DEV mode, LOW score = GOOD (careful), HIGH score = BAD (blind)
+    // #region agent log
+    const logData33 = {location:'ui/awareness-meter/index.js:41',message:'getScoreEmoji called',data:{score:score},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H'};
+    console.log('[DEBUG]', JSON.stringify(logData33));
+    globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData33)})?.catch?.(()=>{});
+    // #endregion
     if (score >= 80) return '🔴'; // Danger! Blind acceptance
     if (score >= 60) return '🟠'; // Warning: Too trusting
     if (score >= 40) return '🟡'; // Caution: Moderate
@@ -59,14 +79,14 @@ function updateAwarenessMeter(awarenessBarItem, awarenessEngine, currentMode, ou
     const logData16 = {location:'ui/awareness-meter/index.js:57',message:'updateAwarenessMeter called',data:{hasAwarenessBarItem:awarenessBarItem!==null,currentMode:currentMode},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'};
     console.log('[DEBUG]', JSON.stringify(logData16));
     if (outputChannel) outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData16)}`);
-    fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData16)}).catch(()=>{});
+    globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData16)})?.catch?.(()=>{});
     // #endregion
     if (!awarenessBarItem) {
         // #region agent log
         const logData17 = {location:'ui/awareness-meter/index.js:59',message:'awarenessBarItem is null, returning early',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'};
         console.log('[DEBUG]', JSON.stringify(logData17));
         if (outputChannel) outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData17)}`);
-        fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData17)}).catch(()=>{});
+        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData17)})?.catch?.(()=>{});
         // #endregion
         if (outputChannel) {
             outputChannel.appendLine('WARNING: awarenessBarItem not initialized');
@@ -120,6 +140,12 @@ function updateAwarenessMeter(awarenessBarItem, awarenessEngine, currentMode, ou
         }
         
         const score = scoreData.total || 0;
+        // #region agent log
+        const logData21 = {location:'ui/awareness-meter/index.js:127',message:'Score data received from awarenessEngine',data:{score:score,scoreDataTotal:scoreData.total,scoreDataType:typeof scoreData.total,components:scoreData.components,suggestionsTotal:scoreData.suggestions.total,recentCount:scoreData.debug.recentWindowCount,debtFiles:scoreData.debt.unreviewedFiles,hasScoreData:!!scoreData,scoreDataKeys:Object.keys(scoreData)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'};
+        console.log('[DEBUG]', JSON.stringify(logData21));
+        if (outputChannel) outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData21)}`);
+        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData21)})?.catch?.((e)=>{console.error('Log fetch error:',e);});
+        // #endregion
         
         // Handle "no data" state (no AI suggestions detected yet)
         // Check if we have ANY suggestions (including pending) to show activity
@@ -127,7 +153,9 @@ function updateAwarenessMeter(awarenessBarItem, awarenessEngine, currentMode, ou
         const hasRecentActivity = scoreData.debug.recentWindowCount > 0;
         const hasReviewDebt = scoreData.debt.unreviewedFiles > 0;
         
-        if (score === -1 && !hasAnySuggestions && !hasReviewDebt) {
+        // NOTE: ScoreService uses 0 to represent "no activity" (not -1).
+        // If we have no tracked suggestions and no debt, show a neutral state instead of 🟢 0/100.
+        if (!hasAnySuggestions && !hasReviewDebt) {
             // Truly no activity - no suggestions and no debt
             awarenessBarItem.text = `⚪ No Activity`;
             awarenessBarItem.tooltip = `DEV Mode Awareness: Waiting for AI activity...
@@ -142,11 +170,13 @@ Recent (10s): ${scoreData.debug.recentWindowCount}
 
 Click for detailed statistics`;
             awarenessBarItem.backgroundColor = undefined;
-        } else if (score === -1 && hasReviewDebt) {
-            // No recent suggestions, but there's review debt - show debt indicator
+        } else if (!hasRecentActivity && hasReviewDebt) {
+            // No recent activity (10s window), but there's review debt - show debt indicator
             const debtScore = scoreData.components.debt;
-            const meter = getScoreMeter(debtScore);
-            const emoji = getScoreEmoji(debtScore);
+            // debtScore is 0-30; normalize to 0-100 for meter/emoji thresholds
+            const debtSeverity = normalizeTo100(debtScore, 30);
+            const meter = getScoreMeter(debtSeverity);
+            const emoji = getScoreEmoji(debtSeverity);
             
             awarenessBarItem.text = `${emoji} ${meter} (${scoreData.debt.unreviewedFiles})`;
             awarenessBarItem.tooltip = `DEV Mode Awareness: Review Debt Detected
@@ -154,6 +184,7 @@ Click for detailed statistics`;
 📁 ${scoreData.debt.unreviewedFiles} unreviewed file(s) with AI-generated changes
 
 Recent Activity: None (last 10 seconds)
+Review Debt Severity: ${debtSeverity}/100
 Review Debt Score: ${debtScore}/30
 
 ${scoreData.debt.files.slice(0, 5).map(f => `• ${f.path} (${f.ageMinutes}m ago)`).join('\n')}
@@ -162,27 +193,31 @@ ${scoreData.debt.files.length > 5 ? `\n... and ${scoreData.debt.files.length - 5
 Click for detailed statistics`;
             awarenessBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
         } else {
-            // Show meter - handle score of -1 (no completed suggestions yet) or valid scores
+            // Show meter (real-time awareness score)
             let displayScore = score;
-            if (score === -1) {
-                // No completed suggestions yet, but we might have pending ones
-                if (hasAnySuggestions) {
-                    displayScore = 50; // Neutral score for pending activity
-                } else {
-                    displayScore = 0; // No activity at all
-                }
-            }
             
             // Ensure displayScore is valid (0-100)
             displayScore = Math.max(0, Math.min(100, displayScore));
+            // #region agent log
+            const logData22 = {location:'ui/awareness-meter/index.js:177',message:'Display score calculation',data:{originalScore:score,displayScore:displayScore,hasAnySuggestions:hasAnySuggestions,emoji:getScoreEmoji(displayScore)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
+            console.log('[DEBUG]', JSON.stringify(logData22));
+            if (outputChannel) outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData22)}`);
+            globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData22)})?.catch?.(()=>{});
+            // #endregion
             
             const meter = getScoreMeter(displayScore);
             const emoji = getScoreEmoji(displayScore);
+            // #region agent log
+            const logData23 = {location:'ui/awareness-meter/index.js:185',message:'Final meter display',data:{emoji:emoji,meter:meter,text:`${emoji} ${meter}`},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'};
+            console.log('[DEBUG]', JSON.stringify(logData23));
+            if (outputChannel) outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData23)}`);
+            globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData23)})?.catch?.(()=>{});
+            // #endregion
             
             awarenessBarItem.text = `${emoji} ${meter}`;
             
             // Build tooltip with debt information
-            const scoreDisplay = score === -1 ? 'Calculating...' : `${score}/100`;
+            const scoreDisplay = `${score}/100`;
             let tooltip = `DEV Mode Awareness: ${scoreDisplay}
 Review: ${scoreData.components.review}/40
 Critical: ${scoreData.components.critical}/30
@@ -241,7 +276,7 @@ Click for detailed statistics`;
     const logData18 = {location:'ui/awareness-meter/index.js:227',message:'Awareness meter visibility check',data:{currentMode:currentMode,shouldShow:shouldShow,showInStatusBar:config.get('showInStatusBar',true)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'};
     console.log('[DEBUG]', JSON.stringify(logData18));
     if (outputChannel) outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData18)}`);
-    fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData18)}).catch(()=>{});
+    globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData18)})?.catch?.(()=>{});
     // #endregion
     
     if (shouldShow) {
@@ -249,7 +284,7 @@ Click for detailed statistics`;
         const logData19 = {location:'ui/awareness-meter/index.js:230',message:'Calling awarenessBarItem.show()',data:{text:awarenessBarItem.text},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'};
         console.log('[DEBUG]', JSON.stringify(logData19));
         if (outputChannel) outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData19)}`);
-        fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData19)}).catch(()=>{});
+        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData19)})?.catch?.(()=>{});
         // #endregion
         awarenessBarItem.show();
     } else {
@@ -257,7 +292,7 @@ Click for detailed statistics`;
         const logData20 = {location:'ui/awareness-meter/index.js:232',message:'Hiding awareness meter',data:{currentMode:currentMode},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'};
         console.log('[DEBUG]', JSON.stringify(logData20));
         if (outputChannel) outputChannel.appendLine(`[DEBUG] ${JSON.stringify(logData20)}`);
-        fetch('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData20)}).catch(()=>{});
+        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData20)})?.catch?.(()=>{});
         // #endregion
         awarenessBarItem.hide();
         if (outputChannel && currentMode !== 'dev') {
