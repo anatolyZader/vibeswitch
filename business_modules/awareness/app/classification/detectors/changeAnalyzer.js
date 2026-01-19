@@ -5,7 +5,7 @@
  * Moved from domain/utils/detectors to app/classification/detectors - this is a pure function utility.
  */
 
-const { calculateRangeKey } = require('../utils/rangeUtils');
+const { calculateRangeKey } = require('../utils/changeRangeUtils');
 
 /**
  * Calculate metrics from changes for detector analysis

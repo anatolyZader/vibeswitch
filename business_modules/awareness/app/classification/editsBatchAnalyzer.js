@@ -6,7 +6,7 @@
  * Stores events as {timestamp, rangeSet, changes[]} for efficient whole-event drops.
  */
 
-const { calculateRangeSet } = require('./utils/rangeUtils');
+const { calculateRangeSet } = require('./utils/changeRangeUtils');
 
 function createPendingEntry() {
     const pending = {

@@ -1,6 +1,9 @@
 /**
- * Range Utilities
+ * Change Range Utilities
  * Shared utilities for calculating range keys and range sets from text changes
+ * 
+ * Note: This is for classification/scatteredness detection (string-based keys).
+ * For VS Code Range object operations, see app/utilities/rangeUtilities.js
  */
 
 /**

@@ -138,7 +138,14 @@ for (const eventRangeSet of eventRangeSets) {
 
 ## Recommendation
 
-**Option 1 (Extract Shared Utility)** is recommended because:
+**Option 1 (Extract Shared Utility)** ✅ **IMPLEMENTED**
+
+Refactored to extract shared utility:
+- Created `classification/utils/rangeUtils.js` with `calculateRangeKey()` and `calculateRangeSet()`
+- Updated `editsBatchAnalyzer.js` to use `calculateRangeSet()`
+- Updated `changeAnalyzer.js` to use `calculateRangeKey()`
+
+**Benefits**:
 1. **Single source of truth** - Range key calculation logic in one place
 2. **Future-proof** - Easy to change logic (e.g., if we want character-level precision)
 3. **Clear intent** - Makes it obvious this is shared functionality
