@@ -110,6 +110,16 @@
           "default": true,
           "description": "Show mode indicator and awareness meter in status bar"
         },
+        "vibeswitch.disableLogging": {
+          "type": "boolean",
+          "default": false,
+          "description": "Disable non-essential VibeSwitch logs (errors may still appear)"
+        },
+        "vibeswitch.debugLogging": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable verbose debug logging for troubleshooting"
+        },
         "vibeswitch.rulesPath": {
           "type": "string",
           "default": "",

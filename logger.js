@@ -103,6 +103,18 @@ class ThrottledLogger {
      * @param {string} sourceKey - Optional source key for rate limiting (e.g., "onTextChange:file.js")
      */
     log(message, force = false, show = false, sourceKey = null) {
+        // Respect global logging toggle for non-essential logs.
+        // Errors/warnings and forced logs can still pass through.
+        if (!LOGGING_ENABLED && !force) {
+            const isImportant =
+                message.includes('[ERROR]') ||
+                message.includes('[WARN]') ||
+                message.includes('ERROR') ||
+                message.includes('❌') ||
+                message.includes('⚠️');
+            if (!isImportant) return;
+        }
+
         // Apply source-based rate limiting if sourceKey provided
         // This prevents spam from high-frequency events (e.g., text changes)
         if (sourceKey && !force) {
@@ -224,17 +236,26 @@ class ThrottledLogger {
      * Internal: Write log to console and output channel
      */
     _writeLog(message, show = false) {
-        // Always log to console for debugging
-        console.log(message);
-        
-        // Respect LOGGING_ENABLED flag for output channel
-        if (!LOGGING_ENABLED) return;
-        
+        const isError = message.startsWith('[ERROR]') || message.includes('❌');
+        const isWarn = message.startsWith('[WARN]') || message.includes('⚠️');
+        const isDebug = message.includes('[DEBUG]');
+
+        // Console output: only for errors/warnings by default.
+        // Keep info logs out of the console unless debugMode is enabled.
+        if (isError) {
+            console.error(message);
+        } else if (isWarn) {
+            console.warn(message);
+        } else if (this.debugMode || isDebug) {
+            console.log(message);
+        }
+
+        // Output channel: respect disableLogging, but still surface errors/warnings.
+        if (!LOGGING_ENABLED && !isError && !isWarn) return;
+
         if (this.outputChannel) {
             this.outputChannel.appendLine(message);
-            if (show) {
-                this.outputChannel.show(true);
-            }
+            if (show) this.outputChannel.show(true);
         }
     }
 
@@ -255,9 +276,12 @@ class ThrottledLogger {
 // Create singleton instance
 let loggerInstance = null;
 let LOGGING_ENABLED = true;
+let DEBUG_LOGGING_ENABLED = false;
 
 function initializeLogger(outputChannel) {
     loggerInstance = new ThrottledLogger(outputChannel);
+    // Apply any previously set debug preference
+    loggerInstance.setDebugMode(!!DEBUG_LOGGING_ENABLED);
     return loggerInstance;
 }
 
@@ -277,6 +301,17 @@ function disableLogging() {
 }
 
 /**
+ * Enable/disable verbose debug logging.
+ * When disabled, `[DEBUG]` logs are suppressed and info logs won't go to console.
+ */
+function setDebugLoggingEnabled(enabled) {
+    DEBUG_LOGGING_ENABLED = !!enabled;
+    if (loggerInstance) {
+        loggerInstance.setDebugMode(DEBUG_LOGGING_ENABLED);
+    }
+}
+
+/**
  * Check if logging is enabled based on VS Code settings
  * @param {Object} context - VS Code extension context
  * @returns {boolean} True if logging is enabled
@@ -290,6 +325,24 @@ function isLoggingEnabled(context) {
         return false;
     }
     return !config.get('disableLogging', false);
+}
+
+/**
+ * Apply VS Code settings to logger behavior.
+ * Centralizes the policy so other modules don't roll their own console logging.
+ */
+function applyVSCodeLoggingSettings(context = null) {
+    const vscode = require('vscode');
+    const config = vscode.workspace.getConfiguration('vibeswitch');
+
+    const disable = !!config.get('disableLogging', false);
+    const debug = !!config.get('debugLogging', false);
+
+    if (disable) disableLogging();
+    else enableLogging();
+
+    // If logging is disabled, debug logging must also be disabled.
+    setDebugLoggingEnabled(!disable && debug);
 }
 
 /**
@@ -314,7 +367,9 @@ module.exports = {
     getLogger,
     enableLogging,
     disableLogging,
+    setDebugLoggingEnabled,
     isLoggingEnabled,
+    applyVSCodeLoggingSettings,
     createLogWrapperFunc
 };
 

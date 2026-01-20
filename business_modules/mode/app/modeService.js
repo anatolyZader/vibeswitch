@@ -19,6 +19,13 @@ const Mode = require('../domain/value_objects/mode');
 const modeSettingsAdapter = require('../infrastructure/adapters/modeSettingsAdapter');
 const modeDetection = require('./modeDetection');
 
+function getShowErrorMessage(vscodeAdapter) {
+    if (vscodeAdapter && typeof vscodeAdapter.showErrorMessage === 'function') {
+        return vscodeAdapter.showErrorMessage.bind(vscodeAdapter);
+    }
+    return vscode.window.showErrorMessage;
+}
+
 /**
  * Switches to the specified mode
  * @param {string} mode - 'vibe' or 'dev'
@@ -49,7 +56,7 @@ async function switchToMode(mode, options = {}) {
     // Ensure workspace exists - use adapter if available, fallback to direct vscode
     const workspaceFolders = vscodeAdapter ? vscodeAdapter.workspaceFolders : vscode.workspace.workspaceFolders;
     if (!workspaceFolders || workspaceFolders.length === 0) {
-        const showError = vscodeAdapter ? vscodeAdapter.showErrorMessage.bind(vscodeAdapter) : vscode.window.showErrorMessage;
+        const showError = getShowErrorMessage(vscodeAdapter);
         showError('No workspace folder found. Please open a folder first.');
         return;
     }
@@ -126,7 +133,7 @@ async function switchToMode(mode, options = {}) {
         console.log(`VibeSwitch: Successfully switched to ${mode.toUpperCase()} mode`);
     } catch (error) {
         console.error(`VibeSwitch: Error switching to ${mode} mode:`, error);
-        const showError = vscodeAdapter ? vscodeAdapter.showErrorMessage.bind(vscodeAdapter) : vscode.window.showErrorMessage;
+        const showError = getShowErrorMessage(vscodeAdapter);
         showError(`Failed to switch to ${mode.toUpperCase()} mode: ${error.message}`);
     }
 }

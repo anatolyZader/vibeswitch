@@ -430,23 +430,11 @@ class AwarenessEngine {
      * Delegates to ScoreService for calculation logic
      */
     updateScore() {
-        // #region agent log
-        const logData30 = {location:'business_modules/awareness/app/awarenessEngine.js:415',message:'updateScore called',data:{isActive:this.isActive,hasScoreService:!!this.scoreService},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'};
-        console.log('[DEBUG]', JSON.stringify(logData30));
-        if (this.loggerAdapter) this.loggerAdapter.debug(`[DEBUG] ${JSON.stringify(logData30)}`);
-        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData30)})?.catch?.(()=>{});
-        // #endregion
         if (!this.isActive || !this.scoreService) {
             return;
         }
         
         const suggestions = this.suggestionAggregate ? this.suggestionAggregate.getSuggestions() : [];
-        // #region agent log
-        const logData31 = {location:'business_modules/awareness/app/awarenessEngine.js:421',message:'updateScore calculating',data:{suggestionsCount:suggestions.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'};
-        console.log('[DEBUG]', JSON.stringify(logData31));
-        if (this.loggerAdapter) this.loggerAdapter.debug(`[DEBUG] ${JSON.stringify(logData31)}`);
-        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData31)})?.catch?.(()=>{});
-        // #endregion
         
         // Calculate score using ScoreService (uses default 10-second window)
         // ScoreService now stores state internally (single source of truth)
@@ -454,12 +442,6 @@ class AwarenessEngine {
             suggestions,
             debtService: this.debtService
         });
-        // #region agent log
-        const logData32 = {location:'business_modules/awareness/app/awarenessEngine.js:428',message:'updateScore calculated',data:{scoreResult:scoreResult},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'};
-        console.log('[DEBUG]', JSON.stringify(logData32));
-        if (this.loggerAdapter) this.loggerAdapter.debug(`[DEBUG] ${JSON.stringify(logData32)}`);
-        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData32)})?.catch?.(()=>{});
-        // #endregion
         
         // Trigger callbacks (get state from ScoreService)
         this._triggerScoreCallbacks(suggestions);
@@ -470,12 +452,6 @@ class AwarenessEngine {
      * @private
      */
     _triggerScoreCallbacks(suggestions) {
-        // #region agent log
-        const logData35 = {location:'business_modules/awareness/app/awarenessEngine.js:455',message:'_triggerScoreCallbacks called',data:{hasOnScoreUpdate:!!this.onScoreUpdate,suggestionsCount:suggestions.length,currentScore:this.scoreService?.getScoreState()?.currentScore},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'};
-        console.log('[DEBUG]', JSON.stringify(logData35));
-        if (this.loggerAdapter) this.loggerAdapter.debug(`[DEBUG] ${JSON.stringify(logData35)}`);
-        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData35)})?.catch?.((e)=>{console.error('Log fetch error:',e);});
-        // #endregion
         // Get current score state from ScoreService (single source of truth)
         const scoreState = this.scoreService ? this.scoreService.getScoreState() : { currentScore: 0, scores: { review: 0, critical: 0, adaptation: 0, debt: 0 } };
         
@@ -495,12 +471,6 @@ class AwarenessEngine {
      */
     getScore() {
         if (!this.scoreService) {
-            // #region agent log
-            const logData27 = {location:'business_modules/awareness/app/awarenessEngine.js:455',message:'getScore called but scoreService is null',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'};
-            console.log('[DEBUG]', JSON.stringify(logData27));
-            if (this.loggerAdapter) this.loggerAdapter.debug(`[DEBUG] ${JSON.stringify(logData27)}`);
-            globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData27)})?.catch?.(()=>{});
-            // #endregion
             return {
                 total: 0,
                 components: { review: 0, critical: 0, adaptation: 0, debt: 0 },
@@ -514,12 +484,6 @@ class AwarenessEngine {
         
         // Get current score state from ScoreService (single source of truth)
         const scoreState = this.scoreService.getScoreState();
-        // #region agent log
-        const logData28 = {location:'business_modules/awareness/app/awarenessEngine.js:469',message:'getScore preparing data',data:{suggestionsCount:suggestions.length,scoreStateCurrentScore:scoreState.currentScore,scoreStateScores:scoreState.scores},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'};
-        console.log('[DEBUG]', JSON.stringify(logData28));
-        if (this.loggerAdapter) this.loggerAdapter.debug(`[DEBUG] ${JSON.stringify(logData28)}`);
-        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData28)})?.catch?.(()=>{});
-        // #endregion
         
         const result = this.scoreService.getScoreData({
             suggestions,
@@ -529,12 +493,6 @@ class AwarenessEngine {
             vscodeAdapter: this.vscodeAdapter,
             updateTimer: this.updateTimer
         });
-        // #region agent log
-        const logData29 = {location:'business_modules/awareness/app/awarenessEngine.js:478',message:'getScore returning',data:{resultTotal:result.total,resultComponents:result.components},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'};
-        console.log('[DEBUG]', JSON.stringify(logData29));
-        if (this.loggerAdapter) this.loggerAdapter.debug(`[DEBUG] ${JSON.stringify(logData29)}`);
-        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData29)})?.catch?.(()=>{});
-        // #endregion
         return result;
     }
     
@@ -769,11 +727,12 @@ class AwarenessEngine {
      * Handle file saved event
      * Delegates to SuggestionLifecycleService (business logic moved to service)
      * @param {vscode.TextDocument} document - The saved document
+     * @param {Object} options - Optional metadata for save processing
      * @returns {boolean} True if file was processed, false otherwise
      */
-    handleFileSaved(document) {
+    handleFileSaved(document, options = {}) {
         if (this.suggestionLifecycleService) {
-            return this.suggestionLifecycleService.handleFileSaved(document);
+            return this.suggestionLifecycleService.handleFileSaved(document, options);
         }
         return false;
     }
@@ -1003,7 +962,8 @@ class AwarenessEngine {
      * @returns {boolean} True if document should be processed
      */
     isValidCodeDocument(document) {
-        return this.uriPathOperationServiceD.isCodeDocument(this.vscodeAdapter, document);
+        // Domain service expects the document only (older signature mistakenly passed vscodeAdapter)
+        return this.uriPathOperationServiceD.isCodeDocument(document);
     }
     
     /**
@@ -1015,10 +975,11 @@ class AwarenessEngine {
     isValidUri(uriOrScheme) {
         // For string schemes, check directly
         if (typeof uriOrScheme === 'string' && !uriOrScheme.includes('://')) {
-            return !this.uriPathOperationServiceD.isSkippableUri(this.vscodeAdapter, uriOrScheme);
+            // Domain service expects URI (object) or URI string; for raw scheme strings, pass through.
+            return !this.uriPathOperationServiceD.isSkippableUri(uriOrScheme);
         }
         // For URI objects or URI strings, use domain service
-        return !this.uriPathOperationServiceD.isSkippableUri(this.vscodeAdapter, uriOrScheme);
+        return !this.uriPathOperationServiceD.isSkippableUri(uriOrScheme);
     }
 }
 

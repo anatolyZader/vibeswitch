@@ -40,8 +40,9 @@ describe('SuggestionBatch Entity', () => {
         batch = new SuggestionBatch(testBatchId, testFilePath);
         const after = Date.now();
         
-        expect(batch.timestamp).toBe(before);
-        expect(batch.timestamp).toBe(after);
+        // Timestamp is captured during construction; allow the normal 0-1ms drift.
+        expect(batch.timestamp).toBeGreaterThanOrEqual(before);
+        expect(batch.timestamp).toBeLessThanOrEqual(after);
     });
 
     test('should accept FilePath object as file path', () => {

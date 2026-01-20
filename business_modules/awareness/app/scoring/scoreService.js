@@ -63,6 +63,12 @@ class ScoreService {
             return debtService.calculateDebtScore(pendingSuggestions, { useRiskBased: true });
         };
 
+        const normalizeDebtToTotalScore = (debtScore) => {
+            // debtScore is naturally 0-30. Normalize to 0-100 so the total score remains comparable.
+            const safe = (typeof debtScore === 'number' && Number.isFinite(debtScore)) ? debtScore : 0;
+            return Math.max(0, Math.min(100, Math.round((safe / 30) * 100)));
+        };
+
         const now = Date.now();
         const recentSuggestions = this._filterRecentSuggestions(suggestions, now, recentWindowMs);
         
@@ -70,6 +76,7 @@ class ScoreService {
         const hasOlderSuggestions = suggestions.length > 0 && recentSuggestions.length === 0;
         const debtScore = getDebtScore();
         const hasDebt = debtScore > 0;
+        const hasPending = pendingSuggestions.length > 0;
 
         // Rate-limited debug logging
         if (this.loggerAdapter) {
@@ -81,9 +88,19 @@ class ScoreService {
 
         // Handle no recent activity
         if (recentSuggestions.length === 0) {
-            if (debtScore > 0) {
-                // Show debt score if there's review debt
-                const currentScore = Math.min(debtScore, 100);
+            if (hasPending) {
+                // Core intent: if there are still unreviewed/pending AI suggestions,
+                // the meter should not drop just because the activity is older than the "recent" window.
+                // Keep a cautious baseline and let it grow with debt.
+                const currentScore = Math.min(50 + debtScore, 100);
+                const scores = { review: 0, critical: 0, adaptation: 0, debt: debtScore };
+                this.currentScore = currentScore;
+                this.scores = scores;
+                return { currentScore, scores };
+            } else if (debtScore > 0) {
+                // Debt without pending suggestions (e.g., file-level debt) should still be reflected
+                // in the same 0-100 scale as the rest of the score.
+                const currentScore = normalizeDebtToTotalScore(debtScore);
                 const scores = { review: 0, critical: 0, adaptation: 0, debt: debtScore };
                 this.currentScore = currentScore;
                 this.scores = scores;
@@ -136,12 +153,6 @@ class ScoreService {
         // Total score (max 130, normalized to 100)
         const rawScore = reviewScore + criticalScore + adaptationScore + debtScore;
         const currentScore = Math.round(Math.min(rawScore, 100));
-        // #region agent log
-        const logData24 = {location:'business_modules/awareness/app/scoring/scoreService.js:138',message:'Score calculation result',data:{rawScore:rawScore,currentScore:currentScore,reviewScore:reviewScore,criticalScore:criticalScore,adaptationScore:adaptationScore,debtScore:debtScore,completedCount:completed.length,recentCount:recentSuggestions.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'};
-        console.log('[DEBUG]', JSON.stringify(logData24));
-        if (this.loggerAdapter) this.loggerAdapter.debug(`[DEBUG] ${JSON.stringify(logData24)}`);
-        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData24)})?.catch?.(()=>{});
-        // #endregion
 
         // Update internal state (single source of truth)
         this.currentScore = currentScore;
@@ -176,12 +187,6 @@ class ScoreService {
      * @returns {Object} Formatted score data
      */
     getScoreData({ suggestions, debtService, currentScore, scores, vscodeAdapter, recentWindowMs = DEFAULT_RECENT_WINDOW_MS, updateTimer = null }) {
-        // #region agent log
-        const logData25 = {location:'business_modules/awareness/app/scoring/scoreService.js:172',message:'getScoreData called',data:{currentScore:currentScore,scores:scores,suggestionsCount:suggestions.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'};
-        console.log('[DEBUG]', JSON.stringify(logData25));
-        if (this.loggerAdapter) this.loggerAdapter.debug(`[DEBUG] ${JSON.stringify(logData25)}`);
-        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData25)})?.catch?.(()=>{});
-        // #endregion
         const getReviewDebtSummary = () => {
             if (!debtService) {
                 return { total: 0, files: [] };
@@ -193,12 +198,6 @@ class ScoreService {
         const now = Date.now();
         const recentSuggestions = this._filterRecentSuggestions(suggestions, now, recentWindowMs);
         const allSuggestions = suggestions;
-        // #region agent log
-        const logData26 = {location:'business_modules/awareness/app/scoring/scoreService.js:183',message:'getScoreData returning',data:{total:currentScore,recentSuggestionsCount:recentSuggestions.length,allSuggestionsCount:allSuggestions.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'};
-        console.log('[DEBUG]', JSON.stringify(logData26));
-        if (this.loggerAdapter) this.loggerAdapter.debug(`[DEBUG] ${JSON.stringify(logData26)}`);
-        globalThis.fetch?.('http://127.0.0.1:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logData26)})?.catch?.(()=>{});
-        // #endregion
 
         // Get pending suggestions with file paths
         const pendingSuggestions = allSuggestions

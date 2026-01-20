@@ -20,8 +20,8 @@ class UnreviewedFileDecor {
         this.debugCallCount = 0;
         this.logger = getLogger();
         
-        // Only log important initialization messages
-        this.log('[FileDecorations] Provider instance created', true);
+        // Keep startup quiet by default; enable `vibeswitch.debugLogging` for verbose output.
+        this.debug('[FileDecorations] Provider instance created');
     }
 
     /**
@@ -41,15 +41,25 @@ class UnreviewedFileDecor {
     }
 
     /**
+     * Debug log (only visible when debug logging is enabled).
+     */
+    debug(message, sourceKey = null) {
+        if (this.disableLogging) return;
+        if (this.logger && typeof this.logger.debug === 'function') {
+            this.logger.debug(message, false, sourceKey);
+        }
+    }
+
+    /**
      * Registers this provider with VS Code
      */
     register(context) {
-        this.log('[FileDecorations] Registering file decoration provider...');
+        this.debug('[FileDecorations] Registering file decoration provider...');
         
         try {
             const provider = vscode.window.registerFileDecorationProvider(this);
             context.subscriptions.push(provider);
-            this.log('[FileDecorations] ✅ File decoration provider registered successfully');
+            this.debug('[FileDecorations] ✅ File decoration provider registered successfully');
             return provider;
         } catch (error) {
             this.log(`[FileDecorations] ❌ ERROR registering provider: ${error.message}`, true);
@@ -81,9 +91,9 @@ class UnreviewedFileDecor {
         this.debugCallCount++;
         const fileName = require('path').basename(uri.fsPath);
         
-        // Rate-limited logging via logger's built-in rate limiter
+        // Rate-limited debug logging via logger's built-in rate limiter
         const logKey = `fileDecorations:provideFileDecoration:${fileName}`;
-        this.logger?.log(`[FileDecorations] provideFileDecoration called ${this.debugCallCount} times`, false, false, logKey);
+        this.debug(`[FileDecorations] provideFileDecoration called ${this.debugCallCount} times`, logKey);
 
         try {
             // Only decorate in DEV mode
@@ -122,7 +132,7 @@ class UnreviewedFileDecor {
                     this.logger?.debug(`Checking debt for ${fileName}: "${normalizedPath}" vs "${normalizedDebtPath}" -> ${matches}`, false, checkKey);
                     
                     if (matches) {
-                        this.log(`[FileDecorations] ✅ RETURNING VIOLET DECORATION for ${fileName} (${debtFile.modifications} modifications, ${debtFile.ageMinutes}m ago)`);
+                        this.debug(`[FileDecorations] ✅ Returning debt decoration for ${fileName}`, `fileDecorations:returnDebt:${fileName}`);
                         return {
                             badge: '⚠',
                             tooltip: `Unreviewed AI changes: ${debtFile.modifications} modifications, ${debtFile.ageMinutes}m ago`,
@@ -145,7 +155,7 @@ class UnreviewedFileDecor {
                     if (matches) {
                         const isNewFile = pendingFile.type === 'file creation' || pendingFile.type === 'external file';
                         const colorType = isNewFile ? 'BLUE/PURPLE' : 'ORANGE/YELLOW';
-                        this.log(`[FileDecorations] ✅ RETURNING ${colorType} DECORATION for ${fileName} (${pendingFile.type}, ${pendingFile.ageMinutes}m ago)`);
+                        this.debug(`[FileDecorations] ✅ Returning pending decoration for ${fileName} (${colorType})`, `fileDecorations:returnPending:${fileName}`);
                         
                         // Different colors for different types
                         return {
@@ -185,17 +195,17 @@ class UnreviewedFileDecor {
      * Can optionally refresh a specific URI
      */
     refresh(uri = null) {
-        this.log(`[FileDecorations] 🔄 Refreshing file decorations${uri ? ` for ${uri.fsPath}` : ' (all files)'}...`);
+        this.debug(`[FileDecorations] Refreshing file decorations${uri ? ` for ${uri.fsPath}` : ' (all files)'}...`, 'fileDecorations:refresh');
         try {
             // Fire the event to notify VS Code to refresh decorations
             // If URI is provided, refresh only that file; otherwise refresh all
             if (uri) {
                 this._onDidChangeFileDecorations.fire(uri);
-                this.log(`[FileDecorations] ✅ Refresh event fired for specific file: ${uri.fsPath}`);
+                this.debug(`[FileDecorations] Refresh event fired for specific file: ${uri.fsPath}`, 'fileDecorations:refreshSpecific');
             } else {
                 // Fire with undefined to refresh all files
                 this._onDidChangeFileDecorations.fire(undefined);
-                this.log('[FileDecorations] ✅ Refresh event fired for all files');
+                this.debug('[FileDecorations] Refresh event fired for all files', 'fileDecorations:refreshAll');
             }
         } catch (error) {
             this.log(`[FileDecorations] ❌ Error refreshing: ${error.message}`, true);
@@ -207,7 +217,7 @@ class UnreviewedFileDecor {
      * Disposes of resources
      */
     dispose() {
-        this.log('[FileDecorations] Disposing file decoration provider');
+        this.debug('[FileDecorations] Disposing file decoration provider', 'fileDecorations:dispose');
         this._onDidChangeFileDecorations.dispose();
     }
 }

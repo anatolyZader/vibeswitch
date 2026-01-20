@@ -246,15 +246,15 @@ class SuggestionLifecycleService {
             ...meta
         });
 
+        // Add to aggregate and track
+        this._addSuggestionAndTrack(suggestion, mergedSize);
+
         // Add suggestion to batch (aggregate sets batchId on entity)
         const batchId = this.suggestionAggregate.addSuggestionToBatch(uri, suggestion.id, mergedSize);
 
         // Check if this is a new batch (first suggestion) for event publishing
         const batch = this.suggestionAggregate.getBatch(batchId);
         const isNewBatch = batch && batch.suggestionIds.length === 1;
-
-        // Add to aggregate and track
-        this._addSuggestionAndTrack(suggestion, mergedSize);
 
         // Publish batch created event if this is a new batch
         // Call optional callback (e.g., for UsageStats)
@@ -284,7 +284,8 @@ class SuggestionLifecycleService {
         
         // Narrow scope: Only process if explicitly marked as AI source or recently created
         // This prevents false positives from normal human editing + saving
-        const isAISource = options.source === 'agent' || options.recentlyCreated === true;
+        const hasAIMarker = options.hasAIMarker === true;
+        const isAISource = options.source === 'agent' || options.recentlyCreated === true || hasAIMarker;
         if (!isAISource) {
             return false; // Skip normal saves
         }
@@ -309,13 +310,23 @@ class SuggestionLifecycleService {
         const range = new Range(0, 0, lastLine, lastChar);
         const uri = document.uri.toString();
         
+        // If we got here due to strong @ai markers, tag provenance as "definitive".
+        const classificationMeta = hasAIMarker ? {
+            classificationLabel: 'ai',
+            classificationConfidence: 1,
+            classificationReasons: ['@ai marker found in saved file'],
+            provenanceScore: 1,
+            rangeCount: 1
+        } : {};
+
         // Create and track suggestion
         this.createSuggestionAndTrack({
             document: uri,
             range: range,
             text: content,
             size: content.length,
-            isFileWrite: true
+            isFileWrite: true,
+            ...classificationMeta
         }, content.length);
         
         return true; // Successfully processed

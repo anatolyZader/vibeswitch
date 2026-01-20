@@ -36,6 +36,13 @@ class AwarenessEventListener {
     
     onTextChange(event) {
         if (event.contentChanges.length === 0) return;
+
+        // Only process real code documents.
+        // This prevents feedback loops where changes to Output/Debug/virtual documents
+        // (e.g. `extension-output-...`) get classified as AI edits.
+        if (!event?.document || !this.engine?.isValidCodeDocument?.(event.document)) {
+            return;
+        }
         
         // Delegate to engine - handles validation, logging, classification, and result processing
         this.engine.classifyTextChange(event);
@@ -62,8 +69,58 @@ class AwarenessEventListener {
      * @param {vscode.TextDocument} document - The saved document
      */
     onFileSaved(document) {
-        // Delegate to engine - handles validation, logging, and processing
-        this.engine.handleFileSaved(document);
+        if (!document) return;
+
+        // Only process real code documents (avoid virtual/output docs).
+        if (this.engine?.isValidCodeDocument && !this.engine.isValidCodeDocument(document)) {
+            return;
+        }
+
+        const uri = document?.uri?.toString?.() || '';
+        const content = document.getText();
+
+        // De-dupe saves: avoid repeatedly re-processing identical content.
+        const now = Date.now();
+        const contentHash = this.engine?.getContentHash ? this.engine.getContentHash(content) : String(content.length);
+        const cacheKey = `${uri}:${contentHash}`;
+        const cached = this.saveCache.get(cacheKey);
+        if (cached && (now - cached.timestamp) < 60_000) {
+            return;
+        }
+        this.saveCache.set(cacheKey, { timestamp: now });
+
+        // Basic cache hygiene: remove old entries and cap size.
+        for (const [key, value] of this.saveCache.entries()) {
+            if (!value || (now - value.timestamp) > 5 * 60_000) {
+                this.saveCache.delete(key);
+            }
+        }
+        if (this.saveCache.size > 200) {
+            const entries = Array.from(this.saveCache.entries()).sort((a, b) => (b[1]?.timestamp || 0) - (a[1]?.timestamp || 0));
+            this.saveCache.clear();
+            for (const [key, value] of entries.slice(0, 150)) {
+                this.saveCache.set(key, value);
+            }
+        }
+
+        // Heuristic: treat saves as AI-sourced if the file contains strong @ai markers.
+        const hasAIMarker = this._hasAIMarkerInText(content);
+        const options = hasAIMarker ? { source: 'agent', hasAIMarker: true } : {};
+
+        // Delegate to engine (may record a file-write suggestion + debt).
+        this.engine.handleFileSaved(document, options);
+    }
+
+    _hasAIMarkerInText(text) {
+        if (!text || typeof text !== 'string') return false;
+        const markerPatterns = [
+            /\/\/\s*@ai/i,                    // JS/TS/etc.
+            /#\s*@ai/i,                        // Python/Shell
+            /<!--[\s\S]*?@ai[\s\S]*?-->/i,     // HTML/XML/Markdown
+            /--\s*@ai/i,                       // SQL
+            /\/\*[\s\S]*?@ai[\s\S]*?\*\//i     // CSS block comment
+        ];
+        return markerPatterns.some((p) => p.test(text));
     }
 
     /**
@@ -71,8 +128,13 @@ class AwarenessEventListener {
      * @param {vscode.TextDocument} document - The opened document
      */
     onFileOpened(document) {
-        // Delegate to engine - handles validation internally
-        this.engine.handleFileOpened(document.uri);
+        if (!document) return;
+        if (this.engine?.isValidCodeDocument && !this.engine.isValidCodeDocument(document)) {
+            return;
+        }
+
+        // Delegate to engine - expects canonical URI string
+        this.engine.handleFileOpened(document.uri.toString());
     }
 
     /**
