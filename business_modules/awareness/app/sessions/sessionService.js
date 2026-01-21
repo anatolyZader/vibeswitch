@@ -89,7 +89,7 @@ class SessionService {
      * Uses ReviewSession entity methods for business logic
      */
     checkProgress() {
-        const MINIMUM_REVIEW_TIME = 30000; // 30 seconds
+        const MINIMUM_REVIEW_TIME = 5000; // 5 seconds
         const ACTIVITY_TIMEOUT = 60000; // 1 minute
         
         if (this.sessions.size === 0) {

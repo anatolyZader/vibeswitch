@@ -34,13 +34,13 @@ function calculateReviewScore(suggestions) {
 }
 
 /**
- * Calculate critical evaluation score (0-30)
- * High score = user is selective (accepts some, rejects some)
- * LOW SCORE = GOOD in DEV mode (means careful, not blind acceptance)
+ * Calculate blind acceptance risk score (0-30)
+ * High score = user blindly accepts AI suggestions (BAD - compliance risk)
+ * LOW SCORE = GOOD (means careful, selective acceptance)
  * @param {Array<Suggestion>} suggestions - Array of suggestions
- * @returns {number} Critical score (0-30)
+ * @returns {number} Blind acceptance risk score (0-30)
  */
-function calculateCriticalScore(suggestions) {
+function calculateBlindAcceptanceScore(suggestions) {
     if (!suggestions || suggestions.length === 0) return 0;
 
     const accepted = suggestions.filter(s => s.status === 'accepted').length;
@@ -152,6 +152,27 @@ function calculateDebtScore(fileDebts, pendingSuggestions) {
 }
 
 /**
+ * Calculate age multiplier for debt (piecewise: fast first hour, slower after)
+ * Prevents runaway growth while still penalizing stale debt
+ * @param {number} ageHours - Age in hours
+ * @returns {number} Age multiplier (1.0 to 2.0)
+ */
+function calculateAgeMultiplier(ageHours) {
+    if (ageHours <= 0) return 1.0;
+    
+    // Piecewise approach:
+    // - First hour: fast ramp (0.5x per hour) → 1.5x at 1 hour
+    // - After 1 hour: slower ramp (0.1x per hour) → max 2.0x at 6 hours
+    if (ageHours <= 1.0) {
+        // Fast ramp: 1.0 + (0.5 * ageHours)
+        return 1.0 + (0.5 * ageHours);
+    } else {
+        // Slower ramp: 1.5 + (0.1 * (ageHours - 1)), capped at 2.0
+        return Math.min(1.5 + (0.1 * (ageHours - 1)), 2.0);
+    }
+}
+
+/**
  * Calculate risk-based debt score (0-30) - research-aligned approach
  * 
  * Separates provenance (AI-likelihood) from debt (risk/audit effort).
@@ -205,9 +226,9 @@ function calculateRiskBasedDebtScore(fileDebts, pendingSuggestions, options = {}
         const footprint = fileDebt.totalChanges || 0;
         const baseRisk = Math.min(((footprint / 1000) * fileCriticality) * semanticMultiplier, 6); // Cap per file (slightly higher with semantic multiplier)
         
-        // Age multiplier (older = higher risk)
+        // Age multiplier (piecewise: fast first hour, slower after)
         const ageHours = (now - (fileDebt.modifiedAt || now)) / (1000 * 60 * 60);
-        const ageMultiplier = 1 + Math.min(ageHours * 0.1, 1.0); // Max 2x multiplier
+        const ageMultiplier = calculateAgeMultiplier(ageHours);
         
         const fileDebtValue = baseRisk * ageMultiplier;
         totalDebt += fileDebtValue;
@@ -235,9 +256,9 @@ function calculateRiskBasedDebtScore(fileDebts, pendingSuggestions, options = {}
         const hasVerification = suggestion.hasVerification ? suggestion.hasVerification() : false;
         const verificationPenalty = hasVerification ? 0.5 : 1.0;
         
-        // Age multiplier (older = higher risk)
+        // Age multiplier (piecewise: fast first hour, slower after)
         const ageHours = (now - (suggestion.timestamp || now)) / (1000 * 60 * 60);
-        const ageMultiplier = 1 + Math.min(ageHours * 0.1, 1.0); // Max 2x multiplier
+        const ageMultiplier = calculateAgeMultiplier(ageHours);
         
         const suggestionDebt = baseRisk * provenanceMultiplier * verificationPenalty * ageMultiplier;
         totalDebt += suggestionDebt;
@@ -249,7 +270,7 @@ function calculateRiskBasedDebtScore(fileDebts, pendingSuggestions, options = {}
 
 module.exports = {
     calculateReviewScore,
-    calculateCriticalScore,
+    calculateBlindAcceptanceScore,
     calculateAdaptationScore,
     calculateDebtScore, // Legacy: count-based approach (backward compatible)
     calculateRiskBasedDebtScore // New: risk-based approach (research-aligned)

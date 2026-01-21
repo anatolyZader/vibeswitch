@@ -768,6 +768,15 @@ class AwarenessEngine {
             }
         }
     }
+
+    /**
+     * Check if file has unreviewed debt (for use by event listeners)
+     * @param {string} uri - Document URI string
+     * @returns {boolean} True if file has unreviewed debt
+     */
+    hasUnreviewedDebt(uri) {
+        return this.debtService ? this.debtService.hasUnreviewedDebt(uri) : false;
+    }
     
     /**
      * Handle cursor move event

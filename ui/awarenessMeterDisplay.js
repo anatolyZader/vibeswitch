@@ -187,7 +187,7 @@ Click for detailed statistics`;
             const scoreDisplay = `${score}/100`;
             let tooltip = `DEV Mode Awareness: ${scoreDisplay}
 Review: ${scoreData.components.review}/40
-Critical: ${scoreData.components.critical}/30
+Blind Acceptance Risk: ${scoreData.components.blindAcceptance}/30
 Adaptation: ${scoreData.components.adaptation}/30
 Debt: ${scoreData.components.debt}/30
 
@@ -220,9 +220,7 @@ Suggestions tracked: ${scoreData.suggestions.total}
             }
 
             tooltip += `\n\nLast Activity: ${scoreData.debug.lastActivity}
-Monitoring: ${scoreData.debug.monitoringActive ? '✅ Active' : '❌ Inactive'}
-
-Click for detailed statistics`;
+Monitoring: ${scoreData.debug.monitoringActive ? '✅ Active' : '❌ Inactive'}`;
             
             awarenessBarItem.tooltip = tooltip;
             
@@ -232,7 +230,7 @@ Click for detailed statistics`;
     } else {
         // No mode set
         awarenessBarItem.text = '$(graph)';
-        awarenessBarItem.tooltip = 'Mode not set\nClick to view statistics';
+        awarenessBarItem.tooltip = 'Mode not set';
         awarenessBarItem.backgroundColor = undefined;
     }
 

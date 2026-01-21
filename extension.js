@@ -185,8 +185,8 @@ async function activate(context) {
         state.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
         state.awarenessBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
         state.statusBarItem.command = 'vibeswitch.switchMode';
-        // Make the awareness meter clickable (opens the detailed report/dashboard).
-        state.awarenessBarItem.command = 'vibeswitch.showStats';
+        // Awareness meter is not clickable (removed command to prevent untitled editor tab popup)
+        state.awarenessBarItem.command = undefined;
         
         // Register status bar items for cleanup
         context.subscriptions.push(state.statusBarItem);

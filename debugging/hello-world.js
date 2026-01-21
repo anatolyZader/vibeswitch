@@ -884,3 +884,128 @@ const deeperChecks = new ReviewChecklist('Deeper checks')
 
 rootChecklist.add(quickChecks).add(deeperChecks).add(new ReviewTask('Write summary notes', 2));
 console.log(rootChecklist.describe());
+
+// @ai
+// Facade Pattern (GoF) Implementation
+// Goal: Provide a simplified interface to a complex subsystem.
+//
+// In this example:
+// - Subsystems: DebtStore, SuggestionTracker, Notifier (small stand-ins)
+// - Facade: AwarenessWorkflowFacade (one-call API for common operations)
+
+// @ai - Subsystem: persistence-like store
+class DebtStore {
+    // @ai
+    constructor() {
+        this._byFile = new Map(); // file -> minutes
+    }
+
+    // @ai
+    addDebt(file, minutes) {
+        const prev = this._byFile.get(file) || 0;
+        this._byFile.set(file, prev + Math.max(0, minutes));
+    }
+
+    // @ai
+    clearDebt(file) {
+        this._byFile.delete(file);
+    }
+
+    // @ai
+    getDebt(file) {
+        return this._byFile.get(file) || 0;
+    }
+}
+
+// @ai - Subsystem: suggestion tracking
+class SuggestionTracker {
+    // @ai
+    constructor() {
+        this._pendingByFile = new Map(); // file -> count
+    }
+
+    // @ai
+    recordAISuggestion(file) {
+        const prev = this._pendingByFile.get(file) || 0;
+        this._pendingByFile.set(file, prev + 1);
+    }
+
+    // @ai
+    markReviewed(file) {
+        this._pendingByFile.set(file, 0);
+    }
+
+    // @ai
+    getPendingCount(file) {
+        return this._pendingByFile.get(file) || 0;
+    }
+}
+
+// @ai - Subsystem: notifications/UX
+class Notifier {
+    // @ai
+    warn(msg) {
+        console.log(`[WARN] ${msg}`);
+    }
+
+    // @ai
+    info(msg) {
+        console.log(`[INFO] ${msg}`);
+    }
+}
+
+// @ai - Facade: one-stop workflow API
+class AwarenessWorkflowFacade {
+    // @ai
+    constructor({ debtStore, suggestionTracker, notifier }) {
+        this.debtStore = debtStore;
+        this.suggestionTracker = suggestionTracker;
+        this.notifier = notifier;
+    }
+
+    // @ai
+    recordAIChange({ file, estimatedReviewMinutes }) {
+        this.suggestionTracker.recordAISuggestion(file);
+        this.debtStore.addDebt(file, estimatedReviewMinutes);
+        const pending = this.suggestionTracker.getPendingCount(file);
+        const debt = this.debtStore.getDebt(file);
+        this.notifier.warn(`AI change recorded for ${file} (pending=${pending}, debt=${debt}m)`);
+    }
+
+    // @ai
+    markFileReviewed(file) {
+        this.suggestionTracker.markReviewed(file);
+        this.debtStore.clearDebt(file);
+        this.notifier.info(`Reviewed ${file} (pending=0, debt=0m)`);
+    }
+
+    // @ai
+    getStatus(file) {
+        return {
+            file,
+            pending: this.suggestionTracker.getPendingCount(file),
+            debtMinutes: this.debtStore.getDebt(file)
+        };
+    }
+}
+
+// @ai - Demo: Facade in action
+console.log('\nFacade Pattern demo:');
+const facade = new AwarenessWorkflowFacade({
+    debtStore: new DebtStore(),
+    suggestionTracker: new SuggestionTracker(),
+    notifier: new Notifier()
+});
+
+facade.recordAIChange({ file: 'src/auth/login.ts', estimatedReviewMinutes: 8 });
+facade.recordAIChange({ file: 'src/auth/login.ts', estimatedReviewMinutes: 4 });
+console.log('Status:', facade.getStatus('src/auth/login.ts'));
+facade.markFileReviewed('src/auth/login.ts');
+console.log('Status:', facade.getStatus('src/auth/login.ts'));
+
+// Utility function for random operations
+function generateRandomId(prefix = 'id') {
+    const timestamp = Date.now();
+    const random = Math.floor(Math.random() * 10000);
+    return `${prefix}_${timestamp}_${random}`;
+}

@@ -12,11 +12,14 @@
  * - Scoring: Calculates awareness metrics from classified suggestions (in scoring/ directory)
  */
 
-const { calculateReviewScore, calculateCriticalScore, calculateAdaptationScore } = require('./scoreCalculations');
+const { calculateReviewScore, calculateBlindAcceptanceScore, calculateAdaptationScore } = require('./scoreCalculations');
 const { getRelativePath } = require('../utilities/vscodeDocUtilities');
 
 // Constants
 const DEFAULT_RECENT_WINDOW_MS = 10 * 1000; // 10 seconds
+const SCORING_HORIZON_MS = 15 * 60 * 1000; // 15 minutes (for extended horizon evaluation)
+const SCORING_HORIZON_COUNT = 20; // Last 20 resolved suggestions (for count-based horizon)
+const EMA_ALPHA = 0.3; // Exponential moving average smoothing factor (0-1, lower = more smoothing)
 
 class ScoreService {
     /**
@@ -28,10 +31,10 @@ class ScoreService {
         // Score state (single source of truth)
         this.currentScore = 0;
         this.scores = {
-            review: 0,      // 0-40 points
-            critical: 0,    // 0-30 points
-            adaptation: 0,  // 0-30 points
-            debt: 0         // 0-30 points
+            review: 0,              // 0-40 points
+            blindAcceptance: 0,     // 0-30 points (compliance risk)
+            adaptation: 0,          // 0-30 points
+            debt: 0                 // 0-30 points
         };
     }
     
@@ -72,6 +75,11 @@ class ScoreService {
         const now = Date.now();
         const recentSuggestions = this._filterRecentSuggestions(suggestions, now, recentWindowMs);
         
+        // Extended horizon: evaluate completed suggestions over last 15 minutes or last 20 resolved
+        // This provides stability beyond the 10s "recent activity" window
+        const completedSuggestions = suggestions.filter(s => s && s.status !== 'pending');
+        const horizonSuggestions = this._filterHorizonSuggestions(completedSuggestions, now);
+        
         // Check if we have older suggestions but no recent ones
         const hasOlderSuggestions = suggestions.length > 0 && recentSuggestions.length === 0;
         const debtScore = getDebtScore();
@@ -93,7 +101,7 @@ class ScoreService {
                 // the meter should not drop just because the activity is older than the "recent" window.
                 // Keep a cautious baseline and let it grow with debt.
                 const currentScore = Math.min(50 + debtScore, 100);
-                const scores = { review: 0, critical: 0, adaptation: 0, debt: debtScore };
+                const scores = { review: 0, blindAcceptance: 0, adaptation: 0, debt: debtScore };
                 this.currentScore = currentScore;
                 this.scores = scores;
                 return { currentScore, scores };
@@ -101,35 +109,38 @@ class ScoreService {
                 // Debt without pending suggestions (e.g., file-level debt) should still be reflected
                 // in the same 0-100 scale as the rest of the score.
                 const currentScore = normalizeDebtToTotalScore(debtScore);
-                const scores = { review: 0, critical: 0, adaptation: 0, debt: debtScore };
+                const scores = { review: 0, blindAcceptance: 0, adaptation: 0, debt: debtScore };
                 this.currentScore = currentScore;
                 this.scores = scores;
                 return { currentScore, scores };
             } else if (hasOlderSuggestions && hasDebt) {
                 // Preserve minimum score based on debt
                 const currentScore = Math.max(debtScore, 20);
-                const scores = { review: 0, critical: 0, adaptation: 0, debt: debtScore };
+                const scores = { review: 0, blindAcceptance: 0, adaptation: 0, debt: debtScore };
                 this.currentScore = currentScore;
                 this.scores = scores;
                 return { currentScore, scores };
             } else {
                 // No activity
                 this.currentScore = 0;
-                this.scores = { review: 0, critical: 0, adaptation: 0, debt: 0 };
+                this.scores = { review: 0, blindAcceptance: 0, adaptation: 0, debt: 0 };
                 return {
                     currentScore: 0,
-                    scores: { review: 0, critical: 0, adaptation: 0, debt: 0 }
+                    scores: { review: 0, blindAcceptance: 0, adaptation: 0, debt: 0 }
                 };
             }
         }
 
         // Filter to completed suggestions for detailed scoring
-        const completed = recentSuggestions.filter(s => s.status !== 'pending');
+        // Use extended horizon for stability (15 min or last 20 resolved)
+        const completed = horizonSuggestions.length > 0 ? horizonSuggestions : 
+                         recentSuggestions.filter(s => s.status !== 'pending');
 
         // Handle pending-only activity
         if (completed.length === 0 && recentSuggestions.length > 0) {
-            const currentScore = 50; // Neutral - pending activity detected
-            const scores = { review: 0, critical: 0, adaptation: 0, debt: debtScore };
+            const rawScore = 50; // Neutral - pending activity detected
+            const currentScore = this._applySmoothing(rawScore);
+            const scores = { review: 0, blindAcceptance: 0, adaptation: 0, debt: debtScore };
             this.currentScore = currentScore;
             this.scores = scores;
             return { currentScore, scores };
@@ -137,28 +148,33 @@ class ScoreService {
 
         // No suggestions at all
         if (completed.length === 0) {
-            this.currentScore = 0;
-            this.scores = { review: 0, critical: 0, adaptation: 0, debt: 0 };
+            const rawScore = 0;
+            const currentScore = this._applySmoothing(rawScore);
+            this.currentScore = currentScore;
+            this.scores = { review: 0, blindAcceptance: 0, adaptation: 0, debt: 0 };
             return {
-                currentScore: 0,
-                scores: { review: 0, critical: 0, adaptation: 0, debt: 0 }
+                currentScore,
+                scores: { review: 0, blindAcceptance: 0, adaptation: 0, debt: 0 }
             };
         }
 
-        // Calculate component scores using pure functions
+        // Calculate component scores using pure functions (based on extended horizon)
         const reviewScore = calculateReviewScore(completed);
-        const criticalScore = calculateCriticalScore(completed);
+        const blindAcceptanceScore = calculateBlindAcceptanceScore(completed);
         const adaptationScore = calculateAdaptationScore(completed);
 
         // Total score (max 130, normalized to 100)
-        const rawScore = reviewScore + criticalScore + adaptationScore + debtScore;
-        const currentScore = Math.round(Math.min(rawScore, 100));
+        const rawScore = reviewScore + blindAcceptanceScore + adaptationScore + debtScore;
+        const rawScoreNormalized = Math.round(Math.min(rawScore, 100));
+        
+        // Apply EMA smoothing to prevent UI thrashing
+        const currentScore = this._applySmoothing(rawScoreNormalized);
 
         // Update internal state (single source of truth)
         this.currentScore = currentScore;
         this.scores = {
             review: reviewScore,
-            critical: criticalScore,
+            blindAcceptance: blindAcceptanceScore,
             adaptation: adaptationScore,
             debt: debtScore
         };
@@ -167,7 +183,7 @@ class ScoreService {
             currentScore,
             scores: {
                 review: reviewScore,
-                critical: criticalScore,
+                blindAcceptance: blindAcceptanceScore,
                 adaptation: adaptationScore,
                 debt: debtScore
             }
@@ -267,7 +283,7 @@ class ScoreService {
     }
 
     /**
-     * Filter suggestions by recent time window
+     * Filter suggestions by recent time window (for activity state)
      * @private
      * @param {Array} suggestions - All suggestions
      * @param {number} now - Current timestamp
@@ -276,6 +292,47 @@ class ScoreService {
      */
     _filterRecentSuggestions(suggestions, now, windowMs) {
         return suggestions.filter(s => (now - s.timestamp) <= windowMs);
+    }
+
+    /**
+     * Filter suggestions by extended horizon (for risk evaluation stability)
+     * Uses either time-based (15 min) or count-based (last 20 resolved) horizon
+     * @private
+     * @param {Array} completedSuggestions - Completed suggestions
+     * @param {number} now - Current timestamp
+     * @returns {Array} Filtered horizon suggestions
+     */
+    _filterHorizonSuggestions(completedSuggestions, now) {
+        // Sort by timestamp (most recent first)
+        const sorted = [...completedSuggestions].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        
+        // Time-based horizon: last 15 minutes
+        const timeBased = sorted.filter(s => (now - (s.timestamp || now)) <= SCORING_HORIZON_MS);
+        
+        // Count-based horizon: last 20 resolved
+        const countBased = sorted.slice(0, SCORING_HORIZON_COUNT);
+        
+        // Use whichever gives more suggestions (more stable)
+        return timeBased.length >= countBased.length ? timeBased : countBased;
+    }
+
+    /**
+     * Apply EMA smoothing to score (prevents UI thrashing)
+     * @private
+     * @param {number} newScore - New raw score
+     * @returns {number} Smoothed score
+     */
+    _applySmoothing(newScore) {
+        if (!this.hasSmoothedScore) {
+            // Initialize with first score
+            this.smoothedScore = newScore;
+            this.hasSmoothedScore = true;
+            return newScore;
+        }
+        
+        // EMA: smoothed = alpha * new + (1 - alpha) * old
+        this.smoothedScore = EMA_ALPHA * newScore + (1 - EMA_ALPHA) * this.smoothedScore;
+        return Math.round(this.smoothedScore);
     }
 }
 

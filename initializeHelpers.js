@@ -24,11 +24,11 @@
 const vscode = require('vscode');
 
 // Import modules
-const awarenessMeter = require('./ui/awareness-meter');
-const modeSwitcher = require('./ui/mode-switcher');
+const awarenessMeter = require('./ui/awarenessMeterDisplay');
+const modeSwitcher = require('./ui/modeSwitcherDisplay');
 const commandHandlersFactory = require('./vsCommandsFactory');
 const modeService = require('./business_modules/mode/app/modeService');
-const UnreviewedFileDecor = require('./ui/file-coloring');
+const UnreviewedFileDecor = require('./ui/fileColoringDisplay');
 const safe = require('./safe');
 
 /**
@@ -153,7 +153,17 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
         const currentMode = state.getMode() || 'dev';
         await state.awarenessEngine.start(state.extensionContext, updateFileColorsInExplorer, currentMode);
         log('VibeSwitch: Started real-time awareness monitoring');
-        initFileDecorations();
+        
+        // Update awareness engine reference in file decoration provider (if it exists)
+        // This ensures decorations work even if they were created before the engine started
+        if (state.fileDecorationProvider && typeof state.fileDecorationProvider.setAwarenessEngine === 'function') {
+            state.fileDecorationProvider.setAwarenessEngine(state.awarenessEngine);
+            // Trigger refresh to update decorations now that engine is ready
+            state.fileDecorationProvider.refresh();
+        } else {
+            // If decorations weren't created yet, create them now
+            initFileDecorations();
+        }
         
         // Timer is a boundary - use safe() wrapper
         // Guard against double-start (switch dev→dev)

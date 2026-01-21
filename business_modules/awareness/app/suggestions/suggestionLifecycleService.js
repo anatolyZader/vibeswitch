@@ -108,9 +108,11 @@ class SuggestionLifecycleService {
         this.keepAllPolicy = keepAllPolicy || new KeepAllDetectionPolicy();
         
         // Review tracking state (merged from ReviewTrackingService)
-        this.activeReviews = new Map(); // URI -> { suggestionId, reviewStarted, reviewTime, dwellTimer }
+        this.activeReviews = new Map(); // URI -> { suggestionId, reviewStarted, reviewTime, dwellTimer, lastEngagementTime }
         this.DWELL_TIME_MS = 3000; // Dwell time threshold (increased from 1s to 3s to reduce false positives)
         this.MIN_ENGAGEMENT_SIGNALS = 1; // Minimum cursor/scroll events to count as review
+        this.MAX_REVIEW_TIME_MS = 60 * 1000; // Cap per-suggestion review time at 60s (prevents memory/state explosion)
+        this.ENGAGEMENT_TIMEOUT_MS = 5 * 1000; // Stop accumulating if no engagement for 5s (prevents idle time farming)
     }
 
     /**
@@ -180,27 +182,73 @@ class SuggestionLifecycleService {
         }
 
         const uri = document.uri.toString();
+        const Range = this.vscodeAdapter.Range;
+        const Change = require('../../domain/entities/change');
+
+        // Normalize batch input: convert raw VS Code events to Change entities if needed
+        const normalizedChanges = changes.map(c => {
+            // If already a Change entity, use it
+            if (c instanceof Change) {
+                return c;
+            }
+            
+            // Normalize raw VS Code TextDocumentContentChangeEvent
+            // Ensure range exists and is valid
+            if (!c.range) {
+                // Fallback: create empty range if missing
+                const Position = this.vscodeAdapter.Position;
+                const startPos = new Position(0, 0);
+                const endPos = new Position(0, 0);
+                c.range = new Range(startPos, endPos);
+            }
+            
+            // Ensure size exists (use text.length if missing)
+            if (typeof c.size === 'undefined' || c.size === null) {
+                c.size = c.text ? c.text.length : 0;
+            }
+            
+            // Ensure text exists (use empty string if missing)
+            if (!c.text) {
+                c.text = '';
+            }
+            
+            return c;
+        });
+
+        // Filter out invalid changes (no range or zero size)
+        const validChanges = normalizedChanges.filter(c => {
+            return c.range && 
+                   c.range.start && 
+                   c.range.end && 
+                   (c.size > 0 || c.text.length > 0);
+        });
+
+        if (validChanges.length === 0) {
+            if (this.loggerAdapter) {
+                this.loggerAdapter.debug(`[DEBUG] No valid changes in batch after normalization`);
+            }
+            return;
+        }
 
         // Calculate merged range (union of all change ranges)
-        const start = changes.reduce((min, c) =>
+        const start = validChanges.reduce((min, c) =>
             c.range.start.isBefore(min) ? c.range.start : min,
-            changes[0].range.start
+            validChanges[0].range.start
         );
-        const end = changes.reduce((max, c) =>
+        const end = validChanges.reduce((max, c) =>
             c.range.end.isAfter(max) ? c.range.end : max,
-            changes[0].range.end
+            validChanges[0].range.end
         );
-        const Range = this.vscodeAdapter.Range;
         const mergedRange = new Range(start, end);
 
         // Cap merged range span for debt sizing if huge but inserted tiny
         const lineSpan = end.line - start.line;
-        const totalInserted = changes.reduce((sum, c) => sum + (c.size || 0), 0);
+        const totalInserted = validChanges.reduce((sum, c) => sum + (c.size || 0), 0);
         const avgInsertedPerLine = lineSpan > 0 ? totalInserted / lineSpan : totalInserted;
 
         let effectiveRange = mergedRange;
         if (lineSpan > 100 && avgInsertedPerLine < 5) {
-            const firstChange = changes[0];
+            const firstChange = validChanges[0];
             const windowSize = Math.min(50, lineSpan);
             const Position = this.vscodeAdapter.Position;
             const cappedEnd = new Position(
@@ -216,21 +264,21 @@ class SuggestionLifecycleService {
 
         const fileName = UriPathUtilities.extractFileName(uri);
         if (this.loggerAdapter) {
-            this.loggerAdapter.debug(`[DEBUG] 📝 AI suggestion batch: ${changes.length} changes, ${mergedSize} chars in ${fileName}`);
+            this.loggerAdapter.debug(`[DEBUG] 📝 AI suggestion batch: ${validChanges.length} changes, ${mergedSize} chars in ${fileName}`);
         }
 
         // Extract classification metadata from first change (all changes in batch have same classification)
-        const classificationMeta = changes[0]?.classification ? {
-            classificationLabel: changes[0].classification.label,
-            classificationConfidence: changes[0].classification.confidence,
-            classificationReasons: changes[0].classification.reasons,
+        const classificationMeta = validChanges[0]?.classification ? {
+            classificationLabel: validChanges[0].classification.label,
+            classificationConfidence: validChanges[0].classification.confidence,
+            classificationReasons: validChanges[0].classification.reasons,
             // Extract provenance score (AI-likelihood) from classification
-            provenanceScore: changes[0].classification.provenanceScore || 
-                             (changes[0].classification.label === 'ai' ? changes[0].classification.confidence : 0.5)
+            provenanceScore: validChanges[0].classification.provenanceScore || 
+                             (validChanges[0].classification.label === 'ai' ? validChanges[0].classification.confidence : 0.5)
         } : {};
 
         // Calculate range count (scatter metric) from changes
-        const rangeCount = changes.length; // Each change is a distinct range
+        const rangeCount = validChanges.length; // Each change is a distinct range
 
         // Create suggestion entity with classification metadata
         // Fix: Use effectiveRange consistently (text was extracted from effectiveRange, so store that)
@@ -505,6 +553,7 @@ class SuggestionLifecycleService {
 
             if (currentSize < suggestion.size * 0.4) {
                 this.suggestionAggregate.updateSuggestionStatus(suggestion, 'rejected');
+                this.suggestionAggregate.updateBatchOutcome(suggestion);
                 if (this.loggerAdapter) {
                     this.loggerAdapter.debug(`[DEBUG] Suggestion rejected: ${(sizeRatio * 100).toFixed(1)}% of original`);
                 }
@@ -789,12 +838,39 @@ class SuggestionLifecycleService {
     // ============================================
     
     /**
+     * Check if editor is focused and document matches URI
+     * @private
+     * @param {string} uri - Document URI string
+     * @returns {boolean} True if editor is focused on this document
+     */
+    _isEditorFocused(uri) {
+        if (!this.vscodeAdapter || !uri) return false;
+        
+        try {
+            const activeEditor = this.vscodeAdapter.activeTextEditor;
+            if (!activeEditor || !activeEditor.document) return false;
+            
+            return activeEditor.document.uri.toString() === uri;
+        } catch (e) {
+            // If we can't check focus, assume not focused (safer)
+            return false;
+        }
+    }
+
+    /**
      * Handle cursor move event for review tracking
      * @param {string} uri - Document URI string
      * @param {Object} position - Cursor position { line, character }
      */
     onCursorMoved(uri, position) {
         if (!uri || !position) return;
+        
+        // Guard: Only track if editor is focused on this document
+        if (!this._isEditorFocused(uri)) {
+            // Editor not focused - close any active review
+            this._closeReview(uri);
+            return;
+        }
         
         // Get pending suggestions for this document
         const pendingSuggestions = this.getSuggestionsByStatus('pending')
@@ -806,18 +882,16 @@ class SuggestionLifecycleService {
         if (activeReview) {
             const activeSuggestion = pendingSuggestions.find(s => s.id === activeReview.suggestionId);
             if (activeSuggestion) {
-                const isInRange = this.rangeOperationServiceD.isPositionInRange(
-                    this.vscodeAdapter,
-                    position,
-                    activeSuggestion.range
-                );
+                // Domain service signature: isPositionInRange(position, range)
+                const isInRange = this.rangeOperationServiceD.isPositionInRange(position, activeSuggestion.range);
                 
                 if (!isInRange) {
                     // Cursor left the suggestion - close review
                     this._closeReview(uri);
                 } else {
-                    // Still in active suggestion - increment engagement signal
+                    // Still in active suggestion - increment engagement signal and update timestamp
                     activeReview.engagementSignals = (activeReview.engagementSignals || 0) + 1;
+                    activeReview.lastEngagementTime = Date.now();
                     return;
                 }
             } else {
@@ -828,11 +902,8 @@ class SuggestionLifecycleService {
         
         // Check if cursor entered a new suggestion
         for (const suggestion of pendingSuggestions) {
-            const isInRange = this.rangeOperationServiceD.isPositionInRange(
-                this.vscodeAdapter,
-                position,
-                suggestion.range
-            );
+            // Domain service signature: isPositionInRange(position, range)
+            const isInRange = this.rangeOperationServiceD.isPositionInRange(position, suggestion.range);
             
             if (isInRange) {
                 // Start tracking this suggestion
@@ -847,14 +918,16 @@ class SuggestionLifecycleService {
      * @param {string} uri - Document URI string
      */
     onScroll(uri) {
+        // Guard: Only track if editor is focused on this document
+        if (!this._isEditorFocused(uri)) {
+            return;
+        }
+        
         // Increment engagement signal for active review
         const activeReview = this.activeReviews.get(uri);
         if (activeReview) {
             activeReview.engagementSignals = (activeReview.engagementSignals || 0) + 1;
-        }
-        if (this.activeReviews.has(uri)) {
-            // Review is still active
-            return;
+            activeReview.lastEngagementTime = Date.now();
         }
     }
     
@@ -897,6 +970,21 @@ class SuggestionLifecycleService {
             
             const currentReview = this.activeReviews.get(uri);
             if (currentReview && currentReview.suggestionId === suggestionId) {
+                // Guard: Only accumulate if editor is still focused
+                if (!this._isEditorFocused(uri)) {
+                    return; // Editor lost focus, don't accumulate
+                }
+                
+                // Guard: Check engagement timeout (prevents idle time farming)
+                const now = Date.now();
+                const lastEngagement = currentReview.lastEngagementTime || currentReview.reviewStarted;
+                const timeSinceEngagement = now - lastEngagement;
+                
+                if (timeSinceEngagement > this.ENGAGEMENT_TIMEOUT_MS) {
+                    // No engagement for too long - stop accumulating
+                    return;
+                }
+                
                 // Check engagement signals (cursor/scroll events)
                 const engagementCount = currentReview.engagementSignals || 0;
                 
@@ -920,6 +1008,7 @@ class SuggestionLifecycleService {
             reviewStarted: now,
             reviewTime: 0,
             engagementSignals: 0, // Track cursor/scroll events
+            lastEngagementTime: now, // Track last engagement timestamp
             dwellTimer
         });
     }
@@ -939,10 +1028,21 @@ class SuggestionLifecycleService {
         
         // Update review time if requested
         if (updateReviewTime && activeReview.reviewStarted) {
-            const reviewDuration = Date.now() - activeReview.reviewStarted;
-            if (reviewDuration > 0) {
-                // Update review time (accumulates)
-                this.updateSuggestionReviewTime(activeReview.suggestionId, reviewDuration);
+            // Guard: Only accumulate if editor was focused during review
+            if (this._isEditorFocused(uri)) {
+                const reviewDuration = Date.now() - activeReview.reviewStarted;
+                
+                // Guard: Cap per-suggestion review time (prevents memory/state explosion)
+                const cappedDuration = Math.min(reviewDuration, this.MAX_REVIEW_TIME_MS);
+                
+                // Guard: Check engagement timeout (prevents idle time farming)
+                const lastEngagement = activeReview.lastEngagementTime || activeReview.reviewStarted;
+                const timeSinceEngagement = Date.now() - lastEngagement;
+                
+                if (timeSinceEngagement <= this.ENGAGEMENT_TIMEOUT_MS && cappedDuration > 0) {
+                    // Update review time (accumulates, capped)
+                    this.updateSuggestionReviewTime(activeReview.suggestionId, cappedDuration);
+                }
             }
         }
         

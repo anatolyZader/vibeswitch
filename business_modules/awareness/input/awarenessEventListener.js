@@ -133,8 +133,45 @@ class AwarenessEventListener {
             return;
         }
 
-        // Delegate to engine - expects canonical URI string
-        this.engine.handleFileOpened(document.uri.toString());
+        const uri = document.uri.toString();
+
+        // If this file was created/modified externally (no typing event), VS Code may not emit
+        // onDidCreateFiles/onDidChangeTextDocument for VibeSwitch to classify. To keep behavior
+        // consistent for @ai-marked files, treat an @ai-marked open as an AI-sourced "file write"
+        // *once per content hash* (deduped).
+        // 
+        // FIXED: Also check if file has unreviewed debt - if it does, we should still process
+        // to ensure file-level debt is tracked even if there are no pending suggestions yet.
+        try {
+            const hasPending = typeof this.engine?.hasPendingSuggestions === 'function'
+                ? this.engine.hasPendingSuggestions(uri)
+                : false;
+            
+            const hasUnreviewedDebt = typeof this.engine?.hasUnreviewedDebt === 'function'
+                ? this.engine.hasUnreviewedDebt(uri)
+                : false;
+
+            // Process if: no pending suggestions OR file has unreviewed debt (to ensure debt tracking)
+            if (!hasPending || hasUnreviewedDebt) {
+                const content = document.getText();
+                const hasAIMarker = this._hasAIMarkerInText(content);
+                if (hasAIMarker) {
+                    const now = Date.now();
+                    const contentHash = this.engine?.getContentHash ? this.engine.getContentHash(content) : String(content.length);
+                    const cacheKey = `${uri}:${contentHash}:open`;
+                    const cached = this.saveCache.get(cacheKey);
+                    if (!cached || (now - cached.timestamp) > 5 * 60_000) {
+                        this.saveCache.set(cacheKey, { timestamp: now });
+                        this.engine.handleFileSaved(document, { source: 'agent', hasAIMarker: true, triggeredBy: 'open' });
+                    }
+                }
+            }
+        } catch {
+            // Never let open-handling throw.
+        }
+
+        // Delegate to engine - expects canonical URI string (may start session tracking if debt/pending exists)
+        this.engine.handleFileOpened(uri);
     }
 
     /**

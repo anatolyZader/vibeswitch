@@ -7,8 +7,8 @@ const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
-const modeSwitcher = require('./ui/mode-switcher');
-const userStatsUI = require('./ui/stats-dashboard');
+const modeSwitcher = require('./ui/modeSwitcherDisplay');
+const userStatsUI = require('./ui/statsDashboardDisplay');
 
 /**
  * Create command handlers with dependency injection
