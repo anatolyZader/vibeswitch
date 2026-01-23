@@ -22,6 +22,10 @@ module.exports = {
         '/tests/',
         '/infrastructure/legacy/'
     ],
+    // Mock vscode module for tests
+    moduleNameMapper: {
+        '^vscode$': '<rootDir>/tests/__mocks__/vscode.js'
+    },
     // Don't run tests that require VS Code API by default
     testPathIgnorePatterns: [
         '/node_modules/',

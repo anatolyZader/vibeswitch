@@ -1,0 +1,25 @@
+{
+  "description": "Blind accept scenario - user accepts suggestions without review",
+  "events": [
+    {
+      "type": "suggestion_created",
+      "timestamp": 1000000,
+      "document": "file:///test1.js",
+      "size": 200,
+      "provenanceScore": 0.8
+    },
+    {
+      "type": "tick",
+      "advanceMs": 35000
+    },
+    {
+      "type": "suggestion_status_changed",
+      "suggestionId": "suggestion-1",
+      "status": "accepted"
+    }
+  ],
+  "expectedBehavior": {
+    "finalScore": "should be > 20 (blind acceptance risk)",
+    "blindAcceptance": "should be > 0"
+  }
+}

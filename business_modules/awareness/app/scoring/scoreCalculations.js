@@ -8,6 +8,61 @@
  * No state, no dependencies, just pure business logic functions.
  */
 
+// ============================================================================
+// SCORING CONSTANTS (Centralized - exported for testing and consistency)
+// ============================================================================
+
+// Time windows
+const DEFAULT_RECENT_WINDOW_MS = 10 * 1000; // 10 seconds
+const SCORING_HORIZON_MS = 15 * 60 * 1000; // 15 minutes (for extended horizon evaluation)
+const SCORING_HORIZON_COUNT = 20; // Last 20 resolved suggestions (for count-based horizon)
+
+// Smoothing
+const EMA_ALPHA = 0.3; // Exponential moving average smoothing factor (0-1, lower = more smoothing)
+
+// Review depth calibration
+const TARGET_SEC_PER_KCHAR = 12; // Target seconds per 1000 characters for full depth score (calibratable)
+const MINIMUM_REVIEW_TIME_MS = 5000; // Minimum review time (5 seconds) to count as "effectively reviewed"
+const MIN_REVIEWED_SIZE = 200; // Minimum characters reviewed to count depth (prevents gaming)
+
+// Lifecycle (shared with SuggestionLifecycleService)
+const PENDING_MAX_AGE_MS = 30 * 1000; // 30 seconds - after this, pending suggestions become "accepted without review" if content still present
+
+// Export constants for testing and external use
+const SCORING_CONSTANTS = {
+    DEFAULT_RECENT_WINDOW_MS,
+    SCORING_HORIZON_MS,
+    SCORING_HORIZON_COUNT,
+    EMA_ALPHA,
+    TARGET_SEC_PER_KCHAR,
+    MINIMUM_REVIEW_TIME_MS,
+    MIN_REVIEWED_SIZE,
+    PENDING_MAX_AGE_MS
+};
+
+/**
+ * Helper: Check if a suggestion is "effectively reviewed" (has review flag AND minimum review time)
+ * This eliminates the "reviewed=true but 0ms" drift class.
+ * 
+ * IMPORTANT: This function must be used consistently across:
+ * - Review score resolution bonus
+ * - Blind acceptance "careful accept" check
+ * - Adapted mitigation check
+ * 
+ * @param {Suggestion} s - Suggestion to check
+ * @returns {boolean} True if effectively reviewed
+ */
+function isEffectivelyReviewed(s) {
+    return !!s.reviewed && (s.reviewTime || 0) >= MINIMUM_REVIEW_TIME_MS;
+}
+
+// Export helper for testing and external use
+const EFFECTIVE_REVIEW_HELPER = { isEffectivelyReviewed };
+
+// ============================================================================
+// SCORE CALCULATION FUNCTIONS
+// ============================================================================
+
 /**
  * Calculate review score (0-40)
  * High score = user carefully reviewed code (GOOD)
@@ -36,7 +91,6 @@ function calculateReviewScore(suggestions) {
     
     // Calculate depth over reviewed suggestions only
     // FIXED: Add minimum size gate to prevent tiny-size loophole (review 5 chars for 5 seconds → decent depth)
-    const MIN_REVIEWED_SIZE = 200; // Minimum characters reviewed to count depth (prevents gaming)
     const reviewedSizeInKChars = Math.max(reviewedSize / 1000, 0.1); // Avoid division by zero, min 0.1k
     const reviewSecondsPerKChar = reviewedSize > 0 ? (reviewedTime / 1000) / reviewedSizeInKChars : 0;
     
@@ -83,7 +137,7 @@ function calculateReviewScore(suggestions) {
  * @returns {number} Blind acceptance risk score (0-30, higher = worse)
  */
 function calculateBlindAcceptanceScore(suggestions) {
-    if (!suggestions || suggestions.length === 0) return 0;
+    if (!Array.isArray(suggestions) || suggestions.length === 0) return 0;
 
     const resolved = suggestions.filter(s => 
         s.status === 'accepted' || s.status === 'rejected' || s.status === 'adapted'
@@ -352,7 +406,11 @@ module.exports = {
     calculateBlindAcceptanceScore,
     calculateAdaptationScore,
     calculateDebtScore, // Legacy: count-based approach (backward compatible)
-    calculateRiskBasedDebtScore // New: risk-based approach (research-aligned)
+    calculateRiskBasedDebtScore, // New: risk-based approach (research-aligned)
+    calculateAgeMultiplier, // Export for testing
+    // Export constants and helpers for testing
+    SCORING_CONSTANTS,
+    EFFECTIVE_REVIEW_HELPER
 };
 
 

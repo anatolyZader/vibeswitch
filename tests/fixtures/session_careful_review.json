@@ -1,0 +1,35 @@
+{
+  "description": "Careful review scenario - user reviews then accepts",
+  "events": [
+    {
+      "type": "suggestion_created",
+      "timestamp": 1000000,
+      "document": "file:///test1.js",
+      "size": 500,
+      "provenanceScore": 0.8
+    },
+    {
+      "type": "tick",
+      "advanceMs": 2000
+    },
+    {
+      "type": "suggestion_reviewed",
+      "suggestionId": "suggestion-1",
+      "reviewTime": 6000
+    },
+    {
+      "type": "tick",
+      "advanceMs": 1000
+    },
+    {
+      "type": "suggestion_status_changed",
+      "suggestionId": "suggestion-1",
+      "status": "accepted"
+    }
+  ],
+  "expectedBehavior": {
+    "finalScore": "should be < 20 (careful accept has low risk)",
+    "blindAcceptance": "should be < 10",
+    "review": "should be > 0"
+  }
+}

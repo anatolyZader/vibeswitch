@@ -148,7 +148,10 @@
         "vibeswitch.llm.provider": {
           "type": "string",
           "default": "local",
-          "enum": ["local", "openai"],
+          "enum": [
+            "local",
+            "openai"
+          ],
           "description": "LLM provider. 'local' uses deterministic heuristics and sends nothing externally."
         },
         "vibeswitch.llm.timeoutMs": {
@@ -230,6 +233,7 @@
   "devDependencies": {
     "@types/vscode": "^1.80.0",
     "@vscode/vsce": "^2.19.0",
+    "fast-check": "^4.5.3",
     "glob": "^13.0.0",
     "jest": "^30.2.0"
   },

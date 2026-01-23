@@ -12,14 +12,22 @@
  * - Scoring: Calculates awareness metrics from classified suggestions (in scoring/ directory)
  */
 
-const { calculateReviewScore, calculateBlindAcceptanceScore, calculateAdaptationScore } = require('./scoreCalculations');
+const { 
+    calculateReviewScore, 
+    calculateBlindAcceptanceScore, 
+    calculateAdaptationScore,
+    SCORING_CONSTANTS 
+} = require('./scoreCalculations');
 const { getRelativePath } = require('../utilities/vscodeDocUtilities');
 
-// Constants
-const DEFAULT_RECENT_WINDOW_MS = 10 * 1000; // 10 seconds
-const SCORING_HORIZON_MS = 15 * 60 * 1000; // 15 minutes (for extended horizon evaluation)
-const SCORING_HORIZON_COUNT = 20; // Last 20 resolved suggestions (for count-based horizon)
-const EMA_ALPHA = 0.3; // Exponential moving average smoothing factor (0-1, lower = more smoothing)
+// Import constants from centralized module
+const {
+    DEFAULT_RECENT_WINDOW_MS,
+    SCORING_HORIZON_MS,
+    SCORING_HORIZON_COUNT,
+    EMA_ALPHA,
+    PENDING_SOFT_CAP = 5 // Default if not in constants (backward compat)
+} = SCORING_CONSTANTS;
 
 // Risk score weights (sum to 1.0, directly map to 0-100 scale)
 // All components are now in "risk" terms (higher = worse)
@@ -30,8 +38,8 @@ const RISK_WEIGHTS = {
     debt: 0.20          // 20% weight (already risk)
 };
 
-// Pending risk calibration
-const PENDING_SOFT_CAP = 5; // Tunable: adjust to calibrate pending risk impact (replaces hard floor)
+// Pending risk calibration (can be moved to SCORING_CONSTANTS if needed)
+const PENDING_SOFT_CAP_LOCAL = 5; // Tunable: adjust to calibrate pending risk impact (replaces hard floor)
 
 class ScoreService {
     /**
@@ -121,7 +129,7 @@ class ScoreService {
             let targetScore = debtRisk01 * 100;
             if (hasPending && pendingSuggestions.length > 0) {
                 const pendingCount = pendingSuggestions.length;
-                const pendingRisk01 = Math.max(0, Math.min(1, pendingCount / PENDING_SOFT_CAP));
+                const pendingRisk01 = Math.max(0, Math.min(1, pendingCount / PENDING_SOFT_CAP_LOCAL));
                 targetScore = Math.max(targetScore, pendingRisk01 * 60); // Up to 60 points from pending risk
             }
             
@@ -151,7 +159,7 @@ class ScoreService {
             const pendingCount = pendingSuggestions.filter(s => s && s.status === 'pending').length;
             let targetScore = debtRisk01 * 100;
             if (pendingCount > 0) {
-                const pendingRisk01 = Math.max(0, Math.min(1, pendingCount / PENDING_SOFT_CAP));
+                const pendingRisk01 = Math.max(0, Math.min(1, pendingCount / PENDING_SOFT_CAP_LOCAL));
                 targetScore = Math.max(targetScore, pendingRisk01 * 60); // Up to 60 points from pending risk
             }
             

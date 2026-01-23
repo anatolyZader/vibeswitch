@@ -58,22 +58,28 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
     // Update file colors in Explorer - updates file name colors based on review debt/pending status
     // Called when debt/suggestions change to reflect current state
     // NOTE: This is for content-based updates (debt/suggestions), NOT mode changes
+    // DISABLED: File coloring module disabled to prevent noise and excessive load
     // Internal helper - errors propagate to caller (boundary)
     const updateFileColorsInExplorer = () => {
-        if (state.fileDecorationProvider && state.getMode() === 'dev') {
-            state.fileDecorationProvider.refresh();
-        }
+        // DISABLED: File coloring disabled
+        return;
+        // if (state.fileDecorationProvider && state.getMode() === 'dev') {
+        //     state.fileDecorationProvider.refresh();
+        // }
     };
     
     // Update file colors for mode change - shows/hides file colors based on mode
     // Called when mode changes to show/hide file decorations
+    // DISABLED: File coloring module disabled to prevent noise and excessive load
     // NOTE: This is separate from content-based updates to isolate mode switching concerns
     // Internal helper - errors propagate to caller (boundary)
     const updateFileColorsForMode = () => {
-        if (state.fileDecorationProvider) {
-            // Refresh to show/hide based on current mode (provider checks mode internally)
-            state.fileDecorationProvider.refresh();
-        }
+        // DISABLED: File coloring disabled
+        return;
+        // if (state.fileDecorationProvider) {
+        //     // Refresh to show/hide based on current mode (provider checks mode internally)
+        //     state.fileDecorationProvider.refresh();
+        // }
     };
     
     // Update awareness meter - called after score calculation
@@ -115,26 +121,29 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
     // ============================================================================
     // STEP 3: Initialize file decoration helper
     // ============================================================================
+    // DISABLED: File coloring module disabled to prevent noise and excessive load
     // Internal helper - errors propagate to caller (boundary: startAwarenessMonitor)
     const initFileDecorations = () => {
-        if (!UnreviewedFileDecor || state.fileDecorationProvider || !state.extensionContext) {
-            return;
-        }
-        
-        log('[DEBUG] Creating file decoration provider...');
-        state.fileDecorationProvider = new UnreviewedFileDecor(
-            state.awarenessEngine,
-            () => state.getMode(),
-            state.outputChannel,
-            disableLogging
-        );
-        
-        const provider = state.fileDecorationProvider.register(state.extensionContext);
-        if (provider) {
-            log('[DEBUG] ✅ File decoration provider registered successfully');
-        } else {
-            log('❌ ERROR: File decoration provider registration failed');
-        }
+        // DISABLED: File coloring disabled
+        return;
+        // if (!UnreviewedFileDecor || state.fileDecorationProvider || !state.extensionContext) {
+        //     return;
+        // }
+        // 
+        // log('[DEBUG] Creating file decoration provider...');
+        // state.fileDecorationProvider = new UnreviewedFileDecor(
+        //     state.awarenessEngine,
+        //     () => state.getMode(),
+        //     state.outputChannel,
+        //     disableLogging
+        // );
+        // 
+        // const provider = state.fileDecorationProvider.register(state.extensionContext);
+        // if (provider) {
+        //     log('[DEBUG] ✅ File decoration provider registered successfully');
+        // } else {
+        //     log('❌ ERROR: File decoration provider registration failed');
+        // }
     };
 
     // ============================================================================

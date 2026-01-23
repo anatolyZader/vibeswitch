@@ -573,11 +573,24 @@ class SuggestionLifecycleService {
                     sourceType = 'text change';
                 }
 
-                if (suggestion.reviewed) {
+                // FIXED: Make blind acceptance observable - allow acceptance without review after timeout
+                // This enables meaningful blind acceptance risk measurement
+                const now = Date.now();
+                const ageMs = now - (suggestion.timestamp || now);
+                const { SCORING_CONSTANTS } = require('../scoring/scoreCalculations');
+                const PENDING_MAX_AGE_MS = SCORING_CONSTANTS.PENDING_MAX_AGE_MS;
+                
+                // Check if suggestion should be accepted (either reviewed OR aged past threshold)
+                // Content must still be present (sizeRatio >= 0.4) to be considered "accepted"
+                const shouldAccept = suggestion.reviewed || (ageMs >= PENDING_MAX_AGE_MS && sizeRatio >= 0.4);
+                
+                if (shouldAccept) {
+                    // Determine acceptance type for logging
+                    const acceptanceType = suggestion.reviewed ? 'careful accept' : 'blind accept (timeout)';
                     this.suggestionAggregate.updateSuggestionStatus(suggestion, 'accepted');
                     this.suggestionAggregate.updateBatchOutcome(suggestion);
                     if (this.loggerAdapter) {
-                        this.loggerAdapter.debug(`[DEBUG] Suggestion accepted (${sourceType})`);
+                        this.loggerAdapter.debug(`[DEBUG] Suggestion accepted (${sourceType}, ${acceptanceType})`);
                     }
 
                     // Check for keep all pattern
@@ -599,12 +612,15 @@ class SuggestionLifecycleService {
                         safe('onKeepAll', () => this.onKeepAll?.(result));
                     }
                 } else {
-                    // No user interaction yet - keep pending, schedule another check
+                    // No user interaction yet and not aged past threshold - keep pending, schedule another check
                     // Use scheduler to coalesce (cancels any existing timer for this suggestion)
+                    // Schedule next check based on remaining time until timeout
+                    const remainingMs = Math.max(0, PENDING_MAX_AGE_MS - ageMs);
+                    const nextCheckMs = remainingMs > 0 ? Math.min(remainingMs, 10000) : 10000; // Check at timeout or every 10s
                     this.statusScheduler.schedule(
                         suggestion.id,
                         () => this.checkSuggestionStatus(suggestion.id),
-                        10000
+                        nextCheckMs
                     );
                     return; // Exit early, don't emit outcome yet
                 }
@@ -658,8 +674,12 @@ class SuggestionLifecycleService {
         // Add to aggregate
         this.suggestionAggregate.addSuggestion(suggestion);
 
-        // Add to debt
-        if (this.debtService) {
+        // FIXED: Only add fileDebt for file operations (file-write, file-creation, external creation)
+        // Normal text change suggestions are tracked as suggestion-level debt (pending status)
+        // This prevents double-counting: fileDebt + pending suggestions counting the same change
+        // FileDebt = only "unreviewed changes that are not represented as suggestions"
+        // SuggestionDebt = all pending suggestions (normal text changes)
+        if (this.debtService && (suggestion.isFileWrite || suggestion.isFileCreation || suggestion.isExternalCreation)) {
             const uri = suggestion.document;
             this.debtService.addToDebt(uri, contentLength, () => {
                 safe('updateScore', () => this.updateScore?.());
