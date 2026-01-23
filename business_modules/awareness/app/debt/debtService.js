@@ -87,7 +87,8 @@ class DebtService {
             if (this.loggerPort) {
                 this.loggerPort.error('AwarenessMonitor: Error loading debt', error);
             }
-            this.debts = new Map();
+            // FIXED: Use correct field name (fileDebts, not debts)
+            this.fileDebts = new Map();
         }
     }
 

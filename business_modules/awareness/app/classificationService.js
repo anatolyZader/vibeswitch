@@ -280,13 +280,14 @@ class ClassificationService {
         const label = classification.label;
         
         if (label === 'ai') {
-            const totalSize = changes.reduce((sum, c) => sum + c.size, 0);
-            const reasonsStr = classification.reasons.join('; ');
-            if (this.loggerPort) {
-                this.loggerPort.log(
+            // Silent: AI change detection is frequent during development and logging causes performance issues
+            // Classification metadata is already captured in Change entities and suggestion tracking
+            // Use debug level only if detailed logging is needed for troubleshooting
+            if (this.loggerPort && false) { // Disabled: too verbose, causes performance issues
+                const totalSize = changes.reduce((sum, c) => sum + c.size, 0);
+                const reasonsStr = classification.reasons.join('; ');
+                this.loggerPort.debug(
                     `AwarenessMonitor: ✅ AI change detected (confidence=${(classification.confidence * 100).toFixed(0)}%): size=${totalSize}, changes=${changes.length}, reasons=[${reasonsStr}], file=${document.fileName}`,
-                    false,
-                    false,
                     `aiDetected:${uri}`
                 );
             }
@@ -294,11 +295,10 @@ class ClassificationService {
                 this.suggestionLifecycleService.recordAISuggestionBatch(document, changes);
             }
         } else if (label === 'formatter') {
-            if (this.loggerPort) {
-                this.loggerPort.log(
+            // Silent: Formatter detection is frequent and logging causes performance issues
+            if (this.loggerPort && false) { // Disabled: too verbose, causes performance issues
+                this.loggerPort.debug(
                     `AwarenessMonitor: 🔧 Formatter detected: ${classification.reasons.join('; ')}`,
-                    false,
-                    false,
                     `formatterDetected:${uri}`
                 );
             }

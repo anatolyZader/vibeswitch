@@ -158,8 +158,7 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
         // This ensures decorations work even if they were created before the engine started
         if (state.fileDecorationProvider && typeof state.fileDecorationProvider.setAwarenessEngine === 'function') {
             state.fileDecorationProvider.setAwarenessEngine(state.awarenessEngine);
-            // Trigger refresh to update decorations now that engine is ready
-            state.fileDecorationProvider.refresh();
+            // setAwarenessEngine already calls refresh(), no need to call it again
         } else {
             // If decorations weren't created yet, create them now
             initFileDecorations();

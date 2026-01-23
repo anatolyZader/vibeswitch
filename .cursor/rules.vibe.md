@@ -239,6 +239,8 @@ This is a **pure Node.js (CommonJS) VS Code extension** - NO TypeScript.
 - **Create `/docs` directory if it doesn't exist** - Before creating any markdown file, ensure the `/docs` directory exists in the root directory
 - **This applies to ALL markdown files** - Documentation files, explanation files, change logs, architecture documents, review notes, and any other `.md` files must be placed in `/docs` only
 - **No markdown files in root or other directories** - Do not create markdown documentation files in the root directory or other project directories; they must go in `/docs`
+- **ALWAYS use timestamp prefix for markdown files in `/docs`** - When creating markdown files in `/docs`, ALWAYS prefix the filename with timestamp in format `YYYY-MM-DD_HH-MM-filename.md` (e.g., `2026-01-19_14-30-awareness-score-review.md`). Use the `scripts/create-md.js` script or manually generate the timestamp prefix. This ensures chronological sorting and prevents naming conflicts.
+- **UPDATE timestamp prefix when modifying markdown files in `/docs`** - When updating an existing markdown file in `/docs`, ALWAYS rename it with a new timestamp prefix to reflect the update time. This maintains chronological history and makes it clear when the document was last updated. Use the `scripts/create-md.js` script or manually generate the new timestamp prefix (format: `YYYY-MM-DD_HH-MM-filename.md`). The old file can be kept for historical reference or deleted if no longer needed.
 ### Testing & TDD Rules (STRICT)
 
 **ENFORCEMENT**: If you cannot show the failing test first, STOP and ask me for permission to proceed without TDD.

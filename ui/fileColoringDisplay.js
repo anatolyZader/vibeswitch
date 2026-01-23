@@ -20,24 +20,23 @@ class UnreviewedFileDecor {
         this.debugCallCount = 0;
         this.logger = getLogger();
         
+        // Debounce refresh to prevent loops (max 1 refresh per 200ms)
+        this.refreshTimer = null;
+        this.lastRefreshTime = 0;
+        this.REFRESH_DEBOUNCE_MS = 200;
+        
         // Keep startup quiet by default; enable `vibeswitch.debugLogging` for verbose output.
-        this.debug('[FileDecorations] Provider instance created');
+        // Silent initialization for performance
     }
 
     /**
      * Update the awareness engine reference (called when engine starts)
      * @param {Object} awarenessEngine - The awareness engine instance
      */
-    // @ai - Added automatic refresh with delay to ensure engine is ready
     setAwarenessEngine(awarenessEngine) {
         this.awarenessEngine = awarenessEngine;
-        this.log('[FileDecorations] Awareness engine reference updated', true);
-        // @ai - Trigger refresh after engine is set to ensure decorations update
-        // Use a small delay to ensure engine is fully initialized and has data
-        setTimeout(() => {
-            this.log('[FileDecorations] Triggering refresh after engine update', true);
-            this.refresh();
-        }, 500);
+        // Silent update - trigger refresh after engine is set (debounced to prevent loops)
+        this.refresh();
     }
 
     /**
@@ -150,37 +149,21 @@ class UnreviewedFileDecor {
             // Only decorate in DEV mode
             const currentMode = this.getCurrentMode ? this.getCurrentMode() : null;
             if (currentMode !== 'dev') {
-                this.logger?.debug(`Skipping decoration for ${fileName} (mode=${currentMode}, not dev)`, false, `fileDecorations:skip:${fileName}`);
                 return undefined; // VS Code expects undefined for no decoration
             }
 
             if (!this.awarenessEngine) {
-                this.logger?.debug(`No awareness engine available for ${fileName}`, false, `fileDecorations:noEngine:${fileName}`);
                 return undefined; // VS Code expects undefined for no decoration
             }
 
             // Get current score data
             const scoreData = this.awarenessEngine.getScore();
             if (!scoreData) {
-                this.logger?.debug(`No score data available for ${fileName}`, false, `fileDecorations:noScore:${fileName}`);
                 return undefined; // VS Code expects undefined for no decoration
             }
 
             const filePath = uri.fsPath;
             const normalizedPath = this.normalizePath(filePath);
-            
-            // Check if we have debt files (for conditional logging)
-            const hasDebtFiles = scoreData.debt && scoreData.debt.files && scoreData.debt.files.length > 0;
-            
-            // @ai - Enhanced debug logging when we have debt files
-            if (hasDebtFiles && this.logger) {
-                const debugKey = `fileDecorations:debug:${fileName}`;
-                this.logger.debug(
-                    `[FileDecorations] Checking ${fileName} (normalized: "${normalizedPath}") against ${scoreData.debt.files.length} debt files`,
-                    false,
-                    debugKey
-                );
-            }
 
             // Check if file is in review debt
             if (scoreData.debt && scoreData.debt.files) {
@@ -188,18 +171,7 @@ class UnreviewedFileDecor {
                     const normalizedDebtPath = this.normalizePath(debtFile.fullPath);
                     const matches = normalizedPath === normalizedDebtPath;
                     
-                    // Enhanced debug logging for path matching
-                    if (this.logger) {
-                        const checkKey = `fileDecorations:checkDebt:${fileName}`;
-                        this.logger.debug(
-                            `[FileDecorations] Debt check: "${normalizedPath}" vs "${normalizedDebtPath}" (raw: "${debtFile.fullPath}") -> ${matches}`,
-                            false,
-                            checkKey
-                        );
-                    }
-                    
                     if (matches) {
-                        this.log(`[FileDecorations] ✅ MATCH! Returning debt decoration for ${fileName}`, true);
                         return {
                             badge: '⚠',
                             tooltip: `Unreviewed AI changes: ${debtFile.modifications} modifications, ${debtFile.ageMinutes}m ago`,
@@ -215,20 +187,8 @@ class UnreviewedFileDecor {
                     const normalizedPendingPath = this.normalizePath(pendingFile.fullPath);
                     const matches = normalizedPath === normalizedPendingPath;
                     
-                    // Enhanced debug logging for path matching
-                    if (this.logger) {
-                        const checkKey = `fileDecorations:checkPending:${fileName}`;
-                        this.logger.debug(
-                            `[FileDecorations] Pending check: "${normalizedPath}" vs "${normalizedPendingPath}" (raw: "${pendingFile.fullPath}") -> ${matches}`,
-                            false,
-                            checkKey
-                        );
-                    }
-                    
                     if (matches) {
                         const isNewFile = pendingFile.type === 'file creation' || pendingFile.type === 'external file';
-                        const colorType = isNewFile ? 'BLUE/PURPLE' : 'ORANGE/YELLOW';
-                        this.log(`[FileDecorations] ✅ MATCH! Returning pending decoration for ${fileName} (${colorType})`, true);
                         
                         // Different colors for different types
                         return {
@@ -243,10 +203,7 @@ class UnreviewedFileDecor {
             }
 
             // Rate-limited debug logging when we have debt files
-            if (hasDebtFiles) {
-                const noDecoKey = `fileDecorations:noDecoration:${fileName}`;
-                this.logger?.debug(`No decoration for ${fileName} (checked ${scoreData.debt.files.length} debt files, ${scoreData.suggestions?.pendingFiles?.length || 0} pending files)`, false, noDecoKey);
-            }
+            // Silent return - no decoration needed
             return undefined; // VS Code expects undefined for no decoration
 
         } catch (error) {
@@ -266,38 +223,51 @@ class UnreviewedFileDecor {
     /**
      * Triggers a refresh of all file decorations
      * Can optionally refresh a specific URI
+     * Debounced to prevent refresh loops
      */
-    // @ai - Improved refresh mechanism with better logging
     refresh(uri = null) {
-        this.log(`[FileDecorations] Refreshing file decorations${uri ? ` for ${uri.fsPath}` : ' (all files)'}...`, true);
+        const now = Date.now();
+        
+        // Debounce: skip if called too recently
+        if (now - this.lastRefreshTime < this.REFRESH_DEBOUNCE_MS) {
+            // Clear existing timer and set a new one (debounce pattern)
+            if (this.refreshTimer) {
+                clearTimeout(this.refreshTimer);
+            }
+            this.refreshTimer = setTimeout(() => {
+                this._doRefresh(uri);
+            }, this.REFRESH_DEBOUNCE_MS);
+            return;
+        }
+        
+        // Clear any pending timer
+        if (this.refreshTimer) {
+            clearTimeout(this.refreshTimer);
+            this.refreshTimer = null;
+        }
+        
+        this._doRefresh(uri);
+    }
+    
+    /**
+     * Internal method to actually perform the refresh
+     * @private
+     */
+    _doRefresh(uri = null) {
+        this.lastRefreshTime = Date.now();
+        // Silent refresh - this is called frequently, don't log
+        
         try {
             // Fire the event to notify VS Code to refresh decorations
             // If URI is provided, refresh only that file; otherwise refresh all
             if (uri) {
                 this._onDidChangeFileDecorations.fire(uri);
-                this.log(`[FileDecorations] Refresh event fired for specific file: ${uri.fsPath}`, true);
             } else {
-                // To refresh all files, fire with undefined (VS Code API supports this)
-                // This tells VS Code to re-query decorations for all visible files
+                // Fire with undefined to refresh all files (VS Code API)
                 this._onDidChangeFileDecorations.fire(undefined);
-                this.log('[FileDecorations] Refresh event fired for all files (undefined)', true);
-                
-                // Also try firing with workspace folder URIs as a backup
-                try {
-                    const workspaceFolders = vscode.workspace.workspaceFolders;
-                    if (workspaceFolders && workspaceFolders.length > 0) {
-                        // Fire for each workspace folder root to trigger refresh
-                        const uris = workspaceFolders.map(folder => folder.uri);
-                        this._onDidChangeFileDecorations.fire(uris);
-                        this.log(`[FileDecorations] Also fired refresh for ${uris.length} workspace folders`, true);
-                    }
-                } catch (workspaceError) {
-                    // Ignore workspace errors, we already fired with undefined
-                }
             }
         } catch (error) {
             this.log(`[FileDecorations] ❌ Error refreshing: ${error.message}`, true);
-            this.log(`[FileDecorations] Stack: ${error.stack}`, true);
         }
     }
 
@@ -305,7 +275,14 @@ class UnreviewedFileDecor {
      * Disposes of resources
      */
     dispose() {
-        this.debug('[FileDecorations] Disposing file decoration provider', 'fileDecorations:dispose');
+        // Silent disposal for performance
+        
+        // Clear any pending refresh timer
+        if (this.refreshTimer) {
+            clearTimeout(this.refreshTimer);
+            this.refreshTimer = null;
+        }
+        
         this._onDidChangeFileDecorations.dispose();
     }
 }

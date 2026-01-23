@@ -21,6 +21,18 @@ const SCORING_HORIZON_MS = 15 * 60 * 1000; // 15 minutes (for extended horizon e
 const SCORING_HORIZON_COUNT = 20; // Last 20 resolved suggestions (for count-based horizon)
 const EMA_ALPHA = 0.3; // Exponential moving average smoothing factor (0-1, lower = more smoothing)
 
+// Risk score weights (sum to 1.0, directly map to 0-100 scale)
+// All components are now in "risk" terms (higher = worse)
+const RISK_WEIGHTS = {
+    review: 0.30,        // 30% weight (converted from "good" score)
+    blindAcceptance: 0.30, // 30% weight (already risk)
+    adaptation: 0.20,    // 20% weight (converted from "good" score)
+    debt: 0.20          // 20% weight (already risk)
+};
+
+// Pending risk calibration
+const PENDING_SOFT_CAP = 5; // Tunable: adjust to calibrate pending risk impact (replaces hard floor)
+
 class ScoreService {
     /**
      * @param {ILoggerPort} loggerAdapter - Logger adapter (optional)
@@ -95,40 +107,32 @@ class ScoreService {
         }
 
         // Handle no recent activity
+        // FIXED: Use smooth debt-based target instead of hard discontinuity
+        // Note: If user has only pending suggestions and no resolved ones, blind acceptance returns 0.
+        // This is correct - pending risk is handled by debtRisk (which counts pending suggestions).
         if (recentSuggestions.length === 0) {
-            if (hasPending) {
-                // Core intent: if there are still unreviewed/pending AI suggestions,
-                // the meter should not drop just because the activity is older than the "recent" window.
-                // Keep a cautious baseline and let it grow with debt.
-                const currentScore = Math.min(50 + debtScore, 100);
-                const scores = { review: 0, blindAcceptance: 0, adaptation: 0, debt: debtScore };
-                this.currentScore = currentScore;
-                this.scores = scores;
-                return { currentScore, scores };
-            } else if (debtScore > 0) {
-                // Debt without pending suggestions (e.g., file-level debt) should still be reflected
-                // in the same 0-100 scale as the rest of the score.
-                const currentScore = normalizeDebtToTotalScore(debtScore);
-                const scores = { review: 0, blindAcceptance: 0, adaptation: 0, debt: debtScore };
-                this.currentScore = currentScore;
-                this.scores = scores;
-                return { currentScore, scores };
-            } else if (hasOlderSuggestions && hasDebt) {
-                // Preserve minimum score based on debt
-                const currentScore = Math.max(debtScore, 20);
-                const scores = { review: 0, blindAcceptance: 0, adaptation: 0, debt: debtScore };
-                this.currentScore = currentScore;
-                this.scores = scores;
-                return { currentScore, scores };
-            } else {
-                // No activity
-                this.currentScore = 0;
-                this.scores = { review: 0, blindAcceptance: 0, adaptation: 0, debt: 0 };
-                return {
-                    currentScore: 0,
-                    scores: { review: 0, blindAcceptance: 0, adaptation: 0, debt: 0 }
-                };
+            // Compute target score using debt-only risk (same model, empty completed set)
+            // FIXED: Naming consistency - use debtRisk (0-30) consistently
+            const debtRisk = debtScore; // debtScore is already 0-30 range
+            const debtRisk01 = Math.max(0, Math.min(1, debtRisk / 30));
+            
+            // If there are pending suggestions, ensure minimum floor (tunable pending risk)
+            // FIXED: Replace hard floor with tunable pending risk (removes magic behavior, gives calibration knobs)
+            let targetScore = debtRisk01 * 100;
+            if (hasPending && pendingSuggestions.length > 0) {
+                const pendingCount = pendingSuggestions.length;
+                const pendingRisk01 = Math.max(0, Math.min(1, pendingCount / PENDING_SOFT_CAP));
+                targetScore = Math.max(targetScore, pendingRisk01 * 60); // Up to 60 points from pending risk
             }
+            
+            // Apply EMA smoothing to glide toward debt-based target (smooth transition)
+            const targetClamped = Math.max(0, Math.min(100, targetScore));
+            const currentScore = this._applySmoothing(targetClamped);
+            
+            const scores = { review: 0, blindAcceptance: 0, adaptation: 0, debt: debtRisk };
+            this.currentScore = currentScore;
+            this.scores = scores;
+            return { currentScore, scores };
         }
 
         // Filter to completed suggestions for detailed scoring
@@ -137,10 +141,23 @@ class ScoreService {
                          recentSuggestions.filter(s => s.status !== 'pending');
 
         // Handle pending-only activity
+        // FIXED: Use same targetScore model as "no recent activity" regime for consistency
         if (completed.length === 0 && recentSuggestions.length > 0) {
-            const rawScore = 50; // Neutral - pending activity detected
+            // Compute target score using debt-only risk (same model, empty completed set)
+            const debtRisk = debtScore; // debtScore is already 0-30 range
+            const debtRisk01 = Math.max(0, Math.min(1, debtRisk / 30));
+            
+            // Apply tunable pending risk (same as regime B)
+            const pendingCount = pendingSuggestions.filter(s => s && s.status === 'pending').length;
+            let targetScore = debtRisk01 * 100;
+            if (pendingCount > 0) {
+                const pendingRisk01 = Math.max(0, Math.min(1, pendingCount / PENDING_SOFT_CAP));
+                targetScore = Math.max(targetScore, pendingRisk01 * 60); // Up to 60 points from pending risk
+            }
+            
+            const rawScore = Math.max(0, Math.min(100, targetScore));
             const currentScore = this._applySmoothing(rawScore);
-            const scores = { review: 0, blindAcceptance: 0, adaptation: 0, debt: debtScore };
+            const scores = { review: 0, blindAcceptance: 0, adaptation: 0, debt: debtRisk };
             this.currentScore = currentScore;
             this.scores = scores;
             return { currentScore, scores };
@@ -159,33 +176,53 @@ class ScoreService {
         }
 
         // Calculate component scores using pure functions (based on extended horizon)
+        // Note: Review and Adaptation return "good" scores (higher = better)
+        // Blind Acceptance and Debt already return "risk" scores (higher = worse)
         const reviewScore = calculateReviewScore(completed);
-        const blindAcceptanceScore = calculateBlindAcceptanceScore(completed);
+        const blindAcceptanceRisk = calculateBlindAcceptanceScore(completed);
         const adaptationScore = calculateAdaptationScore(completed);
 
-        // Total score (max 130, normalized to 100)
-        const rawScore = reviewScore + blindAcceptanceScore + adaptationScore + debtScore;
-        const rawScoreNormalized = Math.round(Math.min(rawScore, 100));
+        // Convert "good" scores to risk (invert) and normalize to 0-1 range
+        // FIXED: Scale by component's native max for consistent scaling (not clamp to 30)
+        // This ensures worst-case review (score=0) contributes full risk weight
+        const reviewRisk01 = Math.max(0, Math.min(1, (40 - reviewScore) / 40));
+        const adaptationRisk01 = Math.max(0, Math.min(1, (30 - adaptationScore) / 30));
+        const blindAcceptanceRisk01 = Math.max(0, Math.min(1, blindAcceptanceRisk / 30));
+        const debtRisk01 = Math.max(0, Math.min(1, debtScore / 30));
+
+        // Weighted combination (weights sum to 1.0, directly map to 0-100)
+        // All components normalized to 0-1 range for consistent scaling
+        const riskScore = 
+            RISK_WEIGHTS.review * reviewRisk01 +
+            RISK_WEIGHTS.blindAcceptance * blindAcceptanceRisk01 +
+            RISK_WEIGHTS.adaptation * adaptationRisk01 +
+            RISK_WEIGHTS.debt * debtRisk01;
+        
+        const rawScore = Math.round(riskScore * 100); // Scale to 0-100
+        const rawScoreNormalized = Math.max(0, Math.min(100, rawScore)); // Clamp to 0-100
         
         // Apply EMA smoothing to prevent UI thrashing
         const currentScore = this._applySmoothing(rawScoreNormalized);
 
         // Update internal state (single source of truth)
+        // Store both "good" scores (for display) and risk scores (for calculation)
         this.currentScore = currentScore;
         this.scores = {
-            review: reviewScore,
-            blindAcceptance: blindAcceptanceScore,
-            adaptation: adaptationScore,
-            debt: debtScore
+            // Store original "good" scores for UI display (higher = better for review/adaptation)
+            review: reviewScore,              // 0-40, higher = better
+            adaptation: adaptationScore,      // 0-30, higher = better
+            // Store risk scores (higher = worse)
+            blindAcceptance: blindAcceptanceRisk, // 0-30, higher = worse
+            debt: debtScore                   // 0-30, higher = worse
         };
 
         return {
-            currentScore,
+            currentScore, // Risk score: 0-100, higher = worse
             scores: {
-                review: reviewScore,
-                blindAcceptance: blindAcceptanceScore,
-                adaptation: adaptationScore,
-                debt: debtScore
+                review: reviewScore,              // 0-40, higher = better
+                adaptation: adaptationScore,      // 0-30, higher = better
+                blindAcceptance: blindAcceptanceRisk, // 0-30, higher = worse
+                debt: debtScore                   // 0-30, higher = worse
             }
         };
     }
@@ -291,7 +328,15 @@ class ScoreService {
      * @returns {Array} Filtered recent suggestions
      */
     _filterRecentSuggestions(suggestions, now, windowMs) {
-        return suggestions.filter(s => (now - s.timestamp) <= windowMs);
+        // FIXED: Add null checks to prevent runtime errors
+        if (!Array.isArray(suggestions)) {
+            return [];
+        }
+        return suggestions.filter(s => 
+            s && 
+            typeof s.timestamp === 'number' && 
+            (now - s.timestamp) <= windowMs
+        );
     }
 
     /**

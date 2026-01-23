@@ -42,23 +42,23 @@ function normalizeTo100(value, max) {
 }
 
 /**
- * Helper function: Returns an emoji indicator based on awareness score
+ * Helper function: Returns an emoji indicator based on risk score
  * 
- * In DEV mode, score interpretation is INVERTED:
- * - Low score (0-39) = 🟢 GOOD (careful, skeptical, thorough review)
- * - Medium score (40-59) = 🟡 CAUTION (moderate engagement)
- * - High score (60-79) = 🟠 WARNING (too trusting, not selective enough)
- * - Very high score (80-100) = 🔴 DANGER (blind acceptance, no review)
+ * Score is now unified as RiskScore (0-100, higher = worse):
+ * - Low risk (0-39) = 🟢 GOOD (careful, skeptical, thorough review)
+ * - Medium risk (40-59) = 🟡 CAUTION (moderate engagement)
+ * - High risk (60-79) = 🟠 WARNING (too trusting, not selective enough)
+ * - Very high risk (80-100) = 🔴 DANGER (blind acceptance, no review)
  * 
- * @param {number} score - Awareness score (0-100)
+ * @param {number} score - Risk score (0-100, higher = worse)
  * @returns {string} Emoji indicator (🟢/🟡/🟠/🔴)
  */
 function getScoreEmoji(score) {
-    // INVERTED LOGIC: In DEV mode, LOW score = GOOD (careful), HIGH score = BAD (blind)
-    if (score >= 80) return '🔴'; // Danger! Blind acceptance
-    if (score >= 60) return '🟠'; // Warning: Too trusting
-    if (score >= 40) return '🟡'; // Caution: Moderate
-    return '🟢'; // Good: Careful and skeptical
+    // Risk score: LOW = GOOD (careful), HIGH = BAD (blind acceptance)
+    if (score >= 80) return '🔴'; // Danger! High risk
+    if (score >= 60) return '🟠'; // Warning: Elevated risk
+    if (score >= 40) return '🟡'; // Caution: Moderate risk
+    return '🟢'; // Good: Low risk
 }
 
 /**
@@ -183,13 +183,38 @@ Click for detailed statistics`;
             
             awarenessBarItem.text = `${emoji} ${meter}`;
             
-            // Build tooltip with debt information
+            // Build tooltip with component breakdown
+            // Note: score is RiskScore (0-100, higher = worse)
+            // Review and Adaptation are "good" scores (higher = better)
+            // Blind Acceptance and Debt are "risk" scores (higher = worse)
             const scoreDisplay = `${score}/100`;
-            let tooltip = `DEV Mode Awareness: ${scoreDisplay}
-Review: ${scoreData.components.review}/40
-Blind Acceptance Risk: ${scoreData.components.blindAcceptance}/30
-Adaptation: ${scoreData.components.adaptation}/30
-Debt: ${scoreData.components.debt}/30
+            
+            // Calculate risk components for display (show both "good" and "risk" for clarity)
+            const reviewRisk = 40 - scoreData.components.review;
+            const reviewRisk01 = Math.max(0, Math.min(1, reviewRisk / 40));
+            const adaptationRisk = 30 - scoreData.components.adaptation;
+            const adaptationRisk01 = Math.max(0, Math.min(1, adaptationRisk / 30));
+            const blindAcceptanceRisk01 = Math.max(0, Math.min(1, scoreData.components.blindAcceptance / 30));
+            const debtRisk01 = Math.max(0, Math.min(1, scoreData.components.debt / 30));
+            
+            // Calculate weighted contributions to final score (makes tuning easier)
+            const RISK_WEIGHTS = { review: 0.30, blindAcceptance: 0.30, adaptation: 0.20, debt: 0.20 };
+            const reviewContribution = Math.round(RISK_WEIGHTS.review * reviewRisk01 * 100);
+            const blindAcceptanceContribution = Math.round(RISK_WEIGHTS.blindAcceptance * blindAcceptanceRisk01 * 100);
+            const adaptationContribution = Math.round(RISK_WEIGHTS.adaptation * adaptationRisk01 * 100);
+            const debtContribution = Math.round(RISK_WEIGHTS.debt * debtRisk01 * 100);
+            
+            let tooltip = `DEV Mode Risk Score: ${scoreDisplay} (higher = worse)
+
+Component Breakdown (with contributions):
+Review Quality: ${scoreData.components.review}/40 (higher = better)
+  → Review Risk: ${reviewRisk}/40 → contributes ${reviewContribution} points (${RISK_WEIGHTS.review * 100}% weight)
+Blind Acceptance Risk: ${scoreData.components.blindAcceptance}/30 (higher = worse)
+  → contributes ${blindAcceptanceContribution} points (${RISK_WEIGHTS.blindAcceptance * 100}% weight)
+Adaptation Quality: ${scoreData.components.adaptation}/30 (higher = better)
+  → Adaptation Risk: ${adaptationRisk}/30 → contributes ${adaptationContribution} points (${RISK_WEIGHTS.adaptation * 100}% weight)
+Debt Risk: ${scoreData.components.debt}/30 (higher = worse)
+  → contributes ${debtContribution} points (${RISK_WEIGHTS.debt * 100}% weight)
 
 Suggestions tracked: ${scoreData.suggestions.total}
 ✅ Accepted: ${scoreData.suggestions.accepted}
