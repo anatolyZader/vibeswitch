@@ -181,9 +181,20 @@ async function activate(context) {
             }
         });
         
-        // Initialize status bar items using direct VS Code API
-        state.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-        state.awarenessBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
+        // Initialize status bar items using direct VS Code API with explicit IDs
+        // Use Right alignment with high priority to appear prominently
+        state.statusBarItem = vscode.window.createStatusBarItem(
+            'vibeswitch.modeIndicator',
+            vscode.StatusBarAlignment.Right,
+            1000  // High priority to appear early (leftmost on right side)
+        );
+        state.awarenessBarItem = vscode.window.createStatusBarItem(
+            'vibeswitch.awarenessMeter',
+            vscode.StatusBarAlignment.Right,
+            999
+        );
+        state.statusBarItem.name = 'VibeSwitch Mode';
+        state.awarenessBarItem.name = 'VibeSwitch Awareness';
         state.statusBarItem.command = 'vibeswitch.switchMode';
         // Awareness meter is not clickable (removed command to prevent untitled editor tab popup)
         state.awarenessBarItem.command = undefined;
@@ -193,9 +204,11 @@ async function activate(context) {
         context.subscriptions.push(state.awarenessBarItem);
         
         // Set initial text to ensure status bar is visible (will be updated by switchModeInStatusBar)
-        state.statusBarItem.text = '$(gear) VibeSwitch';
+        state.statusBarItem.text = '$(zap) INIT';
         state.statusBarItem.tooltip = 'VibeSwitch: Initializing...';
         state.statusBarItem.show();
+        
+        log('VibeSwitch: Status bar item created and shown');
         
         // Initialize file decorations early (needed for file coloring regardless of mode)
         // This ensures file decorations are available even if monitor doesn't start
@@ -220,28 +233,25 @@ async function activate(context) {
             log(`ERROR detecting initial mode: ${error.message}`, true, false);
         }
         
-        // Update status bar and file colors (only if valid mode detected)
+        // Update status bar and file colors
         if (initialMode) {
             switchModeInStatusBar(initialMode);
             updateFileColorsForMode();
-            // Start awareness monitor if in DEV mode
-            if (initialMode === 'dev' && startAwarenessMonitor) {
-                await startAwarenessMonitor();
-            }
-            // Ensure awareness meter is updated even if monitor doesn't start
-            if (updateAwarenessMeter) {
-                updateAwarenessMeter();
-            }
         } else {
             // Set default mode if detection failed
             log('VibeSwitch: Using default mode (vibe)');
             switchModeInStatusBar('vibe');
-            updateFileColorsForMode(); // Also update file colors for default mode
-            // Don't start monitor in vibe mode
-            // Ensure awareness meter is updated (will hide in vibe mode)
-            if (updateAwarenessMeter) {
-                updateAwarenessMeter();
-            }
+            updateFileColorsForMode();
+        }
+        
+        // Start awareness monitor once - it runs continuously regardless of mode
+        // The monitor tracks AI suggestions and calculates awareness score in all modes
+        if (startAwarenessMonitor) {
+            await startAwarenessMonitor();
+        }
+        // Ensure awareness meter is updated
+        if (updateAwarenessMeter) {
+            updateAwarenessMeter();
         }
         
         log('VibeSwitch: File watcher disabled - mode only changes on explicit user action');

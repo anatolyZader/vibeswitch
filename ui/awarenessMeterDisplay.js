@@ -78,7 +78,7 @@ function updateAwarenessMeter(awarenessBarItem, awarenessEngine, currentMode, ou
     }
     
     if (!awarenessEngine) {
-        if (currentMode === 'dev') {
+        if (currentMode === 'dev' || currentMode === 'vibe') {
             awarenessBarItem.text = '$(graph) --';
             awarenessBarItem.tooltip = 'Awareness meter: Initializing...';
             awarenessBarItem.show();
@@ -94,13 +94,8 @@ function updateAwarenessMeter(awarenessBarItem, awarenessEngine, currentMode, ou
         return;
     }
 
-    // VIBE mode: No awareness meter needed (full autonomy mode)
-    // Only show awareness meter in DEV mode (where careful review matters)
-    if (currentMode === 'vibe') {
-        // Hide awareness meter in VIBE mode
-        awarenessBarItem.hide();
-        return;
-    } else if (currentMode === 'dev') {
+    // Show awareness meter in both DEV and VIBE modes
+    if (currentMode === 'vibe' || currentMode === 'dev') {
         // DEV mode: Show real-time awareness score
         let scoreData;
         try {
@@ -135,7 +130,7 @@ function updateAwarenessMeter(awarenessBarItem, awarenessEngine, currentMode, ou
         if (!hasAnySuggestions && !hasReviewDebt) {
             // Truly no activity - no suggestions and no debt
             awarenessBarItem.text = `⚪ No Activity`;
-            awarenessBarItem.tooltip = `DEV Mode Awareness: Waiting for AI activity...
+            awarenessBarItem.tooltip = `${currentMode.toUpperCase()} Mode Awareness: Waiting for AI activity...
 
 No AI suggestions detected yet.
 The meter will update once AI generates code.
@@ -158,7 +153,7 @@ Click for detailed statistics`;
             const emoji = getScoreEmoji(displayScore);
             
             awarenessBarItem.text = `${emoji} ${meter} (${scoreData.debt.unreviewedFiles})`;
-            awarenessBarItem.tooltip = `DEV Mode Awareness: Review Debt Detected
+            awarenessBarItem.tooltip = `${currentMode.toUpperCase()} Mode Awareness: Review Debt Detected
 
 📁 ${scoreData.debt.unreviewedFiles} unreviewed file(s) with AI-generated changes
 
@@ -170,7 +165,13 @@ ${scoreData.debt.files.slice(0, 5).map(f => `• ${f.path} (${f.ageMinutes}m ago
 ${scoreData.debt.files.length > 5 ? `\n... and ${scoreData.debt.files.length - 5} more` : ''}
 
 Click for detailed statistics`;
-            awarenessBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+            // Only show error background when score reaches critical red level (80+)
+            // Red bulb + background = critically low awareness
+            if (displayScore >= 80) {
+                awarenessBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
+            } else {
+                awarenessBarItem.backgroundColor = undefined;
+            }
         } else {
             // Show meter (real-time awareness score)
             let displayScore = score;
@@ -204,7 +205,7 @@ Click for detailed statistics`;
             const adaptationContribution = Math.round(RISK_WEIGHTS.adaptation * adaptationRisk01 * 100);
             const debtContribution = Math.round(RISK_WEIGHTS.debt * debtRisk01 * 100);
             
-            let tooltip = `DEV Mode Risk Score: ${scoreDisplay} (higher = worse)
+            let tooltip = `${currentMode.toUpperCase()} Mode Risk Score: ${scoreDisplay} (higher = worse)
 
 Component Breakdown (with contributions):
 Review Quality: ${scoreData.components.review}/40 (higher = better)
@@ -249,8 +250,13 @@ Monitoring: ${scoreData.debug.monitoringActive ? '✅ Active' : '❌ Inactive'}`
             
             awarenessBarItem.tooltip = tooltip;
             
-            // No background color - transparent (matches status bar)
-            awarenessBarItem.backgroundColor = undefined;
+            // Only show error background when score reaches critical red level (80+)
+            // Red bulb + background = critically low awareness
+            if (displayScore >= 80) {
+                awarenessBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
+            } else {
+                awarenessBarItem.backgroundColor = undefined;
+            }
         }
     } else {
         // No mode set
@@ -259,9 +265,9 @@ Monitoring: ${scoreData.debug.monitoringActive ? '✅ Active' : '❌ Inactive'}`
         awarenessBarItem.backgroundColor = undefined;
     }
 
-    // Show awareness meter only in DEV mode (meter doesn't depend on usage statistics)
+    // Show awareness meter in both DEV and VIBE modes
     const config = vscode.workspace.getConfiguration('vibeswitch');
-    const shouldShow = currentMode === 'dev' && config.get('showInStatusBar', true); // Default to true
+    const shouldShow = (currentMode === 'dev' || currentMode === 'vibe') && config.get('showInStatusBar', true); // Default to true
     
     if (shouldShow) {
         awarenessBarItem.show();

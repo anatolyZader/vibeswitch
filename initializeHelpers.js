@@ -113,7 +113,7 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
         
         // Update mode indicator in status bar
         modeSwitcher.updateStatusBar(state.statusBarItem, currentMode, state.outputChannel);
-        // Update awareness meter (will show in 'dev' mode, hide in 'vibe' mode)
+        // Update awareness meter (shows in both 'dev' and 'vibe' modes)
         updateAwarenessMeter();
         // NOTE: File colors are updated separately - not mixed with status bar updates
     };
@@ -149,7 +149,8 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
     // ============================================================================
     // STEP 4: Initialize monitor lifecycle helpers
     // ============================================================================
-    // Boundary: Called from mode switching (command handler boundary)
+    // Starts the awareness monitor - called once on extension activation
+    // The monitor runs continuously regardless of mode and is never stopped
     const startAwarenessMonitor = async () => {
         if (!state.awarenessEngine || !state.extensionContext) {
             return;
@@ -180,16 +181,16 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
         }
         state.meterUpdateTimer = setInterval(() => {
             safe('meterUpdateTimer', () => {
-                if (state.getMode() === 'dev') {
-                    updateAwarenessMeter();
-                }
+                // Always update meter - runs continuously regardless of mode
+                updateAwarenessMeter();
             });
         }, 10000);
         
         updateAwarenessMeter();
     };
 
-    // Boundary: Called from mode switching (command handler boundary)
+    // Note: stopAwarenessMonitor is kept for cleanup on extension deactivation
+    // It is NOT called during mode switches - the monitor runs continuously
     const stopAwarenessMonitor = async () => {
         if (!state.awarenessEngine) {
             return;

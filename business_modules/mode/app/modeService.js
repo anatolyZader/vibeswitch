@@ -4,11 +4,12 @@
  * Orchestrates the mode switch process:
  * - Validates mode input
  * - Tracks usage statistics
- * - Manages awareness monitor lifecycle (start/stop)
  * - Copies mode-specific .cursor/rules.{mode}.md files to .cursor/rules.md
  * - Verifies file writes
  * - Applies mode-specific settings
  * - Triggers callbacks for UI updates
+ * 
+ * Note: Awareness monitor runs continuously and is NOT stopped/started on mode switch
  */
 
 const vscode = require('vscode');
@@ -69,11 +70,8 @@ async function switchToMode(mode, options = {}) {
             usageStats.trackModeSwitch(currentMode, mode);
         }
 
-        // Stop monitor if switching away from DEV mode
-        if (currentMode === 'dev' && mode !== 'dev' && onMonitorStop) {
-            // Ensure async monitor stop completes (prevents stale listeners/timers)
-            await onMonitorStop();
-        }
+        // Monitor stays active in both modes - no stop needed when switching
+        // (Awareness meter now runs in both DEV and VIBE modes)
 
         // Create .cursor directory if it doesn't exist
         const cursorDir = path.join(workspaceRoot, '.cursor');
@@ -106,9 +104,9 @@ async function switchToMode(mode, options = {}) {
         }
         
         // Update detection cache directly to prevent race conditions
-        // This is a bit of a hack but necessary since detectCurrentMode module maintains its own state
+        // This is a bit of a hack but necessary since modeDetection module maintains its own state
         // We manually set the cache so subsequent detections see the right mode immediately
-        const detectModule = require.cache[require.resolve('./detectCurrentMode')];
+        const detectModule = require.cache[require.resolve('./modeDetection')];
         if (detectModule && detectModule.exports) {
             // The cache variables are not exported, but we can call with forceFresh
             // to ensure next detection reads the file we just wrote
@@ -119,11 +117,8 @@ async function switchToMode(mode, options = {}) {
         // Apply mode settings (skip cursor.* settings to avoid reload)
         await modeSettingsAdapter.applyModeSettings(mode, true);
 
-        // Start monitor if switching to DEV mode
-        if (mode === 'dev' && onMonitorStart) {
-            // Ensure async monitor start completes (surface errors, avoid silent failures)
-            await onMonitorStart();
-        }
+        // Awareness monitor runs continuously - no need to start/stop on mode switch
+        // The monitor is started once on extension activation and stays active
 
         // Call mode switched callback
         if (onModeSwitched) {

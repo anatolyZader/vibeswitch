@@ -30,7 +30,7 @@ function updateStatusBar(statusBarItem, currentMode, outputChannel = null) {
 
     // Update status bar appearance
     if (currentMode === 'vibe') {
-        statusBarItem.text = '$(dashboard) VIBE';
+        statusBarItem.text = '$(zap) VIBE';
         statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
         statusBarItem.tooltip = 'AI Agent: VIBE Mode (Autonomous)\nClick to switch modes';
     } else if (currentMode === 'dev') {
@@ -43,15 +43,12 @@ function updateStatusBar(statusBarItem, currentMode, outputChannel = null) {
         statusBarItem.tooltip = 'AI Agent Mode: Unknown\nClick to set mode';
     }
 
-    // Check if should show (default to true if setting not explicitly false)
-    const config = vscode.workspace.getConfiguration('vibeswitch');
-    const shouldShow = config.get('showInStatusBar', true); // Default to true
+    // ALWAYS show status bar - it's the primary way to access the extension
+    // Force show() call to ensure visibility regardless of any other state
+    statusBarItem.show();
     
-    // Always show status bar - it's the primary way to access the extension
-    if (shouldShow !== false) {
-        statusBarItem.show();
-    } else {
-        statusBarItem.hide();
+    if (outputChannel) {
+        outputChannel.appendLine(`[DEBUG] Status bar updated: mode=${currentMode}, text=${statusBarItem.text}`);
     }
 }
 

@@ -140,10 +140,11 @@ class AwarenessEngine {
     }
     
     /**
-     * Start monitoring (called when switching to DEV mode)
+     * Start monitoring (called once on extension activation)
+     * The monitor runs continuously regardless of mode - awareness is always tracked
      * @param {Object} context - VS Code extension context
      * @param {Function} updateFileColorsInExplorer - Callback to update file colors in Explorer
-     * @param {string} mode - Current mode ('vibe', 'dev') for classifier config
+     * @param {string} mode - Current mode ('vibe', 'dev') for classifier config thresholds
      */
     async start(context, updateFileColorsInExplorer = null, mode = 'dev') {
         if (!context) {
@@ -338,7 +339,7 @@ class AwarenessEngine {
     }
     
     /**
-     * Stop monitoring (called when switching away from DEV mode)
+     * Stop monitoring (called only on extension deactivation, NOT on mode switches)
      * Safe to call multiple times (idempotent)
      */
     async stop() {
