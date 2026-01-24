@@ -21,7 +21,6 @@ const REQUESTS_DIR = path.join(STATE_DIR, 'requests');
 const APPROVED_DIR = path.join(STATE_DIR, 'approved');
 const PUBLIC_KEY_FILE = path.join(MCP_DIR, 'publicKey.pem');
 const WORKSPACES_FILE = path.join(STATE_DIR, 'workspaces.json');
-const CONSUMED_DB = path.join(MCP_DIR, 'consumed.db');
 const MODE_FILE = path.join(STATE_DIR, 'mode.json');
 const AUDIT_LOG = path.join(STATE_DIR, 'audit.log');
 
@@ -31,13 +30,17 @@ const BLOCKLIST_FILES = ['.env', 'credentials.json', 'secrets.json'];
 let canonical;
 try { canonical = require(path.join(LIB_DIR, 'canonical.js')); } catch (e) { process.exit(1); }
 
-let db;
-try {
-    const Database = require('better-sqlite3');
-    db = new Database(CONSUMED_DB);
-    db.exec('CREATE TABLE IF NOT EXISTS consumed (request_id TEXT PRIMARY KEY, consumed_at INTEGER)');
-} catch (e) { db = null; }
+// File-based consumed token tracking (no SQLite needed)
+const CONSUMED_FILE = path.join(MCP_DIR, 'consumed.json');
 const consumedInMemory = new Set();
+
+// Load consumed tokens from file on startup
+try {
+    if (fs.existsSync(CONSUMED_FILE)) {
+        const data = JSON.parse(fs.readFileSync(CONSUMED_FILE, 'utf8'));
+        if (Array.isArray(data)) data.forEach(id => consumedInMemory.add(id));
+    }
+} catch (e) { /* ignore load errors */ }
 
 function getMode() {
     try { return JSON.parse(fs.readFileSync(MODE_FILE, 'utf8')).mode || 'dev'; } catch { return 'dev'; }
@@ -83,14 +86,17 @@ function verifyToken(token, request) {
         if (payload.scope.filePath !== request.filePath) return { valid: false, reason: 'File path mismatch' };
         if (payload.scope.patchHash !== request.patchHash) return { valid: false, reason: 'Patch hash mismatch' };
         if (consumedInMemory.has(payload.requestId)) return { valid: false, reason: 'Token already used' };
-        if (db) { const row = db.prepare('SELECT 1 FROM consumed WHERE request_id = ?').get(payload.requestId); if (row) return { valid: false, reason: 'Token already used' }; }
         return { valid: true, payload };
     } catch (e) { return { valid: false, reason: e.message }; }
 }
 
 function consumeToken(requestId) {
     consumedInMemory.add(requestId);
-    if (db) { try { db.prepare('INSERT OR IGNORE INTO consumed (request_id, consumed_at) VALUES (?, ?)').run(requestId, Date.now()); } catch (e) {} }
+    // Persist to file (append-style, rewrite full set)
+    try {
+        const data = Array.from(consumedInMemory);
+        fs.writeFileSync(CONSUMED_FILE, JSON.stringify(data), 'utf8');
+    } catch (e) { /* ignore write errors */ }
 }
 
 function audit(action, details) {

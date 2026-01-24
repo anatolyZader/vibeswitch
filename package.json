@@ -241,7 +241,7 @@
     "create-md": "node scripts/create-md.js"
   },
   "dependencies": {
-    "chokidar": "^3.5.3"
+    "chokidar": "^3.6.0"
   },
   "devDependencies": {
     "@types/vscode": "^1.80.0",
