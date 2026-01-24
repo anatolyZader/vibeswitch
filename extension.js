@@ -139,8 +139,19 @@ async function activate(context) {
             commandHandlers,
             updateAwarenessMeter,
             startAwarenessMonitor,
+            stopAwarenessMonitor,
             initFileDecorations
         } = helpers;
+        
+        // Register awareness engine cleanup for extension deactivation
+        // This ensures proper resource cleanup when VS Code disposes the extension
+        context.subscriptions.push({
+            dispose: async () => {
+                if (stopAwarenessMonitor) {
+                    await stopAwarenessMonitor();
+                }
+            }
+        });
         
         // Set callbacks for UI updates and UsageStats integration
         awarenessEngine.setCallbacks({

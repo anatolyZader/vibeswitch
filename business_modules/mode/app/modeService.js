@@ -33,8 +33,6 @@ function getShowErrorMessage(vscodeAdapter) {
  * @param {Object} options - Callback options
  * @param {string} options.currentMode - Current mode before switch
  * @param {Function} options.onModeSwitched - Callback when mode is switched (receives new mode)
- * @param {Function} options.onMonitorStart - Callback to start awareness monitor
- * @param {Function} options.onMonitorStop - Callback to stop awareness monitor
  * @param {Object} options.usageStats - Usage statistics manager instance
  * @param {Object} options.vscodeAdapter - VS Code adapter (Ports and Adapters pattern) - optional for backward compatibility
  */
@@ -42,8 +40,6 @@ async function switchToMode(mode, options = {}) {
     const {
         currentMode,
         onModeSwitched,
-        onMonitorStart,
-        onMonitorStop,
         usageStats,
         vscodeAdapter = null
     } = options;

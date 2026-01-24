@@ -189,7 +189,7 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
         updateAwarenessMeter();
     };
 
-    // Note: stopAwarenessMonitor is kept for cleanup on extension deactivation
+    // stopAwarenessMonitor is used ONLY for cleanup on extension deactivation
     // It is NOT called during mode switches - the monitor runs continuously
     const stopAwarenessMonitor = async () => {
         if (!state.awarenessEngine) {
@@ -235,11 +235,8 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
                     // Don't change currentMode here - we already set it
                     log(`VibeSwitch: Mode switched callback called with: ${newMode} (already set to ${state.getMode()})`);
                 },
-                onMonitorStart: async () => await startAwarenessMonitor(),
-                onMonitorStop: async () => await stopAwarenessMonitor(),
                 usageStats: state.usageStats,
-                vscodeAdapter: container.getAdapter('awareness', 'vscodeAdapter'), // Pass adapter for Ports and Adapters pattern
-                awarenessEngine: state.awarenessEngine
+                vscodeAdapter: container.getAdapter('awareness', 'vscodeAdapter') // Pass adapter for Ports and Adapters pattern
             });
             
             // Verify file was written correctly, but DON'T detect mode from file
