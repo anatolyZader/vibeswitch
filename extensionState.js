@@ -19,16 +19,27 @@ class ExtensionState {
         this.awarenessEngine = null;
         this.fileDecorationProvider = null;
         
+        // Capability Enforcement (set during activation)
+        this.capability = null;
+        
         // Timers
         this.meterUpdateTimer = null;
     }
     
     /**
      * Update current mode
+     * Also syncs to ModeManager (if available) for capability enforcement
      * @param {string} mode - Mode value ('vibe' or 'dev')
      */
     setMode(mode) {
         this.currentMode = mode;
+        
+        // Sync to ModeManager for capability enforcement (best-effort, don't block)
+        if (this.capability && this.capability.modeManager) {
+            this.capability.modeManager.setMode(mode).catch(err => {
+                console.error('ExtensionState: Failed to sync mode to ModeManager:', err.message);
+            });
+        }
     }
     
     /**

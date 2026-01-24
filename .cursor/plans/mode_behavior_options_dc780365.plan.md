@@ -319,11 +319,11 @@ MODE=$(jq -r '.mode // "dev"' "$MODE_FILE" 2>/dev/null || echo "dev")
 # Expected server identity (written by extension at install)
 MCP_SERVER_FILE="$HOME/.vibeswitch/state/mcp-server.json"
 
-# === VERIFY THESE FIELD NAMES IN PHASE 0 ===
-TOOL=$(echo "$INPUT" | jq -r '.tool_name // .toolName // .name // ""')
-SERVER_NAME=$(echo "$INPUT" | jq -r '.serverName // .server_name // .server // ""')
-SERVER_PATH=$(echo "$INPUT" | jq -r '.serverPath // .server_path // .transport.command // ""')
-SERVER_ID=$(echo "$INPUT" | jq -r '.serverId // .server_id // ""')
+# === FIELD NAMES VERIFIED IN PHASE 0 PROBE ===
+# tool_name = MCP tool name (e.g., "browser_tabs")
+# command = MCP SERVER NAME (e.g., "cursor-ide-browser", "vibeswitch")
+TOOL=$(echo "$INPUT" | jq -r '.tool_name // ""')
+SERVER=$(echo "$INPUT" | jq -r '.command // ""')
 
 if [ "$MODE" = "dev" ]; then
   # Load expected identity
@@ -331,52 +331,27 @@ if [ "$MODE" = "dev" ]; then
     deny '{"permission":"deny","user_message":"DEV: MCP config missing","agent_message":"DEV: mcp-server.json not found. Cannot verify server identity."}'
   fi
   
-  EXPECTED_NAME=$(jq -r '.serverName // ""' "$MCP_SERVER_FILE" 2>/dev/null || true)
-  EXPECTED_PATH=$(jq -r '.serverPath // ""' "$MCP_SERVER_FILE" 2>/dev/null || true)
-  EXPECTED_ID=$(jq -r '.serverId // ""' "$MCP_SERVER_FILE" 2>/dev/null || true)
+  # The server name from mcp-server.json
+  EXPECTED_SERVER=$(jq -r '.serverName // ""' "$MCP_SERVER_FILE" 2>/dev/null || true)
   
   # === FAIL-CLOSED: At least one expected identifier must be configured ===
-  if [ -z "$EXPECTED_NAME" ] && [ -z "$EXPECTED_PATH" ] && [ -z "$EXPECTED_ID" ]; then
-    deny '{"permission":"deny","user_message":"DEV: MCP config incomplete","agent_message":"DEV: mcp-server.json has no serverName/serverPath/serverId configured."}'
+  if [ -z "$EXPECTED_SERVER" ]; then
+    deny '{"permission":"deny","user_message":"DEV: MCP config incomplete","agent_message":"DEV: mcp-server.json has no serverName configured."}'
   fi
   
   # === FAIL-CLOSED SERVER IDENTITY CHECK ===
-  is_verified_server() {
-    # Must match AT LEAST ONE of the expected identifiers
-    # AND the identifier must be non-empty in both expected and actual
-    
-    # Check by serverId (strongest)
-    if [ -n "$EXPECTED_ID" ] && [ -n "$SERVER_ID" ]; then
-      [ "$SERVER_ID" = "$EXPECTED_ID" ] && return 0
-    fi
-    
-    # Check by serverPath (use realpath for comparison)
-    if [ -n "$EXPECTED_PATH" ] && [ -n "$SERVER_PATH" ]; then
-      REAL_EXPECTED=$(realpath "$EXPECTED_PATH" 2>/dev/null || echo "$EXPECTED_PATH")
-      REAL_ACTUAL=$(realpath "$SERVER_PATH" 2>/dev/null || echo "$SERVER_PATH")
-      [ "$REAL_ACTUAL" = "$REAL_EXPECTED" ] && return 0
-    fi
-    
-    # Check by serverName (weakest, but still required)
-    if [ -n "$EXPECTED_NAME" ] && [ -n "$SERVER_NAME" ]; then
-      [ "$SERVER_NAME" = "$EXPECTED_NAME" ] && return 0
-    fi
-    
-    # NO FALLBACK: If we can't verify, deny
-    return 1
-  }
-  
+  # Tool name must match pattern AND server must match expected
   case "$TOOL" in
     mcp__vibeswitch__*)
-      if is_verified_server; then
+      if [ "$SERVER" = "$EXPECTED_SERVER" ]; then
         echo '{"permission":"allow"}'
         exit 0
       else
-        deny '{"permission":"deny","user_message":"DEV: MCP identity mismatch","agent_message":"DEV: Cannot verify MCP server identity. Expected: '"$EXPECTED_NAME"'/'"$EXPECTED_ID"'"}'
+        deny '{"permission":"deny","user_message":"DEV: MCP identity mismatch","agent_message":"DEV: Server '"$SERVER"' does not match expected '"$EXPECTED_SERVER"'"}'
       fi
       ;;
     *)
-      deny '{"permission":"deny","user_message":"DEV: MCP blocked","agent_message":"DEV: Only vibeswitch MCP allowed."}'
+      deny '{"permission":"deny","user_message":"DEV: MCP blocked","agent_message":"DEV: Only vibeswitch MCP allowed. Got tool: '"$TOOL"'"}'
       ;;
   esac
 fi
@@ -431,7 +406,8 @@ if ! command -v jq >/dev/null 2>&1; then
 else
   MODE_FILE="$HOME/.vibeswitch/state/mode.json"
   MODE=$(jq -r '.mode // "dev"' "$MODE_FILE" 2>/dev/null || echo "dev")
-  FILE=$(echo "$INPUT" | jq -r '.file_path // .filePath // .path // ""')
+  # Field name verified in Phase 0 probe: file_path
+  FILE=$(echo "$INPUT" | jq -r '.file_path // ""')
   [ -z "$FILE" ] && FILE="UNKNOWN"
 fi
 
@@ -1185,22 +1161,61 @@ module.exports = { ApprovalManager };
 
 ## Go/No-Go Checklist
 
+**Phase 0 Probe Results (VERIFIED):**
+- Shell command field: `command` ✅
+- MCP tool field: `tool_name` ✅
+- MCP server identity: `command` (NOT serverName/serverId/serverPath) ✅
+
 Before shipping, verify:
 
-- [ ] **Phase 0 probe confirms real field names** for `.command`, tool name, and server identity
-- [ ] **mcp-server.json populated** with at least one stable identifier that actually appears in payloads
-- [ ] **Hooks are `chmod +x`** and owned by user (not writable by workspace processes)
-- [ ] **jq is installed** on target machine
-- [ ] **chokidar dependency** added to extension package.json
-- [ ] **better-sqlite3 dependency** added to MCP server package.json
+- [x] **Phase 0 probe confirms real field names** for `.command`, tool name, and server identity ✅
+- [x] **mcp-server.json populated** with at least one stable identifier that actually appears in payloads ✅
+- [x] **Hooks are `chmod +x`** and owned by user (not writable by workspace processes) ✅
+- [ ] **jq is installed** on target machine (user responsibility)
+- [x] **chokidar dependency** added to extension package.json ✅
+- [x] **better-sqlite3 dependency** added to MCP server package.json ✅
 
 ---
 
-## Implementation Order
+## Implementation Status
 
-1. **Phase 0** (30 min): Hook probe - capture full JSON including server identity fields
-2. **Phase 1** (6 hr): Hooks + hooks.json guard (atomic+debounce+sha256) + workspace allowlist + MCP identity + self-test
-3. **Phase 2** (8 hr): Shared canonical (all-strings) + Ed25519 + MCP (token in call only) + chokidar watcher
-4. **Phase 3** (2 hr): Audit, polish
+**ALL PHASES COMPLETE** ✅
 
-**Total: ~16-17 hours**
+### Files Created
+
+**Hook Scripts** (`$HOME/.vibeswitch/hooks/`):
+- `gate-shell.sh` - Shell command gating with blocklist/allowlist
+- `gate-mcp.sh` - MCP tool gating with server identity verification
+- `inject-context.sh` - Prompt context injection
+- `detect-edit.sh` - Built-in editor detection
+
+**State Files** (`$HOME/.vibeswitch/state/`):
+- `mode.json` - Mode mirror for hooks
+- `mcp-server.json` - Expected MCP server identity
+- `workspaces.json` - Allowed workspace roots
+- `audit.log` - Append-only audit trail
+
+**Shared Modules** (`$HOME/.vibeswitch/lib/`):
+- `canonical.js` - RFC 8785-style canonical JSON
+
+**Extension Components** (`business_modules/capability/`):
+- `ModeManager` - globalState source + filesystem mirror
+- `HooksJsonGuard` - Watch + atomic restore + debounce
+- `CapabilitySelfTest` - Integrity verification
+- `WorkspaceAllowlist` - Trusted workspace management
+- `AlertFileEditDetector` - Unapproved edit detection
+- `KeypairManager` - Ed25519 keypair management
+- `ApprovalManager` - Patch approval workflow
+
+**MCP Server** (`business_modules/mcp-server/`):
+- `index.js` - MCP server with `submit_patch` and `apply_patch` tools
+- `package.json` - Dependencies
+
+---
+
+## Implementation Order (COMPLETED)
+
+1. **Phase 0** ✅: Hook probe - captured field names
+2. **Phase 1** ✅: Hooks + hooks.json guard + workspace allowlist + MCP identity + self-test
+3. **Phase 2** ✅: Shared canonical + Ed25519 + MCP server + chokidar watcher
+4. **Phase 3** ✅: Audit, polish, documentation updates

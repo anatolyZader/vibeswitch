@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeSubmitPrompt": [
+      {"command": "/home/eventstorm1/.vibeswitch/hooks/inject-context.sh", "timeout": 3}
+    ],
+    "beforeShellExecution": [
+      {"command": "/home/eventstorm1/.vibeswitch/hooks/gate-shell.sh", "timeout": 5}
+    ],
+    "beforeMCPExecution": [
+      {"command": "/home/eventstorm1/.vibeswitch/hooks/gate-mcp.sh", "timeout": 5}
+    ],
+    "afterFileEdit": [
+      {"command": "/home/eventstorm1/.vibeswitch/hooks/detect-edit.sh", "timeout": 3}
+    ]
+  }
+}

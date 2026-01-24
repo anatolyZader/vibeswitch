@@ -12,6 +12,15 @@ const DIContainer = require('./diContainer');
 const initializeHelpers = require('./initializeHelpers');
 const safe = require('./safe');
 const compositionRoot = require('./compositionRoot');
+const {
+    ModeManager,
+    HooksJsonGuard,
+    CapabilitySelfTest,
+    WorkspaceAllowlist,
+    AlertFileEditDetector,
+    KeypairManager,
+    ApprovalManager
+} = require('./business_modules/capability');
 
 /**
  * Register all VS Code commands
@@ -119,6 +128,81 @@ async function activate(context) {
         
         // Create log wrapper function for extension-level code
         log = createLogWrapperFunc();
+        
+        // ========== CAPABILITY ENFORCEMENT INITIALIZATION ==========
+        // Initialize early before any other components
+        
+        // 1. Mode Manager - source of truth in globalState, mirror to filesystem
+        const modeManager = new ModeManager(context);
+        modeManager.syncToFileSystem();  // Ensure filesystem is in sync on startup
+        log('VibeSwitch: ModeManager initialized');
+        
+        // 2. Workspace Allowlist - sync current workspaces
+        const workspaceAllowlist = new WorkspaceAllowlist();
+        if (vscode.workspace.workspaceFolders) {
+            workspaceAllowlist.syncFromWorkspace(vscode.workspace.workspaceFolders);
+        }
+        log('VibeSwitch: WorkspaceAllowlist synced');
+        
+        // 3. Capability Self-Test - verify setup integrity
+        const selfTest = new CapabilitySelfTest();
+        const testResult = selfTest.run();
+        if (!testResult.passed) {
+            log(`VibeSwitch: Capability self-test FAILED: ${testResult.errors.join(', ')}`, true, true);
+            vscode.window.showWarningMessage(
+                `VibeSwitch: Setup verification failed: ${testResult.errors[0]}. Capability enforcement may not work correctly.`
+            );
+        } else {
+            log('VibeSwitch: Capability self-test passed');
+        }
+        if (testResult.warnings.length > 0) {
+            log(`VibeSwitch: Warnings: ${testResult.warnings.join(', ')}`);
+        }
+        
+        // Start periodic self-test
+        selfTest.startPeriodic((result) => {
+            log(`VibeSwitch: Periodic self-test FAILED: ${result.errors.join(', ')}`, true, false);
+        });
+        context.subscriptions.push({ dispose: () => selfTest.dispose() });
+        
+        // 4. HooksJsonGuard - watch and protect hooks.json
+        const hooksGuard = new HooksJsonGuard(context, modeManager);
+        if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+            hooksGuard.start(vscode.workspace.workspaceFolders[0].uri.fsPath);
+        }
+        context.subscriptions.push({ dispose: () => hooksGuard.dispose() });
+        log('VibeSwitch: HooksJsonGuard started');
+        
+        // 5. AlertFileEditDetector - monitor for unapproved edits
+        const alertDetector = new AlertFileEditDetector(modeManager);
+        alertDetector.createBadge(context);
+        alertDetector.start();
+        context.subscriptions.push({ dispose: () => alertDetector.dispose() });
+        log('VibeSwitch: AlertFileEditDetector started');
+        
+        // 6. KeypairManager - Ed25519 keypair for token signing
+        const keypairManager = new KeypairManager(context);
+        await keypairManager.initialize();
+        log('VibeSwitch: KeypairManager initialized');
+        
+        // 7. ApprovalManager - MCP patch request approval workflow
+        const approvalManager = new ApprovalManager(context, keypairManager, modeManager);
+        approvalManager.start();
+        context.subscriptions.push({ dispose: () => approvalManager.dispose() });
+        log('VibeSwitch: ApprovalManager started');
+        
+        // Store capability components in state for later access
+        state.capability = {
+            modeManager,
+            workspaceAllowlist,
+            selfTest,
+            hooksGuard,
+            alertDetector,
+            keypairManager,
+            approvalManager
+        };
+        
+        // ========== END CAPABILITY ENFORCEMENT ==========
         
         // Compose all dependencies (adapters, services, domain services)
         const { awarenessEngine } = compositionRoot.compose(context, state, container);

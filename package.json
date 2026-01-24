@@ -93,6 +93,16 @@
         "command": "vibeswitch.testAddAICode",
         "title": "Test: Add AI Code with Marker",
         "category": "VibeSwitch"
+      },
+      {
+        "command": "vibeswitch.showAlertLog",
+        "title": "Show Capability Alert Log",
+        "category": "VibeSwitch"
+      },
+      {
+        "command": "vibeswitch.capabilitySelfTest",
+        "title": "Run Capability Self-Test",
+        "category": "VibeSwitch"
       }
     ],
     "keybindings": [
@@ -229,6 +239,9 @@
     "package": "vsce package",
     "lint": "echo 'No linter configured yet'",
     "create-md": "node scripts/create-md.js"
+  },
+  "dependencies": {
+    "chokidar": "^3.5.3"
   },
   "devDependencies": {
     "@types/vscode": "^1.80.0",

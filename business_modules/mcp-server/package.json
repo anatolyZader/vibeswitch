@@ -1,0 +1,13 @@
+{
+  "name": "vibeswitch-mcp-server",
+  "version": "1.0.0",
+  "description": "VibeSwitch MCP Server for capability-enforced file modifications",
+  "main": "index.js",
+  "bin": {
+    "vibeswitch-mcp": "./index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "better-sqlite3": "^9.0.0"
+  }
+}

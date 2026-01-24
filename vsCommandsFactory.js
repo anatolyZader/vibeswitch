@@ -344,6 +344,43 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
             }
         },
 
+        'vibeswitch.showAlertLog': async () => {
+            const os = require('os');
+            const auditLogPath = path.join(os.homedir(), '.vibeswitch', 'state', 'audit.log');
+            try {
+                const doc = await openTextDocument(auditLogPath);
+                await showTextDocument(doc);
+                showInformationMessage('Capability audit log opened');
+            } catch (error) {
+                showWarningMessage(`No audit log found at ${auditLogPath}`);
+            }
+        },
+
+        'vibeswitch.capabilitySelfTest': async () => {
+            if (!state.capability || !state.capability.selfTest) {
+                showWarningMessage('Capability enforcement not initialized');
+                return;
+            }
+            const result = state.capability.selfTest.run();
+            let message = '=== Capability Self-Test ===\n\n';
+            message += `Status: ${result.passed ? 'PASSED ✅' : 'FAILED ❌'}\n\n`;
+            if (result.errors.length > 0) {
+                message += 'Errors:\n';
+                result.errors.forEach(e => message += `  ❌ ${e}\n`);
+            }
+            if (result.warnings.length > 0) {
+                message += '\nWarnings:\n';
+                result.warnings.forEach(w => message += `  ⚠️ ${w}\n`);
+            }
+            state.outputChannel?.appendLine(message);
+            state.outputChannel?.show(true);
+            if (result.passed) {
+                showInformationMessage('Capability self-test passed ✅');
+            } else {
+                showErrorMessage(`Capability self-test failed: ${result.errors[0]}`);
+            }
+        },
+
         // @ai
         'vibeswitch.testAddAICode': async () => {
             // @ai

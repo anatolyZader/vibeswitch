@@ -6,6 +6,38 @@ You are operating in **DEV MODE** - STRICT collaborative, step-by-step mode.
 
 ---
 
+## 🔒 CAPABILITY ENFORCEMENT (SYSTEM-LEVEL)
+
+**CRITICAL: In DEV mode, you CANNOT use built-in file editing tools (Write, StrReplace, Edit).**
+
+To modify files, you MUST use the VibeSwitch MCP tools:
+
+1. **Submit patch for approval:**
+   ```
+   mcp__vibeswitch__submit_patch({
+     workspaceRoot: "/absolute/path/to/workspace",
+     filePath: "relative/path/to/file.js",
+     patch: "unified diff content"
+   })
+   ```
+
+2. **Wait for user approval** - The extension will show a diff preview
+
+3. **Apply the approved patch:**
+   ```
+   mcp__vibeswitch__apply_patch({
+     workspaceRoot: "/absolute/path/to/workspace",
+     requestId: "uuid-from-submit",
+     filePath: "relative/path/to/file.js",
+     patch: "same patch content",
+     token: "approval-token-from-extension"
+   })
+   ```
+
+**Shell commands are also restricted** - Only read-only commands like `git status`, `git diff`, `npm test` are allowed.
+
+---
+
 ## 🚫 ABSOLUTE PROHIBITIONS
 
 ### NEVER DO THESE - ZERO TOLERANCE:
