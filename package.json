@@ -150,6 +150,11 @@
           "default": true,
           "description": "Enable real-time awareness monitoring and long-term statistics (100% local, never sent anywhere)"
         },
+        "vibeswitch.autoRevertUnapprovedEdits": {
+          "type": "boolean",
+          "default": true,
+          "description": "In DEV mode, automatically revert file edits that weren't made through the approved MCP workflow (requires git)"
+        },
         "vibeswitch.llm.enabled": {
           "type": "boolean",
           "default": false,

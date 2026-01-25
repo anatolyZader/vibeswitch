@@ -173,12 +173,13 @@ async function activate(context) {
         context.subscriptions.push({ dispose: () => hooksGuard.dispose() });
         log('VibeSwitch: HooksJsonGuard started');
         
-        // 5. AlertFileEditDetector - monitor for unapproved edits
-        const alertDetector = new AlertFileEditDetector(modeManager);
+        // 5. AlertFileEditDetector - monitor for unapproved edits with auto-revert
+        const autoRevertEnabled = vscode.workspace.getConfiguration('vibeswitch').get('autoRevertUnapprovedEdits', true);
+        const alertDetector = new AlertFileEditDetector(modeManager, { autoRevert: autoRevertEnabled });
         alertDetector.createBadge(context);
         alertDetector.start();
         context.subscriptions.push({ dispose: () => alertDetector.dispose() });
-        log('VibeSwitch: AlertFileEditDetector started');
+        log(`VibeSwitch: AlertFileEditDetector started (autoRevert: ${autoRevertEnabled})`);
         
         // 6. KeypairManager - Ed25519 keypair for token signing
         const keypairManager = new KeypairManager(context);

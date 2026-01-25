@@ -110,8 +110,15 @@ async function switchToMode(mode, options = {}) {
         
         console.log(`VibeSwitch: Switched .cursor/rules.md to ${mode} mode (verified)`);
 
-        // Apply mode settings (skip cursor.* settings to avoid reload)
-        await modeSettingsAdapter.applyModeSettings(mode, true);
+        // #region agent log
+        fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'modeService.js:beforeApplySettings',message:'About to apply mode settings',data:{mode,skipCursorSettings:false},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A-E'})}).catch(()=>{});
+        // #endregion
+
+        // Apply mode settings INCLUDING cursor.* settings for approval enforcement
+        await modeSettingsAdapter.applyModeSettings(mode, false);
+        
+        // #region agent log
+        fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'modeService.js:afterApplySettings',message:'Mode settings applied',data:{mode},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A-E'})}).catch(()=>{});
 
         // Awareness monitor runs continuously - no need to start/stop on mode switch
         // The monitor is started once on extension activation and stays active

@@ -6,35 +6,81 @@ You are operating in **DEV MODE** - STRICT collaborative, step-by-step mode.
 
 ---
 
-## 🔒 CAPABILITY ENFORCEMENT (SYSTEM-LEVEL)
+## ⛔ CRITICAL: FILE EDITING IS FORBIDDEN ⛔
 
-**CRITICAL: In DEV mode, you CANNOT use built-in file editing tools (Write, StrReplace, Edit).**
+```
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║   🚨🚨🚨 STOP - READ THIS BEFORE ANY FILE MODIFICATION 🚨🚨🚨              ║
+║                                                                              ║
+║   YOU ARE FORBIDDEN FROM USING THESE TOOLS:                                  ║
+║                                                                              ║
+║     ❌ Write          - FORBIDDEN                                            ║
+║     ❌ StrReplace     - FORBIDDEN                                            ║
+║     ❌ Edit           - FORBIDDEN                                            ║
+║     ❌ EditNotebook   - FORBIDDEN                                            ║
+║     ❌ Delete         - FORBIDDEN                                            ║
+║     ❌ Any built-in file modification tool - FORBIDDEN                       ║
+║                                                                              ║
+║   If you use ANY of these tools, your edit will be:                          ║
+║     1. DETECTED by the system                                                ║
+║     2. LOGGED to an audit trail                                              ║
+║     3. ALERTED to the user with a modal warning                              ║
+║     4. MARKED as an UNAPPROVED CHANGE                                        ║
+║                                                                              ║
+║   THE USER WILL KNOW YOU VIOLATED THIS RULE.                                 ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+```
 
-To modify files, you MUST use the VibeSwitch MCP tools:
+---
 
-1. **Submit patch for approval:**
-   ```
-   mcp__vibeswitch__submit_patch({
-     workspaceRoot: "/absolute/path/to/workspace",
-     filePath: "relative/path/to/file.js",
-     patch: "unified diff content"
-   })
-   ```
+## 🔒 THE ONLY WAY TO MODIFY FILES
 
-2. **Wait for user approval** - The extension will show a diff preview
+**You MUST use VibeSwitch MCP tools for ALL file modifications:**
 
-3. **Apply the approved patch:**
-   ```
-   mcp__vibeswitch__apply_patch({
-     workspaceRoot: "/absolute/path/to/workspace",
-     requestId: "uuid-from-submit",
-     filePath: "relative/path/to/file.js",
-     patch: "same patch content",
-     token: "approval-token-from-extension"
-   })
-   ```
+### Step 1: Submit patch for approval
+```
+mcp__vibeswitch__submit_patch({
+  workspaceRoot: "/absolute/path/to/workspace",
+  filePath: "relative/path/to/file.js",
+  patch: "unified diff content"
+})
+```
 
-**Shell commands are also restricted** - Only read-only commands like `git status`, `git diff`, `npm test` are allowed.
+### Step 2: WAIT for user approval
+The extension will show a diff preview. **DO NOT PROCEED** until you receive an approval token.
+
+### Step 3: Apply the approved patch
+```
+mcp__vibeswitch__apply_patch({
+  workspaceRoot: "/absolute/path/to/workspace",
+  requestId: "uuid-from-submit",
+  filePath: "relative/path/to/file.js",
+  patch: "same patch content",
+  token: "approval-token-from-extension"
+})
+```
+
+**If the MCP server is not available**, you MUST:
+1. Show the user the exact changes you want to make
+2. Ask for explicit approval
+3. Wait for the user to make the changes manually OR tell you to proceed
+
+---
+
+## 🚫 SHELL COMMANDS ARE RESTRICTED
+
+Only read-only commands are allowed:
+- ✅ `git status`, `git diff`, `git log`
+- ✅ `npm test`, `npm run lint`
+- ✅ `ls`, `cat`, `grep` (read operations)
+
+FORBIDDEN:
+- ❌ Any command that modifies files
+- ❌ `npm install` (modifies node_modules)
+- ❌ `git commit`, `git push` (without explicit approval)
+- ❌ Shell redirects (`>`, `>>`) that write to files
 
 ---
 
