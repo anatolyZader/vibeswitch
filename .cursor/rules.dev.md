@@ -6,66 +6,17 @@ You are operating in **DEV MODE** - STRICT collaborative, step-by-step mode.
 
 ---
 
-## ⛔ CRITICAL: FILE EDITING IS FORBIDDEN ⛔
+## 📝 FILE EDITING
 
-```
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                                                                              ║
-║   🚨🚨🚨 STOP - READ THIS BEFORE ANY FILE MODIFICATION 🚨🚨🚨              ║
-║                                                                              ║
-║   YOU ARE FORBIDDEN FROM USING THESE TOOLS:                                  ║
-║                                                                              ║
-║     ❌ Write          - FORBIDDEN                                            ║
-║     ❌ StrReplace     - FORBIDDEN                                            ║
-║     ❌ Edit           - FORBIDDEN                                            ║
-║     ❌ EditNotebook   - FORBIDDEN                                            ║
-║     ❌ Delete         - FORBIDDEN                                            ║
-║     ❌ Any built-in file modification tool - FORBIDDEN                       ║
-║                                                                              ║
-║   If you use ANY of these tools, your edit will be:                          ║
-║     1. DETECTED by the system                                                ║
-║     2. LOGGED to an audit trail                                              ║
-║     3. ALERTED to the user with a modal warning                              ║
-║     4. MARKED as an UNAPPROVED CHANGE                                        ║
-║                                                                              ║
-║   THE USER WILL KNOW YOU VIOLATED THIS RULE.                                 ║
-║                                                                              ║
-╚══════════════════════════════════════════════════════════════════════════════╝
-```
+**File editing is ALLOWED in DEV mode.** You can use built-in tools like `Write`, `StrReplace`, `Edit`, etc.
 
----
+**However, as a best practice in DEV mode:**
+- ✅ Explain what you're changing before making edits
+- ✅ Show the changes you plan to make
+- ✅ Ask for approval before significant changes
+- ✅ Use MCP tools (`mcp__vibeswitch__submit_patch` / `mcp__vibeswitch__apply_patch`) if you want explicit approval workflow
 
-## 🔒 THE ONLY WAY TO MODIFY FILES
-
-**You MUST use VibeSwitch MCP tools for ALL file modifications:**
-
-### Step 1: Submit patch for approval
-```
-mcp__vibeswitch__submit_patch({
-  workspaceRoot: "/absolute/path/to/workspace",
-  filePath: "relative/path/to/file.js",
-  patch: "unified diff content"
-})
-```
-
-### Step 2: WAIT for user approval
-The extension will show a diff preview. **DO NOT PROCEED** until you receive an approval token.
-
-### Step 3: Apply the approved patch
-```
-mcp__vibeswitch__apply_patch({
-  workspaceRoot: "/absolute/path/to/workspace",
-  requestId: "uuid-from-submit",
-  filePath: "relative/path/to/file.js",
-  patch: "same patch content",
-  token: "approval-token-from-extension"
-})
-```
-
-**If the MCP server is not available**, you MUST:
-1. Show the user the exact changes you want to make
-2. Ask for explicit approval
-3. Wait for the user to make the changes manually OR tell you to proceed
+**Note:** File edits are still logged to the audit trail for visibility, but they are NOT blocked or auto-reverted.
 
 ---
 
@@ -88,9 +39,11 @@ FORBIDDEN:
 
 ### NEVER DO THESE - ZERO TOLERANCE:
 
-1. ❌ **NEVER make file changes without explicit approval**
-   - NO edits, NO creates, NO deletes without permission
-   - Violation: Making any file modification before getting "yes"
+1. ⚠️ **ASK before making significant file changes**
+   - Explain what you're changing
+   - Show the changes before applying
+   - Get approval for substantial modifications
+   - Small edits (comments, typos) can be made directly
 
 2. ❌ **NEVER use tools in batches without asking first**
    - NO parallel tool calls for changes

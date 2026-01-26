@@ -174,7 +174,7 @@ async function activate(context) {
         log('VibeSwitch: HooksJsonGuard started');
         
         // 5. AlertFileEditDetector - monitor for unapproved edits with auto-revert
-        const autoRevertEnabled = vscode.workspace.getConfiguration('vibeswitch').get('autoRevertUnapprovedEdits', true);
+        const autoRevertEnabled = vscode.workspace.getConfiguration('vibeswitch').get('autoRevertUnapprovedEdits', false);
         const alertDetector = new AlertFileEditDetector(modeManager, { autoRevert: autoRevertEnabled });
         alertDetector.createBadge(context);
         alertDetector.start();
@@ -204,6 +204,24 @@ async function activate(context) {
         };
         
         // ========== END CAPABILITY ENFORCEMENT ==========
+        
+        // ========== MULTI-AGENT ARCHITECTURE INITIALIZATION ==========
+        // Initialize agents integration if enabled
+        let agentsIntegration = null;
+        try {
+            const agentsEnabled = vscode.workspace.getConfiguration('vibeswitch.agents').get('enabled', false);
+            if (agentsEnabled) {
+                const { AgentsExtensionIntegration } = require('./business_modules/agents');
+                agentsIntegration = new AgentsExtensionIntegration(context, state, log);
+                agentsIntegration.start();
+                context.subscriptions.push(agentsIntegration);
+                state.agentsIntegration = agentsIntegration;
+                log('VibeSwitch: Agents integration initialized');
+            }
+        } catch (error) {
+            log(`VibeSwitch: Error initializing agents integration: ${error.message}`, true, false);
+        }
+        // ========== END MULTI-AGENT ARCHITECTURE ==========
         
         // Compose all dependencies (adapters, services, domain services)
         const { awarenessEngine } = compositionRoot.compose(context, state, container);

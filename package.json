@@ -152,8 +152,8 @@
         },
         "vibeswitch.autoRevertUnapprovedEdits": {
           "type": "boolean",
-          "default": true,
-          "description": "In DEV mode, automatically revert file edits that weren't made through the approved MCP workflow (requires git)"
+          "default": false,
+          "description": "In DEV mode, automatically revert file edits that weren't made through the approved MCP workflow (requires git). Currently disabled - file editing is allowed in DEV mode."
         },
         "vibeswitch.llm.enabled": {
           "type": "boolean",
@@ -233,6 +233,36 @@
           "type": "string",
           "default": "gpt-4.1-mini",
           "description": "OpenAI model name (only used when provider=openai)"
+        },
+        "vibeswitch.agents.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable multi-agent architecture (QA, Security, Architecture agents)"
+        },
+        "vibeswitch.agents.gatewayUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Cloud Run agent gateway URL (e.g., https://agent-gateway-xxx.run.app)"
+        },
+        "vibeswitch.agents.authToken": {
+          "type": "string",
+          "default": "",
+          "description": "Authentication token for agent gateway (or leave empty to use keypair-based auth)"
+        },
+        "vibeswitch.agents.triggerOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Trigger agents on file save (debounced, DEV mode only or high risk)"
+        },
+        "vibeswitch.agents.triggerOnCommit": {
+          "type": "boolean",
+          "default": true,
+          "description": "Trigger agents before commit (best signal/noise ratio)"
+        },
+        "vibeswitch.agents.triggerOnPush": {
+          "type": "boolean",
+          "default": true,
+          "description": "Trigger agents before push/PR (strongest gate)"
         }
       }
     }
