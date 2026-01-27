@@ -16,7 +16,6 @@
  */
 
 const fs = require('fs').promises;
-const fsSync = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 
@@ -49,14 +48,6 @@ const WEIGHTS = {
         low: 1.3,      // Used during commands
         medium: 1.6,   // Used during activation
         high: 2.0      // Critical activation path
-    },
-    
-    // Activation path detection
-    activationPath: {
-        packageJson: 2.0,
-        commandRegistration: 1.8,
-        diWiring: 1.6,
-        compositionRoot: 1.8
     }
 };
 
@@ -184,21 +175,14 @@ async function analyzeChangeCriticality(filePath, workspaceRoot, document = null
     }
 
     // Factor 7: Activation path detection
-    let runtimeRisk = WEIGHTS.runtimeRisk.none;
-    const activationFactors = detectActivationPathChanges(filePath, relativePath, fileName);
+    const activationFactors = detectActivationPathChanges(relativePath, fileName);
+    const runtimeRisk = runtimeRiskFromActivation(activationFactors);
+    
     if (activationFactors.length > 0) {
-        factors.activationPath = activationFactors;
-        // Highest activation risk wins
-        if (activationFactors.some(f => f.includes('package.json'))) {
-            runtimeRisk = WEIGHTS.runtimeRisk.high;
-        } else if (activationFactors.some(f => f.includes('extension.js') || f.includes('compositionRoot'))) {
-            runtimeRisk = WEIGHTS.runtimeRisk.high;
-        } else if (activationFactors.some(f => f.includes('command') || f.includes('DI'))) {
-            runtimeRisk = WEIGHTS.runtimeRisk.medium;
-        } else {
-            runtimeRisk = WEIGHTS.runtimeRisk.low;
-        }
-        factors.runtimeRisk = runtimeRisk;
+        // Store labels for display (already deduplicated by code in detectActivationPathChanges)
+        factors.activationPath = activationFactors.map(f => f.label);
+        factors.activationPathCodes = activationFactors.map(f => f.code);
+        // runtimeRisk is used in composite calculation below and stored in return value
     }
 
     // ========== CALCULATE COMPOSITE CRITICALITY ==========
@@ -268,7 +252,7 @@ async function analyzeChangeCriticality(filePath, workspaceRoot, document = null
         impactParts.push('Interface/export changes');
     }
     if (activationFactors.length > 0) {
-        impactParts.push(`Activation path: ${activationFactors.join(', ')}`);
+        impactParts.push(`Activation path: ${activationFactors.map(f => f.label).join(', ')}`);
     }
 
     const impact = impactParts.length > 0 
@@ -298,68 +282,120 @@ function normalizePathSeparators(filePath) {
     return filePath.replace(/\\/g, '/');
 }
 
+// Activation path codes (for reliable runtime risk calculation)
+const ActivationCodes = {
+    PACKAGE_JSON: 'PACKAGE_JSON',
+    EXTENSION_JS: 'EXTENSION_JS',
+    COMPOSITION_ROOT: 'COMPOSITION_ROOT',
+    COMMANDS_FACTORY: 'COMMANDS_FACTORY',
+    COMMANDS_DIR: 'COMMANDS_DIR',
+    DI_CONTAINER: 'DI_CONTAINER',
+    INIT_HELPERS: 'INIT_HELPERS'
+};
+
 /**
  * Detect if file is part of activation path (package.json, commands, DI wiring)
- * FIXED: Tightened patterns to avoid false positives (exact files or known folders)
- * @param {string} filePath - Absolute path
+ * FIXED: Returns structured {code, label} objects for reliable runtime risk calculation
  * @param {string} relativePath - Relative path (normalized)
  * @param {string} fileName - Filename
- * @returns {string[]} Array of activation path factors
+ * @returns {Array<{code: string, label: string}>} Array of activation path factors with codes (deduplicated by code)
  */
-function detectActivationPathChanges(filePath, relativePath, fileName) {
+function detectActivationPathChanges(relativePath, fileName) {
     const factors = [];
+    
+    const add = (code, label) => {
+        factors.push({ code, label });
+    };
     
     // Exact file matches (highest priority)
     if (fileName === 'package.json') {
-        factors.push('package.json (activation events, commands)');
+        add(ActivationCodes.PACKAGE_JSON, 'package.json (activation events, commands)');
     }
     
     if (fileName === 'extension.js') {
-        factors.push('extension.js (activation entry point)');
+        add(ActivationCodes.EXTENSION_JS, 'extension.js (activation entry point)');
     }
     
     if (fileName === 'compositionRoot.js') {
-        factors.push('compositionRoot.js (DI wiring)');
+        add(ActivationCodes.COMPOSITION_ROOT, 'compositionRoot.js (DI wiring)');
     }
     
     if (fileName === 'diContainer.js') {
-        factors.push('diContainer.js (dependency injection)');
+        add(ActivationCodes.DI_CONTAINER, 'diContainer.js (dependency injection)');
     }
     
     if (fileName === 'initializeHelpers.js') {
-        factors.push('initializeHelpers.js (startup initialization)');
+        add(ActivationCodes.INIT_HELPERS, 'initializeHelpers.js (startup initialization)');
     }
     
     // Known patterns (tighter matching)
     // vsCommandsFactory files
     if (/vsCommandsFactory.*\.js$/.test(relativePath)) {
-        factors.push('Command registration (vsCommandsFactory)');
+        add(ActivationCodes.COMMANDS_FACTORY, 'Command registration (vsCommandsFactory)');
     }
     
     // Command registration directories (exact folder match, not substring)
-    // Common patterns: app/commands, infrastructure/commands, commands/
     if (/(^|\/)commands(\/|$)/.test(relativePath) ||
         /app\/commands/.test(relativePath) ||
         /infrastructure\/commands/.test(relativePath)) {
-        factors.push('Command registration (commands directory)');
+        add(ActivationCodes.COMMANDS_DIR, 'Command registration (commands directory)');
     }
     
-    // Composition root in path (but not just substring)
-    if (/compositionRoot\.js$/.test(relativePath)) {
-        factors.push('compositionRoot.js (DI wiring)');
+    // Composition root in path (but not just substring) - skip if already added
+    if (/compositionRoot\.js$/.test(relativePath) && !factors.some(f => f.code === ActivationCodes.COMPOSITION_ROOT)) {
+        add(ActivationCodes.COMPOSITION_ROOT, 'compositionRoot.js (DI wiring)');
     }
     
-    // DI container in path
-    if (/diContainer\.js$/.test(relativePath)) {
-        factors.push('diContainer.js (dependency injection)');
+    // DI container in path - skip if already added
+    if (/diContainer\.js$/.test(relativePath) && !factors.some(f => f.code === ActivationCodes.DI_CONTAINER)) {
+        add(ActivationCodes.DI_CONTAINER, 'diContainer.js (dependency injection)');
     }
     
-    return factors;
+    // Deduplicate by code (if multiple labels per code exist, only first is kept)
+    // This is acceptable since codes are the source of truth for runtime risk calculation
+    return Array.from(new Map(factors.map(f => [f.code, f])).values());
+}
+
+/**
+ * Compute runtime risk from activation factors (using codes, not string matching)
+ * @param {Array<{code: string, label: string}>} activationFactors - Activation path factors
+ * @returns {number} Runtime risk multiplier
+ */
+function runtimeRiskFromActivation(activationFactors) {
+    if (activationFactors.length === 0) {
+        return WEIGHTS.runtimeRisk.none;
+    }
+    
+    const codes = new Set(activationFactors.map(f => f.code));
+    
+    // Highest activation risk wins
+    if (codes.has(ActivationCodes.PACKAGE_JSON) || 
+        codes.has(ActivationCodes.EXTENSION_JS) || 
+        codes.has(ActivationCodes.COMPOSITION_ROOT)) {
+        return WEIGHTS.runtimeRisk.high;
+    }
+    
+    if (codes.has(ActivationCodes.COMMANDS_FACTORY) || 
+        codes.has(ActivationCodes.COMMANDS_DIR) || 
+        codes.has(ActivationCodes.DI_CONTAINER)) {
+        return WEIGHTS.runtimeRisk.medium;
+    }
+    
+    return WEIGHTS.runtimeRisk.low;
 }
 
 /**
  * Count how many files in the workspace depend on (require/import) the given file
  * FIXED: Removed /g flag, improved patterns to avoid basename-only collisions
+ * 
+ * KNOWN LIMITATIONS (heuristic approach):
+ * - Will miss barrel exports and index resolution across folders
+ * - Will miss dynamic require() and template strings
+ * - Will miss monorepo-style absolute imports
+ * - Will miss path aliases (if using module resolution configs)
+ * 
+ * For higher fidelity, consider moving to a cached import graph (AST parse once, incremental updates)
+ * 
  * @param {string} relativePathNative - Relative path (native format)
  * @param {string} relativePathPosix - Relative path (POSIX normalized)
  * @param {string} workspaceRoot - Workspace root path
@@ -384,11 +420,9 @@ async function countFileDependencies(relativePathNative, relativePathPosix, work
         }
 
         // Build search patterns - FIXED: require directory context to avoid basename collisions
+        // FIXED: Handle root-dir case (dirName === '.' or '/') - skip dir-context patterns
         const escapedPath = escapeRegex(normalizedPath);
         const dirName = path.posix.dirname(normalizedPath);
-        const baseName = path.posix.basename(normalizedPath, path.posix.extname(normalizedPath));
-        const escapedDir = escapeRegex(dirName);
-        const escapedBase = escapeRegex(baseName);
         
         // Patterns without 'g' flag (non-stateful)
         // Prefer exact path matches, with optional directory context for relative imports
@@ -396,12 +430,21 @@ async function countFileDependencies(relativePathNative, relativePathPosix, work
             // require('./path/to/file') or require('./path/to/file.js')
             new RegExp(`require\\(['"]\\.?/?${escapedPath}(?:\\.js)?['"]\\)`),
             // import ... from './path/to/file'
-            new RegExp(`from ['"]\\.?/?${escapedPath}(?:\\.js)?['"]`),
-            // require('../dir/file') - require directory context, not just basename
-            new RegExp(`require\\(['"][^'"]*${escapedDir}[/\\\\]${escapedBase}(?:\\.js)?['"]\\)`),
-            // import ... from '../dir/file'
-            new RegExp(`from ['"][^'"]*${escapedDir}[/\\\\]${escapedBase}(?:\\.js)?['"]`)
+            new RegExp(`from ['"]\\.?/?${escapedPath}(?:\\.js)?['"]`)
         ];
+        
+        // Only add dir-context patterns if not root-level (dirName !== '.' and dirName !== '/')
+        if (dirName !== '.' && dirName !== '/') {
+            const baseName = path.posix.basename(normalizedPath, path.posix.extname(normalizedPath));
+            const escapedDir = escapeRegex(dirName);
+            const escapedBase = escapeRegex(baseName);
+            // require('../dir/file') - require directory context, not just basename
+            searchPatterns.push(
+                new RegExp(`require\\(['"][^'"]*${escapedDir}[/\\\\]${escapedBase}(?:\\.js)?['"]\\)`),
+                // import ... from '../dir/file'
+                new RegExp(`from ['"][^'"]*${escapedDir}[/\\\\]${escapedBase}(?:\\.js)?['"]`)
+            );
+        }
 
         // FIXED: Build explicit scope list deterministically (not filter after full walk)
         // This ensures deterministic order and avoids wasted work
@@ -453,6 +496,7 @@ async function countFileDependencies(relativePathNative, relativePathPosix, work
 
 /**
  * Normalize module path for dependency matching (uses POSIX paths)
+ * FIXED: Consistent with patterns - always strip .js, handle index.js -> directory
  * @param {string} filePath - File path (POSIX normalized)
  * @returns {string|null} Normalized path or null
  */
@@ -462,7 +506,7 @@ function normalizeModulePath(filePath) {
     // Already POSIX normalized, use path.posix.*
     let normalized = filePath;
 
-    // Remove .js extension
+    // Remove .js extension (consistent with patterns that use (?:\.js)?)
     normalized = normalized.replace(/\.js$/, '');
 
     // Handle index.js -> directory
@@ -500,10 +544,18 @@ async function findScopedJSFiles(workspaceRoot) {
     }
 
     const files = [];
-    const dirsToSkip = ['node_modules', '.git', '.cursor', '.vscode', 'dist', 'build', '.vibeswitch', 'tests', 'test'];
-    const fileExtensions = ['.js', '.ts']; // Include TypeScript for future-proofing
+    // FIXED: Use path segment matching instead of includes() to avoid false positives
+    // Single regex pattern for all skip directories (more efficient)
+    // NOTE: test/tests directories are excluded, which affects centrality calculation:
+    // - Prod files imported only by tests will show 0 deps (good for "blast radius" / runtime risk)
+    // - If you want "review workload risk", consider optionally including tests behind a flag
+    const dirsToSkipPattern = /(^|\/)(node_modules|\.git|\.cursor|\.vscode|dist|build|\.vibeswitch|test|tests)(\/|$)/;
+    const fileExtensions = ['.js']; // JavaScript only
 
     // Explicit scope: walk only these directories deterministically
+    // NOTE: This is a heuristic - only scans business_modules, cross-cut-modules, and root files
+    // Other directories (e.g., src/, scripts/, infra/) are excluded from dependency counting
+    // To include additional directories, add them to this list
     const scopedDirs = [
         path.join(workspaceRoot, 'business_modules'),
         path.join(workspaceRoot, 'cross-cut-modules')
@@ -532,9 +584,10 @@ async function findScopedJSFiles(workspaceRoot) {
                 const fullPath = path.join(dir, entry.name);
                 const relativePath = path.relative(workspaceRoot, fullPath);
 
-                // Skip certain directories
+                // Skip certain directories (using path segment matching, not includes())
                 if (entry.isDirectory()) {
-                    if (!dirsToSkip.some(skip => relativePath.includes(skip))) {
+                    const relativePathPosix = normalizePathSeparators(relativePath);
+                    if (!dirsToSkipPattern.test(relativePathPosix)) {
                         await walkDir(fullPath);
                     }
                 } else if (entry.isFile()) {
@@ -594,6 +647,9 @@ function stripDiffPrefix(line) {
 
 /**
  * Check if line is a diff header/metadata line
+ * NOTE: Git can emit "\ No newline at end of file" marker - this is filtered out
+ * by the hunkLines filter (only keeps +/-/space lines), so it won't affect
+ * cosmetic vs content classification. Just be aware it exists.
  * @param {string} line - Line to check
  * @returns {boolean} True if it's a diff header
  */
@@ -604,7 +660,8 @@ function isDiffHeaderLine(line) {
            trimmed.startsWith('index ') ||
            trimmed.startsWith('--- ') ||
            trimmed.startsWith('+++ ') ||
-           trimmed.startsWith('@@');
+           trimmed.startsWith('@@') ||
+           trimmed === '\\ No newline at end of file';
 }
 
 /**
@@ -617,10 +674,16 @@ function isDiffHeaderLine(line) {
  */
 function gitDiffWithTimeout(workspaceRoot, relativePath, timeoutMs = 2000) {
     return new Promise((resolve, reject) => {
-        const child = spawn('git', ['diff', 'HEAD', '--', relativePath], {
+        // FIXED: Normalize path separators for git (Windows backslashes → forward slashes)
+        const gitPath = normalizePathSeparators(relativePath);
+        
+        // FIXED: Add --no-ext-diff to prevent external diff tools and ensure deterministic output
+        // FIXED: Set GIT_PAGER=cat to avoid pager weirdness (rare with pipes, but harmless)
+        const child = spawn('git', ['--no-ext-diff', 'diff', 'HEAD', '--', gitPath], {
             cwd: workspaceRoot,
             stdio: ['ignore', 'pipe', 'pipe'],
-            windowsHide: true // Avoid console window flashes on Windows
+            windowsHide: true, // Avoid console window flashes on Windows
+            env: { ...process.env, GIT_PAGER: 'cat' } // Prevent pager from interfering
         });
         
         let stdout = '';
@@ -628,7 +691,8 @@ function gitDiffWithTimeout(workspaceRoot, relativePath, timeoutMs = 2000) {
         let resolved = false;
         
         const cleanup = () => {
-            // Remove listeners to prevent leaks
+            // Remove listeners to prevent leaks (symmetry: clean all streams)
+            child.stdin?.removeAllListeners?.();
             child.stdout.removeAllListeners();
             child.stderr.removeAllListeners();
             child.removeAllListeners();
@@ -656,26 +720,74 @@ function gitDiffWithTimeout(workspaceRoot, relativePath, timeoutMs = 2000) {
             stderr += data.toString();
         });
         
-        // Graceful kill first, then SIGKILL after short grace period (Windows-friendly)
+        // FIXED: Improved kill robustness - SIGTERM first, then SIGKILL after delay
+        // Use exitCode check instead of killed flag, set timedOut flag, only reject on close or after final grace
+        // Add hard ceiling timeout to prevent hung processes (especially on Windows)
+        let timedOut = false;
+        let hardCeilingFired = false; // Track if hard ceiling fired for consistent error messages
+        let forceKillTimeout = null;
+        let hardCeilingTimeout = null;
+        
         const timeout = setTimeout(() => {
             if (resolved) return;
-            // Try graceful kill first
-            child.kill();
-            // If still running after grace period, force kill
-            const forceKillTimeout = setTimeout(() => {
-                if (!resolved && !child.killed) {
-                    child.kill('SIGKILL');
+            timedOut = true;
+            
+            // Step 1: Try graceful termination (SIGTERM)
+            try {
+                child.kill('SIGTERM');
+            } catch (err) {
+                // If kill() throws, still proceed with hard ceiling
+            }
+            
+            // Step 2: Schedule hard ceiling regardless (Windows safety net - even if SIGTERM/SIGKILL fail)
+            // This ensures we don't hang forever if process doesn't respond to signals
+            // Schedule it for: SIGTERM grace (300ms) + 1s buffer = 1300ms from now
+            // Note: SIGKILL may or may not have been sent by this time, so message is neutral
+            hardCeilingTimeout = setTimeout(() => {
+                if (!resolved) {
+                    hardCeilingFired = true;
+                    fail(new Error(`Timeout running git diff for ${gitPath} [hard-ceiling]`));
                 }
-            }, 100);
-            // Clean up force kill timeout if process exits
-            child.once('close', () => clearTimeout(forceKillTimeout));
-            fail(new Error('Timeout'));
+            }, 300 + 1000); // 300ms SIGTERM grace + 1s buffer (SIGKILL happens at 300ms, so this fires 1s after that)
+            
+            // Step 3: If still running after grace period (300ms), force kill
+            // Check exitCode === null (process still running) instead of !child.killed
+            forceKillTimeout = setTimeout(() => {
+                if (!resolved && child.exitCode === null) {
+                    try {
+                        child.kill('SIGKILL');
+                    } catch (err) {
+                        // If kill() throws, hard ceiling will still fire
+                    }
+                }
+            }, 300);
         }, timeoutMs);
         
-        child.on('close', (code) => {
+        const clearAllTimeouts = () => {
             clearTimeout(timeout);
-            if (resolved) return;
-            if (code === 0 || stdout) {
+            if (forceKillTimeout) {
+                clearTimeout(forceKillTimeout);
+            }
+            if (hardCeilingTimeout) {
+                clearTimeout(hardCeilingTimeout);
+            }
+        };
+        
+        child.on('close', (code) => {
+            clearAllTimeouts();
+            
+            // FIXED: Always cleanup() even if resolved (defensive pattern - prevents leaks if resolved is set elsewhere)
+            if (resolved) {
+                cleanup(); // Safe idempotent - cleanup() can be called multiple times
+                return;
+            }
+            
+            if (timedOut) {
+                // Process was terminated due to timeout
+                // Use consistent error format (hard ceiling already fired with [hard-ceiling] suffix)
+                const suffix = hardCeilingFired ? ' [hard-ceiling]' : '';
+                fail(new Error(`Timeout running git diff for ${gitPath}${suffix}`));
+            } else if (code === 0 || stdout) {
                 finish(stdout.trim());
             } else {
                 fail(new Error(`git diff failed: ${stderr || 'unknown error'}`));
@@ -683,7 +795,7 @@ function gitDiffWithTimeout(workspaceRoot, relativePath, timeoutMs = 2000) {
         });
         
         child.on('error', (err) => {
-            clearTimeout(timeout);
+            clearAllTimeouts();
             fail(err);
         });
     });
@@ -782,7 +894,10 @@ async function analyzeChangeType(filePath, workspaceRoot, document = null) {
         }
 
         // Check for method additions/removals
-        const methodPattern = /^(?:[+-].*\w+\s*\([^)]*\)\s*\{)/m;
+        // FIXED: Exclude JS keywords (if/for/while/switch/catch) and arrow functions to reduce false positives
+        // Match explicit method patterns: function declarations, const/let assignments, object methods, arrow functions
+        // This avoids false positives from control flow statements like "if (condition) {"
+        const methodPattern = /^(?:[+-].*(?:function\s+\w+|const\s+\w+\s*=\s*(?:async\s+)?\(|\w+\s*:\s*(?:async\s+)?\(|\w+\s*\([^)]*\)\s*=>|get\s+\w+|set\s+\w+))/m;
         if (methodPattern.test(cleanDiff)) {
             structuralChanges.push('Method changes');
             hasStructural = true;
