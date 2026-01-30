@@ -16,6 +16,7 @@ const TimerRegistry = require('./utilities/timerRegistry');
 const AwarenessEventListener = require('../input/awarenessEventListener');
 
 const ScoreService = require('./scoring/scoreService');
+const TraceRecorder = require('./recording/traceRecorder');
 
 // Import domain aggregates
 const SuggestionAggregate = require('../domain/aggregates/suggestionAggregate');
@@ -145,8 +146,9 @@ class AwarenessEngine {
      * @param {Object} context - VS Code extension context
      * @param {Function} updateFileColorsInExplorer - Callback to update file colors in Explorer
      * @param {string} mode - Current mode ('vibe', 'dev') for classifier config thresholds
+     * @param {Object} options - Optional: { recordTraceToFile: boolean, recordTracePath: string } for dev recording
      */
-    async start(context, updateFileColorsInExplorer = null, mode = 'dev') {
+    async start(context, updateFileColorsInExplorer = null, mode = 'dev', options = {}) {
         if (!context) {
             throw new Error('AwarenessEngine.start() called with null/undefined context');
         }
@@ -187,13 +189,20 @@ class AwarenessEngine {
         this.isActive = true;
         this.state = 'running';
         
+        this.traceRecorder = null;
+        if (options.recordTraceToFile && options.recordTracePath) {
+            this.traceRecorder = new TraceRecorder();
+            this.traceRecorder.startRecording(options.recordTracePath);
+        }
+        
         // Initialize application services
         this.debtService = new DebtService(
             this.onScoreUpdate,
             updateFileColorsInExplorer,
             this.persistenceAdapter, // Adapter implements IAwarenessPersistencePort
             this.loggerAdapter, // Adapter implements ILoggerPort
-            this.llmInsightStore ? this.llmInsightStore.getSemanticRiskMultiplier.bind(this.llmInsightStore) : null
+            this.llmInsightStore ? this.llmInsightStore.getSemanticRiskMultiplier.bind(this.llmInsightStore) : null,
+            this.traceRecorder
         );
         this.debtService.loadDebt();
         
@@ -224,7 +233,8 @@ class AwarenessEngine {
             onAISuggestionOutcome: this.onAISuggestionOutcome,
             onKeepAll: this.onKeepAll,
             isActive: () => this.isActive,
-            getInstanceId: this.getInstanceId // Pass getter for generation-based cancellation
+            getInstanceId: this.getInstanceId, // Pass getter for generation-based cancellation
+            traceRecorder: this.traceRecorder
         });
 
         this.sessionTracker = new SessionService(
@@ -281,7 +291,34 @@ class AwarenessEngine {
                 safe('onFilesCreated', () => this.eventHandlers.onFilesCreated(event));
             })
         );
-        
+
+        // File system watcher: detect new files created on disk (e.g. by agent Write tool)
+        // so they show up as unreviewed even when onDidCreateFiles does not fire
+        this._fileSystemWatcherActive = false;
+        if (typeof this.vscodeAdapter.createFileSystemWatcher === 'function') {
+            try {
+                const watcher = this.vscodeAdapter.createFileSystemWatcher('**/*');
+                const createDisposable = watcher.onDidCreate((uri) => {
+                    if (!uri || !this.uriPathOperationServiceD) return;
+                    if (!this.uriPathOperationServiceD.isCodeUri(uri)) return;
+                    safe('onFileCreatedWatcher', () => {
+                        this.handleFileCreated(uri, { isFileCreation: true }).catch(err => {
+                            if (this.loggerAdapter) {
+                                this.loggerAdapter.error('AwarenessEngine: Error processing watched file create', err);
+                            }
+                        });
+                    });
+                });
+                this.disposables.push(createDisposable);
+                this.disposables.push(watcher);
+                this._fileSystemWatcherActive = true;
+            } catch (err) {
+                if (this.loggerAdapter) {
+                    this.loggerAdapter.log(`AwarenessService: File system watcher not started: ${err.message}`);
+                }
+            }
+        }
+
         this.disposables.push(
             this.vscodeAdapter.onDidSaveTextDocument((document) => {
                 safe('onFileSaved', () => this.eventHandlers.onFileSaved(document));
@@ -362,6 +399,13 @@ class AwarenessEngine {
             });
         }
         
+        if (this.traceRecorder) {
+            await safe('stopRecording', async () => {
+                await this.traceRecorder.stopRecording();
+            });
+            this.traceRecorder = null;
+        }
+        
         // Dispose all event listeners
         this.disposables.forEach(d => {
             safe('disposeListener', () => {
@@ -398,8 +442,7 @@ class AwarenessEngine {
             this.suggestionLifecycleService.dispose();
         }
         
-        // Clean up file system watcher
-        // FileWatcherService removed - no cleanup needed
+        this._fileSystemWatcherActive = false;
         
         // Clear all timers through registry (includes updateTimer, status checks, and all other timers)
         this.timerRegistry.clear();
@@ -446,6 +489,24 @@ class AwarenessEngine {
         
         // Trigger callbacks (get state from ScoreService)
         this._triggerScoreCallbacks(suggestions);
+    }
+
+    /**
+     * Reset awareness state: clear suggestions, debt, and score to zero.
+     * Use for "Restart Awareness Meter / Score" so the meter shows 0 and no unreviewed files.
+     * @returns {Promise<void>}
+     */
+    async resetAwarenessState() {
+        if (!this.isActive) return;
+        if (this.suggestionAggregate) this.suggestionAggregate.clearAll();
+        if (this.debtService) await this.debtService.clearAll();
+        if (this.suggestionLifecycleService && typeof this.suggestionLifecycleService.clearAll === 'function') {
+            this.suggestionLifecycleService.clearAll();
+        }
+        if (this.scoreService && typeof this.scoreService.resetScoreState === 'function') {
+            this.scoreService.resetScoreState();
+        }
+        this.updateScore();
     }
     
     /**
@@ -495,6 +556,29 @@ class AwarenessEngine {
             updateTimer: this.updateTimer
         });
         return result;
+    }
+
+    /**
+     * Get structured score breakdown (contributions, counts, top factors) for explainability.
+     * @returns {Object} { contributions, counts, topFactors }
+     */
+    getScoreBreakdown() {
+        if (!this.scoreService) {
+            return { contributions: {}, counts: { total: 0, completed: 0, pending: 0, reviewed: 0, recent: 0 }, topFactors: [] };
+        }
+        const suggestions = this.suggestionAggregate ? this.suggestionAggregate.getSuggestions() : [];
+        return this.scoreService.getScoreBreakdown({
+            suggestions,
+            debtService: this.debtService
+        });
+    }
+    
+    /**
+     * Get change ledger service (for test-only checkpoint save/restore).
+     * @returns {ChangeLedgerService|null}
+     */
+    getChangeLedger() {
+        return this.changeLedger || null;
     }
     
     /**
@@ -681,7 +765,7 @@ class AwarenessEngine {
             reviewDebtCount: this.debtService ? this.debtService.getDebtSize() : 0,
             currentScore: scoreState.currentScore,
             scores: { ...scoreState.scores },
-            hasFileSystemWatcher: false, // FileWatcherService removed - using VS Code events only
+            hasFileSystemWatcher: !!this._fileSystemWatcherActive,
             hasUpdateTimer: !!this.updateTimer,
             watchedDirectories: [], // FileWatcherService removed
             workspaceFolders: (this.vscodeAdapter.workspaceFolders || []).map(f => f.uri.fsPath),

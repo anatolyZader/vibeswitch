@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "recordedAt": "2026-01-29T00:00:00.000Z",
+  "events": [
+    {
+      "type": "suggestion_created",
+      "document": "file:///src/core.js",
+      "size": 500,
+      "timestamp": 1000000,
+      "suggestionId": "s1",
+      "provenanceScore": 0.8
+    },
+    {
+      "type": "suggestion_reviewed",
+      "suggestionId": "s1",
+      "reviewTime": 12000
+    },
+    {
+      "type": "suggestion_status_changed",
+      "suggestionId": "s1",
+      "status": "accepted"
+    }
+  ]
+}

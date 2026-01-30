@@ -17,8 +17,9 @@ class DebtService {
      * @param {IAwarenessPersistencePort} persistencePort - Persistence port (interface)
      * @param {ILoggerPort} loggerPort - Logger port (interface, optional)
      * @param {Function|null} getSemanticRiskMultiplier - Optional semantic risk multiplier provider
+     * @param {TraceRecorder|null} traceRecorder - Optional dev-only trace recorder for replay fixtures
      */
-    constructor(onScoreUpdate, updateFileColorsInExplorer = null, persistencePort, loggerPort = null, getSemanticRiskMultiplier = null) {
+    constructor(onScoreUpdate, updateFileColorsInExplorer = null, persistencePort, loggerPort = null, getSemanticRiskMultiplier = null, traceRecorder = null) {
         if (!persistencePort) {
             throw new Error('DebtService requires persistencePort');
         }
@@ -28,8 +29,22 @@ class DebtService {
         this.persistencePort = persistencePort;
         this.loggerPort = loggerPort;
         this.getSemanticRiskMultiplier = typeof getSemanticRiskMultiplier === 'function' ? getSemanticRiskMultiplier : null;
+        this.traceRecorder = traceRecorder || null;
         this.fileDebts = new Map(); // URI string -> FileDebt entity (file-level debt only)
         // Note: Suggestion-level debt is tracked via Suggestion entities (status === 'pending')
+    }
+
+    /**
+     * Clear all file-level debt and persist (for reset/restart).
+     * @returns {Promise<void>}
+     */
+    async clearAll() {
+        this.fileDebts.clear();
+        await this.saveDebt();
+        if (this.loggerPort) {
+            this.loggerPort.log('AwarenessMonitor: Cleared all file-level debt');
+        }
+        safe('updateFileColors', () => this.updateFileColorsInExplorer?.());
     }
 
     /**
@@ -127,6 +142,10 @@ class DebtService {
         
         // Use domain entity method
         fileDebt.addChange(changeSize);
+        
+        if (this.traceRecorder && this.traceRecorder.isRecording && this.traceRecorder.isRecording()) {
+            this.traceRecorder.push({ type: 'debt_added', fileUri: uri, size: changeSize, timestamp: Date.now() });
+        }
         
         // Save debt (fire-and-forget in sync context)
         this.saveDebt().catch(err => {
@@ -240,7 +259,10 @@ class DebtService {
     /**
      * Get file-level debt summary for UI
      * Note: This returns file-level debt only. Suggestion debt is tracked separately.
-     * @returns {Object} Summary with total count and top 10 oldest files
+     * - total: full count (used for score and display count)
+     * - files: top 10 oldest (for popup/tooltip display only)
+     * - allFiles: full list (for file decorations and any logic that must see every file)
+     * @returns {Object} Summary with total, files (top 10), allFiles (all)
      */
     getDebtSummary() {
         const unreviewedFiles = Array.from(this.fileDebts.entries())
@@ -256,7 +278,8 @@ class DebtService {
         
         return {
             total: unreviewedFiles.length,
-            files: unreviewedFiles.slice(0, 10) // Top 10 oldest
+            files: unreviewedFiles.slice(0, 10), // Top 10 oldest (popup only)
+            allFiles: unreviewedFiles // Full list (decorations, score, etc.)
         };
     }
 

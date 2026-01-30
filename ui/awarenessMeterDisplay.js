@@ -62,6 +62,84 @@ function getScoreEmoji(score) {
 }
 
 /**
+ * Build merged list of unreviewed files: file-level debt + files with pending suggestions.
+ * Dedupes by fullPath so the same file is not counted twice. Sorted oldest first.
+ * Count uses backend debt.unreviewedFiles + pending files not already in debt (so we don't undercount when debt.files is only "top 10").
+ * @param {Object} scoreData - Result of awarenessEngine.getScore()
+ * @returns {{ count: number, files: Array<{ path: string, fullPath: string, ageMinutes: number }> }}
+ */
+function getUnreviewedFilesForDisplay(scoreData) {
+    const debt = (scoreData && scoreData.debt) ? scoreData.debt : { unreviewedFiles: 0, files: [] };
+    const debtFiles = debt.files || [];
+    const pendingFiles = (scoreData && scoreData.suggestions && scoreData.suggestions.pendingFiles) ? scoreData.suggestions.pendingFiles : [];
+    const debtPathSet = new Set(debtFiles.map(f => (f.fullPath || f.path || '').toString()).filter(Boolean));
+    const pendingNotInDebt = pendingFiles.filter(f => !debtPathSet.has((f.fullPath || f.path || '').toString())).length;
+    const count = (debt.unreviewedFiles || 0) + pendingNotInDebt;
+
+    const byPath = new Map();
+    for (const f of debtFiles) {
+        const key = (f.fullPath || f.path || '').toString();
+        if (key) byPath.set(key, { path: f.path || key, fullPath: f.fullPath || key, ageMinutes: typeof f.ageMinutes === 'number' ? f.ageMinutes : 0 });
+    }
+    for (const f of pendingFiles) {
+        const key = (f.fullPath || f.path || '').toString();
+        if (key && !byPath.has(key)) {
+            byPath.set(key, { path: f.path || key, fullPath: f.fullPath || key, ageMinutes: typeof f.ageMinutes === 'number' ? f.ageMinutes : 0 });
+        }
+    }
+    const files = Array.from(byPath.values()).sort((a, b) => (b.ageMinutes || 0) - (a.ageMinutes || 0));
+    return { count, files };
+}
+
+/**
+ * Map domain state (score data) to view model for status bar / tooltip.
+ * Contract: same input always produces same output; tests snapshot this.
+ * @param {Object} scoreData - Result of awarenessEngine.getScore()
+ * @param {string|null} currentMode - 'dev', 'vibe', or null
+ * @returns {Object} { segments, emoji, label, tooltipLines, warning, confidence }
+ */
+function mapDomainStateToViewModel(scoreData, currentMode = 'dev') {
+    if (!scoreData) {
+        return { segments: '', emoji: '⚪', label: '--', tooltipLines: ['No data'], warning: true, confidence: 'none' };
+    }
+    const score = Math.max(0, Math.min(100, scoreData.total || 0));
+    const segments = getScoreMeter(score);
+    const emoji = getScoreEmoji(score);
+    const hasAnySuggestions = scoreData.suggestions && scoreData.suggestions.total > 0;
+    const unreviewed = getUnreviewedFilesForDisplay(scoreData);
+    const hasReviewDebt = unreviewed.count > 0;
+    const hasRecentActivity = scoreData.debug && scoreData.debug.recentWindowCount > 0;
+
+    let label;
+    let tooltipLines = [];
+    let warning = false;
+    let confidence = 'full';
+
+    if (!hasAnySuggestions && !hasReviewDebt) {
+        label = 'No Activity';
+        tooltipLines = ['No AI suggestions detected yet.', 'Monitoring: ' + (scoreData.debug?.monitoringActive ? 'Active' : 'Inactive')];
+        confidence = 'none';
+    } else if (!hasRecentActivity && hasReviewDebt) {
+        label = `${segments} (${unreviewed.count})`;
+        tooltipLines = [`${unreviewed.count} unreviewed file(s)`, `Risk: ${score}/100`, `Debt: ${scoreData.components?.debt ?? 0}/30`];
+        warning = score >= 80;
+    } else {
+        label = segments;
+        tooltipLines = [
+            `Risk Score: ${score}/100`,
+            `Review: ${scoreData.components?.review ?? 0}/40`,
+            `Blind Accept: ${scoreData.components?.blindAcceptance ?? 0}/30`,
+            `Adaptation: ${scoreData.components?.adaptation ?? 0}/30`,
+            `Debt: ${scoreData.components?.debt ?? 0}/30`,
+            `Suggestions: ${scoreData.suggestions?.total ?? 0} (pending: ${scoreData.suggestions?.pending ?? 0})`
+        ];
+        warning = score >= 80;
+    }
+
+    return { segments, emoji, label, tooltipLines, warning, confidence };
+}
+
+/**
  * Updates the awareness meter status bar item with current awareness score and metrics
  * 
  * @param {vscode.StatusBarItem} awarenessBarItem - The awareness meter status bar item
@@ -123,7 +201,8 @@ function updateAwarenessMeter(awarenessBarItem, awarenessEngine, currentMode, ou
         // Check if we have ANY suggestions (including pending) to show activity
         const hasAnySuggestions = scoreData.suggestions.total > 0;
         const hasRecentActivity = scoreData.debug.recentWindowCount > 0;
-        const hasReviewDebt = scoreData.debt.unreviewedFiles > 0;
+        const unreviewedCompact = getUnreviewedFilesForDisplay(scoreData);
+        const hasReviewDebt = unreviewedCompact.count > 0;
         
         // NOTE: ScoreService uses 0 to represent "no activity" (not -1).
         // If we have no tracked suggestions and no debt, show a neutral state instead of 🟢 0/100.
@@ -152,17 +231,18 @@ Click for detailed statistics`;
             const meter = getScoreMeter(displayScore);
             const emoji = getScoreEmoji(displayScore);
             
-            awarenessBarItem.text = `${emoji} ${meter} (${scoreData.debt.unreviewedFiles})`;
+            awarenessBarItem.text = `${emoji} ${meter} (${unreviewedCompact.count})`;
+            const filesList = unreviewedCompact.files.slice(0, 10).map(f => `• ${f.path || f.fullPath} (${(f.ageMinutes || 0) < 60 ? `${f.ageMinutes || 0}m ago` : `${Math.round((f.ageMinutes || 0) / 60)}h ago`})`).join('\n');
+            const moreLine = unreviewedCompact.count > 10 ? `\n... and ${unreviewedCompact.count - 10} more` : '';
             awarenessBarItem.tooltip = `${currentMode.toUpperCase()} Mode Awareness: Review Debt Detected
 
-📁 ${scoreData.debt.unreviewedFiles} unreviewed file(s) with AI-generated changes
+📁 ${unreviewedCompact.count} unreviewed file(s) with AI-generated changes
 
 Recent Activity: None (last 10 seconds)
 Total Risk Score: ${displayScore}/100
 Review Debt Score: ${debtScore}/30
 
-${scoreData.debt.files.slice(0, 5).map(f => `• ${f.path} (${f.ageMinutes}m ago)`).join('\n')}
-${scoreData.debt.files.length > 5 ? `\n... and ${scoreData.debt.files.length - 5} more` : ''}
+${filesList}${moreLine}
 
 Click for detailed statistics`;
             // Only show error background when score reaches critical red level (80+)
@@ -223,21 +303,22 @@ Suggestions tracked: ${scoreData.suggestions.total}
 ❌ Rejected: ${scoreData.suggestions.rejected}
 ⏳ Pending: ${scoreData.suggestions.pending}`;
 
-            // Add debt section if there are unreviewed files
-            if (scoreData.debt.unreviewedFiles > 0) {
-                tooltip += `\n\n📁 UNREVIEWED AI CHANGES: ${scoreData.debt.unreviewedFiles} files`;
+            // Add unreviewed section: file-level debt + files with pending suggestions (merged, deduped)
+            const unreviewed = getUnreviewedFilesForDisplay(scoreData);
+            if (unreviewed.count > 0) {
+                tooltip += `\n\n📁 UNREVIEWED AI CHANGES: ${unreviewed.count} file(s)`;
                 
-                // Show top 5 oldest files
-                const filesToShow = scoreData.debt.files.slice(0, 5);
+                // Show top 10 oldest (debt + pending merged, sorted oldest first)
+                const filesToShow = unreviewed.files.slice(0, 10);
                 filesToShow.forEach(file => {
-                    const timeStr = file.ageMinutes < 60 ? 
-                        `${file.ageMinutes}m ago` : 
-                        `${Math.round(file.ageMinutes / 60)}h ago`;
-                    tooltip += `\n  • ${file.path} (${timeStr})`;
+                    const timeStr = (file.ageMinutes || 0) < 60
+                        ? `${file.ageMinutes || 0}m ago`
+                        : `${Math.round((file.ageMinutes || 0) / 60)}h ago`;
+                    tooltip += `\n  • ${file.path || file.fullPath} (${timeStr})`;
                 });
                 
-                if (scoreData.debt.unreviewedFiles > 5) {
-                    tooltip += `\n  ... and ${scoreData.debt.unreviewedFiles - 5} more`;
+                if (unreviewed.count > 10) {
+                    tooltip += `\n  ... and ${unreviewed.count - 10} more`;
                 }
                 
                 tooltip += `\n\n⚠️  Open and review these files to clear debt!`;
@@ -279,5 +360,8 @@ Monitoring: ${scoreData.debug.monitoringActive ? '✅ Active' : '❌ Inactive'}`
 module.exports = {
     updateAwarenessMeter,
     getScoreMeter,
-    getScoreEmoji
+    getScoreEmoji,
+    mapDomainStateToViewModel,
+    normalizeTo100,
+    getUnreviewedFilesForDisplay
 };

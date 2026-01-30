@@ -17,6 +17,7 @@ const Change = require('../../domain/entities/change');
 // Import domain utilities
 const { rangesOverlap } = require('../utilities/vscodeDocUtilities');
 const UriPathUtilities = require('../utilities/uriPathUtilities');
+const { hasAIMarkerInText } = require('../classification/detectors/markerDetector');
 
 // Domain events removed - using callbacks instead for engine-based design
 
@@ -40,6 +41,7 @@ class SuggestionLifecycleService {
      * @param {Function} isActive - Function to check if service is active (required)
      * @param {Function} getInstanceId - Getter function for current instance ID (required)
      * @param {KeepAllDetectionPolicy} keepAllPolicy - Keep-all detection policy (optional, uses default if not provided)
+     * @param {TraceRecorder|null} traceRecorder - Optional dev-only trace recorder for replay fixtures
      */
     constructor({
         suggestionAggregate,
@@ -55,7 +57,8 @@ class SuggestionLifecycleService {
         onKeepAll = null,
         isActive,
         getInstanceId,
-        keepAllPolicy = null
+        keepAllPolicy = null,
+        traceRecorder = null
     }) {
         if (!suggestionAggregate) {
             throw new Error('SuggestionLifecycleService requires suggestionAggregate');
@@ -92,6 +95,7 @@ class SuggestionLifecycleService {
         this.onKeepAll = onKeepAll;
         this.isActive = isActive;
         this.getInstanceId = getInstanceId; // Store getter for generation-based cancellation
+        this.traceRecorder = traceRecorder || null;
         
         // Create status scheduler (coalesces timers per suggestion ID)
         this.statusScheduler = new SuggestionStatusScheduler(
@@ -395,12 +399,30 @@ class SuggestionLifecycleService {
             isFileWrite = false
         } = options;
 
+        const uriStr = fileUri && (typeof fileUri.toString === 'function' ? fileUri.toString() : String(fileUri));
+        if (uriStr && this.debtService && this.debtService.getDebt(uriStr)) {
+            return null;
+        }
+        if (uriStr && this.suggestionAggregate.getPendingSuggestionsForFile(uriStr).length > 0) {
+            return null;
+        }
+
         try {
             const openDoc = (uri) => this.vscodeAdapter.openTextDocument(uri);
             const doc = await openDoc(fileUri);
             const content = doc.getText();
 
             if (content.trim().length > 0) {
+                // Only count as unreviewed if we have evidence it was AI-created (not user-created).
+                // When the only signal is "file created" (watcher / onDidCreateFiles), require @ai
+                // marker in content; otherwise skip (avoids false positives for user-created files).
+                const explicitAISource = options.source === 'agent' || options.hasAIMarker === true;
+                if ((isFileCreation || isExternalCreation) && !explicitAISource) {
+                    if (!hasAIMarkerInText(content)) {
+                        return null;
+                    }
+                }
+
                 const lastLine = Math.max(0, doc.lineCount - 1);
                 const lastLineText = doc.lineAt(lastLine).text;
                 const lastChar = lastLineText.length;
@@ -540,6 +562,9 @@ class SuggestionLifecycleService {
             const MIN_SIZE_FOR_RATIO = 10;
             if (!suggestion.size || suggestion.size < MIN_SIZE_FOR_RATIO) {
                 if (currentSize === 0) {
+                    if (this.traceRecorder && this.traceRecorder.isRecording && this.traceRecorder.isRecording()) {
+                        this.traceRecorder.push({ type: 'suggestion_status_changed', suggestionId: suggestion.id, status: 'rejected', timestamp: Date.now() });
+                    }
                     this.suggestionAggregate.updateSuggestionStatus(suggestion, 'rejected');
                     this.suggestionAggregate.updateBatchOutcome(suggestion);
                     if (this.loggerAdapter) {
@@ -552,12 +577,18 @@ class SuggestionLifecycleService {
             const sizeRatio = currentSize / suggestion.size;
 
             if (currentSize < suggestion.size * 0.4) {
+                if (this.traceRecorder && this.traceRecorder.isRecording && this.traceRecorder.isRecording()) {
+                    this.traceRecorder.push({ type: 'suggestion_status_changed', suggestionId: suggestion.id, status: 'rejected', timestamp: Date.now() });
+                }
                 this.suggestionAggregate.updateSuggestionStatus(suggestion, 'rejected');
                 this.suggestionAggregate.updateBatchOutcome(suggestion);
                 if (this.loggerAdapter) {
                     this.loggerAdapter.debug(`[DEBUG] Suggestion rejected: ${(sizeRatio * 100).toFixed(1)}% of original`);
                 }
             } else if (suggestion.userEdited) {
+                if (this.traceRecorder && this.traceRecorder.isRecording && this.traceRecorder.isRecording()) {
+                    this.traceRecorder.push({ type: 'suggestion_status_changed', suggestionId: suggestion.id, status: 'adapted', timestamp: Date.now() });
+                }
                 this.suggestionAggregate.updateSuggestionStatus(suggestion, 'adapted');
                 this.suggestionAggregate.updateBatchOutcome(suggestion);
                 if (this.loggerAdapter) {
@@ -587,6 +618,9 @@ class SuggestionLifecycleService {
                 if (shouldAccept) {
                     // Determine acceptance type for logging
                     const acceptanceType = suggestion.reviewed ? 'careful accept' : 'blind accept (timeout)';
+                    if (this.traceRecorder && this.traceRecorder.isRecording && this.traceRecorder.isRecording()) {
+                        this.traceRecorder.push({ type: 'suggestion_status_changed', suggestionId: suggestion.id, status: 'accepted', timestamp: Date.now() });
+                    }
                     this.suggestionAggregate.updateSuggestionStatus(suggestion, 'accepted');
                     this.suggestionAggregate.updateBatchOutcome(suggestion);
                     if (this.loggerAdapter) {
@@ -674,6 +708,21 @@ class SuggestionLifecycleService {
         // Add to aggregate
         this.suggestionAggregate.addSuggestion(suggestion);
 
+        if (this.traceRecorder && this.traceRecorder.isRecording && this.traceRecorder.isRecording()) {
+            this.traceRecorder.push({
+                type: 'suggestion_created',
+                document: suggestion.document,
+                range: suggestion.range,
+                text: suggestion.text,
+                size: suggestion.size,
+                timestamp: suggestion.timestamp || Date.now(),
+                suggestionId: suggestion.id,
+                isFileWrite: suggestion.isFileWrite,
+                isFileCreation: suggestion.isFileCreation,
+                provenanceScore: suggestion.provenanceScore != null ? suggestion.provenanceScore : 0.8
+            });
+        }
+
         // FIXED: Only add fileDebt for file operations (file-write, file-creation, external creation)
         // Normal text change suggestions are tracked as suggestion-level debt (pending status)
         // This prevents double-counting: fileDebt + pending suggestions counting the same change
@@ -731,6 +780,10 @@ class SuggestionLifecycleService {
             reviewTimeDeltaMs: reviewTime,
             reviewStartedAt: null // Let aggregate handle default
         });
+        
+        if (this.traceRecorder && this.traceRecorder.isRecording && this.traceRecorder.isRecording()) {
+            this.traceRecorder.push({ type: 'suggestion_reviewed', suggestionId, reviewTime: reviewTime || 0, timestamp: Date.now() });
+        }
         
         if (this.loggerAdapter) {
             this.loggerAdapter.debug(`Suggestion ${suggestionId} marked as reviewed (time: ${reviewTime}ms)`);
@@ -1070,6 +1123,21 @@ class SuggestionLifecycleService {
         this.activeReviews.delete(uri);
     }
     
+    /**
+     * Clear all lifecycle state (active reviews, scheduled checks, keep-all) without disposing.
+     * Use when resetting awareness state so suggestions/debt/score can be cleared to zero.
+     */
+    clearAll() {
+        this.statusScheduler.cancelAll();
+        for (const [uri, review] of this.activeReviews.entries()) {
+            if (review.dwellTimer) {
+                this.timerRegistry.clearTimeout(review.dwellTimer);
+            }
+        }
+        this.activeReviews.clear();
+        this.recentAcceptances = [];
+    }
+
     /**
      * Dispose - clean up all timers and state
      */

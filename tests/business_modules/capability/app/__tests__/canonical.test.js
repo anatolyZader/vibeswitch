@@ -7,15 +7,19 @@
 const path = require('path');
 const os = require('os');
 
-// Load the canonical module from its actual location
-const canonicalPath = path.join(os.homedir(), '.vibeswitch', 'lib', 'canonical.js');
+// Load from repo lib first, then ~/.vibeswitch/lib, then mock
+const repoCanonicalPath = path.join(process.cwd(), 'lib', 'canonical.js');
+const homeCanonicalPath = path.join(os.homedir(), '.vibeswitch', 'lib', 'canonical.js');
 let canonical;
 
 describe('Canonical JSON', () => {
     beforeAll(() => {
         try {
-            canonical = require(canonicalPath);
-        } catch (e) {
+            canonical = require(repoCanonicalPath);
+        } catch (e1) {
+            try {
+                canonical = require(homeCanonicalPath);
+            } catch (e2) {
             // Module may not exist in test environment, create mock
             canonical = {
                 canonicalize: (value) => {
@@ -36,6 +40,7 @@ describe('Canonical JSON', () => {
                 toCanonicalJSON: function(obj) { return this.canonicalize(obj); },
                 fromCanonicalJSON: (json) => JSON.parse(json)
             };
+            }
         }
     });
 

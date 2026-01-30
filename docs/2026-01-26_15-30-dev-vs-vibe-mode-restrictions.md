@@ -106,7 +106,7 @@
 - **Latency:** ~50-150ms from edit to revert (depends on filesystem)
 - **Reliability:** Uses `chokidar` for file watching (more reliable than `fs.watch`)
 - **Atomicity:** Git checkout is atomic (file either reverted or not)
-- **Configuration:** Can disable via `vibeswitch.autoRevertUnapprovedEdits: false`
+- **Configuration:** Default is `false` to avoid unexpected reverts; set `vibeswitch.autoRevertUnapprovedEdits: true` to enable auto-revert.
 
 ---
 
@@ -437,14 +437,14 @@ Agent must get new approval token.
 
 ### DEV Mode
 
-**Auto-Revert Enabled (default):**
-- ✅ Git-tracked files → **AUTO-REVERTED** immediately
-- ⚠️ New/untracked files → **Modal warning** (can't revert)
+**Auto-Revert (off by default):**
+- When enabled: Git-tracked files → **AUTO-REVERTED** immediately; new/untracked files → **Modal warning** (can't revert).
+- Default: `vibeswitch.autoRevertUnapprovedEdits` is `false` to avoid unexpected reverts; set to `true` to enable.
 
 **Configuration:**
 ```json
 {
-  "vibeswitch.autoRevertUnapprovedEdits": true  // default
+  "vibeswitch.autoRevertUnapprovedEdits": false  // default; set true to enable auto-revert
 }
 ```
 
@@ -588,7 +588,7 @@ Agent must get new approval token.
 **Auto-Revert Setting:**
 ```json
 {
-  "vibeswitch.autoRevertUnapprovedEdits": true  // DEV mode default
+  "vibeswitch.autoRevertUnapprovedEdits": false  // default; set true to enable in DEV mode
 }
 ```
 

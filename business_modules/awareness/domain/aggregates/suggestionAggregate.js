@@ -219,6 +219,19 @@ class SuggestionAggregate {
     }
 
     /**
+     * Load suggestions from plain array (e.g. after deserializing from persistence).
+     * Creates Suggestion entities via fromPlainObject and adds them to the aggregate.
+     * @param {Array<Object>} plainArray - Array of plain objects from Suggestion.toPlainObject()
+     */
+    loadFromPlainArray(plainArray) {
+        if (!Array.isArray(plainArray)) return;
+        for (const plain of plainArray) {
+            const suggestion = Suggestion.fromPlainObject(plain);
+            this.addSuggestion(suggestion);
+        }
+    }
+
+    /**
      * Get all suggestions
      * @returns {Array<Suggestion>} Array of Suggestion entities
      */
@@ -371,6 +384,17 @@ class SuggestionAggregate {
         const pending = this.getSuggestionsByStatus('pending').length;
         
         return { total, pending };
+    }
+
+    /**
+     * Clear all suggestions and related state (for reset/restart).
+     */
+    clearAll() {
+        this.suggestionsById.clear();
+        this.recentIds.length = 0;
+        this.batchesById.clear();
+        this.suggestionsToBatch.clear();
+        this.pendingByDocUri.clear();
     }
 
     _evictSuggestions() {

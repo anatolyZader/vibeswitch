@@ -66,6 +66,23 @@ class UriPathOperationServiceD {
         
         return NON_CODE_SCHEMES.includes(scheme);
     }
+
+    /**
+     * Check if URI is a code file we should track for awareness (for file watcher).
+     * Used when a new file appears on disk (e.g. agent Write tool) so we add it as unreviewed.
+     * @param {Uri|string} uri - URI to check
+     * @returns {boolean} True if we should process as new code file
+     */
+    isCodeUri(uri) {
+        if (!uri) return false;
+        if (this.isSkippableUri(uri)) return false;
+        const pathStr = typeof uri === 'string' ? uri : (uri.path || uri.fsPath || '');
+        const normalized = pathStr.split('?')[0].split('#')[0];
+        if (/node_modules[/\\]/.test(normalized) || /\.git[/\\]/.test(normalized)) return false;
+        const ext = path.extname(normalized).toLowerCase();
+        if (!ext) return false;
+        return CODE_EXTENSIONS.includes(ext);
+    }
 }
 
 module.exports = UriPathOperationServiceD;

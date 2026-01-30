@@ -9,6 +9,7 @@ const fs = require('fs');
 const fsPromises = require('fs').promises;
 const modeSwitcher = require('./ui/modeSwitcherDisplay');
 const userStatsUI = require('./ui/statsDashboardDisplay');
+const { mapDomainStateToViewModel, getUnreviewedFilesForDisplay } = require('./ui/awarenessMeterDisplay');
 
 /**
  * Create command handlers with dependency injection
@@ -87,6 +88,86 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
             }
             showInformationMessage('VibeSwitch status bar items shown');
             log('Status bar items manually shown via command');
+        },
+
+        'vibeswitch.restartAwarenessMeter': async () => {
+            if (!state.awarenessEngine) {
+                showWarningMessage('Awareness engine not initialized.');
+                return;
+            }
+            const refreshMeter = () => {
+                if (typeof state.updateAwarenessMeter === 'function') {
+                    state.updateAwarenessMeter();
+                }
+            };
+            try {
+                await state.awarenessEngine.resetAwarenessState();
+                refreshMeter();
+                setImmediate(refreshMeter);
+                if (state.fileDecorationProvider && typeof state.fileDecorationProvider.refresh === 'function') {
+                    state.fileDecorationProvider.refresh();
+                }
+                log('VibeSwitch: Awareness state reset (suggestions, debt, score cleared to zero)');
+                showInformationMessage('Awareness meter reset: suggestions, debt, and score cleared to zero.');
+            } catch (error) {
+                log(`VibeSwitch: Error restarting awareness meter: ${error.message}`, true, true);
+                showErrorMessage(`Failed to reset: ${error.message}`);
+            }
+        },
+
+        'vibeswitch.showAwarenessState': () => {
+            if (!state.awarenessEngine) {
+                showWarningMessage('Awareness engine not initialized.');
+                return;
+            }
+            const ch = state.outputChannel;
+            if (!ch) {
+                showWarningMessage('Output channel not available.');
+                return;
+            }
+            try {
+                const scoreData = state.awarenessEngine.getScore();
+                const mode = state.getMode ? state.getMode() : state.currentMode;
+                const unreviewed = getUnreviewedFilesForDisplay(scoreData);
+                let out = '';
+                out += '=== VibeSwitch Awareness State ===\n\n';
+                out += `Mode: ${mode || 'null'}\n`;
+                out += `Risk Score (total): ${scoreData.total ?? '--'}/100 (higher = worse)\n\n`;
+                out += '--- Component subscores (compose the awareness score) ---\n';
+                const c = scoreData.components || {};
+                out += `  Review Quality:     ${c.review ?? '--'}/40  (higher = better)\n`;
+                out += `  Blind Accept Risk: ${c.blindAcceptance ?? '--'}/30  (higher = worse)\n`;
+                out += `  Adaptation:         ${c.adaptation ?? '--'}/30  (higher = better)\n`;
+                out += `  Debt Risk:          ${c.debt ?? '--'}/30  (higher = worse)\n\n`;
+                out += '--- Suggestions ---\n';
+                const s = scoreData.suggestions || {};
+                out += `  Total: ${s.total ?? 0}  Pending: ${s.pending ?? 0}  Accepted: ${s.accepted ?? 0}  Rejected: ${s.rejected ?? 0}  Adapted: ${s.adapted ?? 0}\n\n`;
+                out += `--- Unreviewed files: ${unreviewed.count} ---\n`;
+                if (unreviewed.files.length === 0) {
+                    out += '  (none)\n';
+                } else {
+                    unreviewed.files.forEach((f, i) => {
+                        const age = (f.ageMinutes || 0) < 60 ? `${f.ageMinutes || 0}m ago` : `${Math.round((f.ageMinutes || 0) / 60)}h ago`;
+                        out += `  ${i + 1}. ${f.path || f.fullPath}  (${age})\n`;
+                    });
+                }
+                out += '\n--- Debug ---\n';
+                const d = scoreData.debug || {};
+                out += `  Last activity: ${d.lastActivity ?? '--'}\n`;
+                out += `  Monitoring: ${d.monitoringActive ? 'Active' : 'Inactive'}\n`;
+                out += `  Total tracked: ${d.totalTrackedCount ?? '--'}\n`;
+                ch.clear();
+                ch.append(out);
+                ch.show(true);
+                showInformationMessage('Awareness state written to Output (VibeSwitch).');
+            } catch (error) {
+                log(`VibeSwitch: Error showing awareness state: ${error.message}`, true, true);
+                if (ch) {
+                    ch.appendLine(`ERROR: ${error.message}`);
+                    ch.show(true);
+                }
+                showErrorMessage(`Failed to show state: ${error.message}`);
+            }
         },
 
         'vibeswitch.diagnoseDecorations': () => {
@@ -381,6 +462,62 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
             }
         },
 
+        'vibeswitch.setupCapability': async () => {
+            // #region agent log
+            fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'vsCommandsFactory.js:setupCapability',message:'command_invoked',data:{hasExtensionPath:!!state.extensionContext?.extensionPath},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
+            // #endregion
+            const capabilitySetup = require('./business_modules/capability/app/capabilitySetup');
+            const extensionPath = state.extensionContext?.extensionPath;
+            if (!extensionPath) {
+                showErrorMessage('Extension context not available');
+                return;
+            }
+            const result = capabilitySetup.runSetup(extensionPath);
+            // #region agent log
+            fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'vsCommandsFactory.js:setupCapability',message:'after_runSetup',data:{success:result.success,copiedCount:result.copied?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
+            // #endregion
+            let message = '=== Setup Capability Scripts ===\n\n';
+            if (result.copied.length > 0) {
+                message += 'Copied:\n';
+                result.copied.forEach(f => message += `  ${f}\n`);
+            }
+            if (result.errors.length > 0) {
+                message += '\nErrors:\n';
+                result.errors.forEach(e => message += `  ${e}\n`);
+            }
+            message += `\nStatus: ${result.success ? 'OK' : 'FAILED'}\n`;
+            state.outputChannel?.appendLine(message);
+            state.outputChannel?.show(true);
+            if (result.success) {
+                showInformationMessage('VibeSwitch capability scripts installed. Run Capability Self-Test to verify.');
+                if (state.capability?.selfTest) {
+                    const testResult = state.capability.selfTest.run();
+                    if (testResult.passed) {
+                        showInformationMessage('Capability self-test passed.');
+                    } else {
+                        showWarningMessage(`Self-test still failing: ${testResult.errors[0]}. Ensure jq is installed.`);
+                    }
+                }
+            } else {
+                showErrorMessage(`Setup failed: ${result.errors[0]}`);
+            }
+        },
+
+        'vibeswitch.registerMcpServer': async () => {
+            const mcpRegistration = require('./business_modules/capability/app/mcpRegistration');
+            const extensionPath = state.extensionContext?.extensionPath;
+            if (!extensionPath) {
+                showErrorMessage('Extension context not available');
+                return;
+            }
+            const result = mcpRegistration.registerMcpServer(extensionPath);
+            if (result.success) {
+                showInformationMessage('VibeSwitch: MCP server registered. Restart Cursor or reload window if needed.');
+            } else {
+                showErrorMessage(`VibeSwitch: Register MCP failed: ${result.error}`);
+            }
+        },
+
         // @ai
         'vibeswitch.testAddAICode': async () => {
             // @ai
@@ -425,6 +562,64 @@ const testVariable = 'AI-generated code test';
                 // @ai
                 showErrorMessage(`Failed to insert test code: ${error.message}`);
             }
+        },
+
+        // Test-only: return current score for extension-host integration tests (when VIBESWITCH_INTEGRATION_TEST=1)
+        'vibeswitch._testGetScore': () => {
+            if (process.env.VIBESWITCH_INTEGRATION_TEST !== '1') return undefined;
+            return state.awarenessEngine ? state.awarenessEngine.getScore() : undefined;
+        },
+
+        // Test-only: reset test-only state (avoids order-dependent tests; call at start of tests that assert pre/post)
+        'vibeswitch._testResetState': () => {
+            if (process.env.VIBESWITCH_INTEGRATION_TEST !== '1') return;
+            state._testTerminalBlocksCount = 0;
+        },
+        // Test-only: simulate terminal blocked (increments counter for electron test assertion)
+        'vibeswitch._testSimulateTerminalBlocked': () => {
+            if (process.env.VIBESWITCH_INTEGRATION_TEST !== '1') return;
+            state._testTerminalBlocksCount = (state._testTerminalBlocksCount || 0) + 1;
+        },
+
+        // Test-only: checkpoint save (ledger checkpoint for electron test)
+        'vibeswitch._testCheckpointSave': async () => {
+            if (process.env.VIBESWITCH_INTEGRATION_TEST !== '1') return;
+            const ledger = state.awarenessEngine && state.awarenessEngine.getChangeLedger ? state.awarenessEngine.getChangeLedger() : null;
+            if (ledger && typeof ledger.checkpointNow === 'function') await ledger.checkpointNow({ reason: 'test' });
+        },
+
+        // Test-only: checkpoint restore (returns current checkpoint shape for electron test)
+        'vibeswitch._testCheckpointRestore': () => {
+            if (process.env.VIBESWITCH_INTEGRATION_TEST !== '1') return undefined;
+            const ledger = state.awarenessEngine && state.awarenessEngine.getChangeLedger ? state.awarenessEngine.getChangeLedger() : null;
+            return ledger && typeof ledger.getCheckpoint === 'function' ? ledger.getCheckpoint() : undefined;
+        },
+
+        // Test-only: debug snapshot for asserting deltas and meter (counters, breakdown, view model)
+        'vibeswitch._testGetDebugSnapshot': () => {
+            if (process.env.VIBESWITCH_INTEGRATION_TEST !== '1') return undefined;
+            if (!state.awarenessEngine) return undefined;
+            const score = state.awarenessEngine.getScore();
+            const breakdown = state.awarenessEngine.getScoreBreakdown();
+            const terminalAttemptsBlocked = state._testTerminalBlocksCount ?? 0;
+            const counters = {
+                suggestionsTotal: score?.suggestions?.total ?? 0,
+                accepted: score?.suggestions?.accepted ?? 0,
+                rejected: score?.suggestions?.rejected ?? 0,
+                adapted: score?.suggestions?.adapted ?? 0,
+                pending: score?.suggestions?.pending ?? 0,
+                debtFileCount: score?.debt?.unreviewedFiles ?? 0,
+                terminalAttemptsBlocked
+            };
+            const meterViewModel = mapDomainStateToViewModel(score, state.currentMode || 'dev');
+            return {
+                score,
+                breakdown,
+                counters,
+                meterViewModel,
+                currentMode: state.currentMode || 'dev',
+                flags: { terminalBlocked: terminalAttemptsBlocked > 0 }
+            };
         }
     };
 }

@@ -203,6 +203,67 @@ class Suggestion {
                this.verificationSignals.navigationAfterInsert ||
                this.verificationSignals.saveAfterInsert;
     }
+
+    toPlainObject() {
+        return {
+            id: this.id,
+            document: this.document,
+            range: this.range,
+            text: this.text,
+            size: this.size,
+            timestamp: this.timestamp,
+            reviewed: this.reviewed,
+            reviewTime: this.reviewTime,
+            reviewStarted: this.reviewStarted,
+            status: this.status,
+            statusTimestamp: this.statusTimestamp,
+            userEdited: this.userEdited,
+            editCount: this.editCount,
+            isFileCreation: this.isFileCreation,
+            isExternalCreation: this.isExternalCreation,
+            isFileWrite: this.isFileWrite,
+            classificationLabel: this.classificationLabel,
+            classificationConfidence: this.classificationConfidence,
+            classificationReasons: this.classificationReasons ? [...this.classificationReasons] : [],
+            verificationSignals: this.verificationSignals ? { ...this.verificationSignals } : null,
+            provenanceScore: this.provenanceScore,
+            rangeCount: this.rangeCount
+        };
+    }
 }
+
+Suggestion.fromPlainObject = function fromPlainObject(plain) {
+    if (!plain || !plain.id || !plain.document || !plain.range || plain.size === undefined) {
+        throw new Error('Suggestion.fromPlainObject requires id, document, range, size');
+    }
+    const options = {
+        timestamp: plain.timestamp,
+        isFileCreation: plain.isFileCreation,
+        isExternalCreation: plain.isExternalCreation,
+        isFileWrite: plain.isFileWrite,
+        classificationLabel: plain.classificationLabel,
+        classificationConfidence: plain.classificationConfidence,
+        classificationReasons: plain.classificationReasons,
+        verificationSignals: plain.verificationSignals,
+        provenanceScore: plain.provenanceScore,
+        rangeCount: plain.rangeCount
+    };
+    const suggestion = new Suggestion(
+        plain.id,
+        plain.document,
+        plain.range,
+        plain.text,
+        plain.size,
+        options
+    );
+    suggestion.reviewed = !!plain.reviewed;
+    suggestion.reviewTime = plain.reviewTime || 0;
+    suggestion.reviewStarted = plain.reviewStarted ?? null;
+    suggestion.status = plain.status || 'pending';
+    suggestion.statusTimestamp = plain.statusTimestamp ?? null;
+    suggestion.userEdited = !!plain.userEdited;
+    suggestion.editCount = plain.editCount || 0;
+    return suggestion;
+};
 
 module.exports = Suggestion;

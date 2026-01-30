@@ -100,6 +100,9 @@ function setupUsageStatsListeners(context, state) {
 // const context = createExtensionContext();
 // await extensionModule.activate(context);  // ← YOUR FUNCTION IS CALLED HERE
 async function activate(context) {
+    // #region agent log
+    fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'extension.js:activate',message:'activate_start',data:{hasContext:!!context,extensionPath:context?.extensionPath?.slice(-40)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
+    // #endregion
     // Validate context parameter
     if (!context) {
         console.error('VibeSwitch: ERROR - activate() called with null/undefined context');
@@ -146,12 +149,48 @@ async function activate(context) {
         
         // 3. Capability Self-Test - verify setup integrity
         const selfTest = new CapabilitySelfTest();
-        const testResult = selfTest.run();
+        let testResult = selfTest.run();
+        // #region agent log
+        fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'extension.js:selftest',message:'selftest_result',data:{passed:testResult.passed,errors:testResult.errors,warningCount:testResult.warnings?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
+        // #endregion
         if (!testResult.passed) {
             log(`VibeSwitch: Capability self-test FAILED: ${testResult.errors.join(', ')}`, true, true);
             vscode.window.showWarningMessage(
                 `VibeSwitch: Setup verification failed: ${testResult.errors[0]}. Capability enforcement may not work correctly.`
             );
+            const setupPromptShown = context.globalState.get('vibeswitch.setupPromptShown', false);
+            // #region agent log
+            fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'extension.js:setup_prompt',message:'first_run_setup',data:{setupPromptShown},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H5'})}).catch(()=>{});
+            // #endregion
+            if (!setupPromptShown) {
+                context.globalState.update('vibeswitch.setupPromptShown', true);
+                vscode.window.showInformationMessage(
+                    'VibeSwitch: Copy hook scripts and canonical.js to ~/.vibeswitch?',
+                    'Setup',
+                    'Later'
+                ).then(choice => {
+                    // #region agent log
+                    fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'extension.js:setup_choice',message:'user_choice',data:{choice:choice||'dismissed'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H5'})}).catch(()=>{});
+                    // #endregion
+                    if (choice === 'Setup') {
+                        const capabilitySetup = require('./business_modules/capability/app/capabilitySetup');
+                        const setupResult = capabilitySetup.runSetup(context.extensionPath);
+                        // #region agent log
+                        fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'extension.js:setup_done',message:'setup_after_prompt',data:{success:setupResult.success,copied:setupResult.copied?.length,errors:setupResult.errors?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
+                        // #endregion
+                        if (setupResult.success) {
+                            testResult = selfTest.run();
+                            if (testResult.passed) {
+                                vscode.window.showInformationMessage('VibeSwitch: Setup complete. Capability self-test passed.');
+                            } else {
+                                vscode.window.showWarningMessage(`VibeSwitch: Scripts copied. Self-test still failing: ${testResult.errors[0]}. Ensure jq is installed.`);
+                            }
+                        } else {
+                            vscode.window.showErrorMessage(`VibeSwitch: Setup failed: ${setupResult.errors[0]}`);
+                        }
+                    }
+                });
+            }
         } else {
             log('VibeSwitch: Capability self-test passed');
         }

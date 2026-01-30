@@ -165,9 +165,10 @@ class UnreviewedFileDecor {
             const filePath = uri.fsPath;
             const normalizedPath = this.normalizePath(filePath);
 
-            // Check if file is in review debt
-            if (scoreData.debt && scoreData.debt.files) {
-                for (const debtFile of scoreData.debt.files) {
+            // Check if file is in review debt (use allFiles so every unreviewed file gets decorated, not just top 10)
+            const debtFilesForDecor = (scoreData.debt && scoreData.debt.allFiles) || (scoreData.debt && scoreData.debt.files) || [];
+            if (debtFilesForDecor.length > 0) {
+                for (const debtFile of debtFilesForDecor) {
                     const normalizedDebtPath = this.normalizePath(debtFile.fullPath);
                     const matches = normalizedPath === normalizedDebtPath;
                     

@@ -247,7 +247,23 @@ class AwarenessMockVSCodeAdapter extends IAwarenessVSCodePort {
             validateRange: (range) => range
         });
     }
-    
+
+    createFileSystemWatcher(globPattern) {
+        const _createHandlers = [];
+        return {
+            onDidCreate: (handler) => {
+                _createHandlers.push(handler);
+                return { dispose: () => {
+                    const i = _createHandlers.indexOf(handler);
+                    if (i > -1) _createHandlers.splice(i, 1);
+                }};
+            },
+            onDidChange: () => ({ dispose: () => {} }),
+            onDidDelete: () => ({ dispose: () => {} }),
+            dispose: () => {}
+        };
+    }
+
     // Test helpers
     simulateTextDocumentChange(event) {
         this._textDocumentChangeHandlers.forEach(h => h(event));

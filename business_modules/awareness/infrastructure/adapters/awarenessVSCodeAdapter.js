@@ -96,6 +96,10 @@ class AwarenessVSCodeAdapter extends IAwarenessVSCodePort {
     get Uri() {
         return this.vscode.Uri;
     }
+
+    createFileSystemWatcher(globPattern) {
+        return this.vscode.workspace.createFileSystemWatcher(globPattern);
+    }
 }
 
 module.exports = AwarenessVSCodeAdapter;

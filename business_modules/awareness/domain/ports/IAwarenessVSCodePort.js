@@ -168,6 +168,15 @@ class IAwarenessVSCodePort {
     get Uri() {
         throw new Error('Uri getter not implemented');
     }
+
+    /**
+     * Create a file system watcher for the workspace (e.g. to detect agent-created files).
+     * @param {string|Object} globPattern - Glob pattern (e.g. '**/*') or RelativePattern
+     * @returns {Object} FileSystemWatcher with onDidCreate, onDidChange, onDidDelete (each returns Disposable)
+     */
+    createFileSystemWatcher(globPattern) {
+        throw new Error('createFileSystemWatcher not implemented');
+    }
 }
 
 module.exports = IAwarenessVSCodePort;

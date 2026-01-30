@@ -17,11 +17,13 @@ class ReplayRunner {
      * Replay events from a fixture
      * @param {Array} events - Array of events to replay
      * @param {Function} onEvent - Optional callback for each event
+     * @param {Object} options - Optional: { setSystemTime: (ts) => {} } for fake timers (Jest)
      * @returns {Array} Array of score snapshots after each event
      */
-    replay(events, onEvent = null) {
+    replay(events, onEvent = null, options = null) {
         const snapshots = [];
-        
+        const setSystemTime = options && typeof options.setSystemTime === 'function' ? options.setSystemTime : null;
+
         for (const event of events) {
             // Advance time if specified
             if (event.timestamp) {
@@ -29,6 +31,7 @@ class ReplayRunner {
             } else if (event.advanceMs) {
                 this.now += event.advanceMs;
             }
+            if (setSystemTime) setSystemTime(this.now);
 
             // Process event
             switch (event.type) {
@@ -49,7 +52,7 @@ class ReplayRunner {
                     break;
             }
 
-            // Calculate score after event
+            // Calculate score after event (Date.now() will return this.now if setSystemTime was used)
             const suggestions = this.suggestionAggregate.getSuggestions();
             const result = this.scoreService.calculateScore({
                 suggestions,

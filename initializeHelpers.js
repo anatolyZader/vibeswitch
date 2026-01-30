@@ -161,7 +161,24 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
         
         // Pass current mode to classifier for mode-specific thresholds
         const currentMode = state.getMode() || 'dev';
-        await state.awarenessEngine.start(state.extensionContext, updateFileColorsInExplorer, currentMode);
+        const recordOptions = {};
+        try {
+            const cfg = vscode.workspace.getConfiguration('vibeswitch');
+            const recordTraceToFile = cfg.get('recordTraceToFile', false);
+            if (recordTraceToFile) {
+                let recordTracePath = cfg.get('recordTracePath', '');
+                if (!recordTracePath && state.extensionContext) {
+                    const pathModule = require('path');
+                    const base = state.extensionContext.extensionPath || (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0] ? vscode.workspace.workspaceFolders[0].uri.fsPath : '');
+                    recordTracePath = pathModule.join(base, 'tests', 'awareness', 'recordings', 'session_' + Date.now() + '.trace.json');
+                }
+                if (recordTracePath) {
+                    recordOptions.recordTraceToFile = true;
+                    recordOptions.recordTracePath = recordTracePath;
+                }
+            }
+        } catch (_) { }
+        await state.awarenessEngine.start(state.extensionContext, updateFileColorsInExplorer, currentMode, recordOptions);
         log('VibeSwitch: Started real-time awareness monitoring');
         
         // Update awareness engine reference in file decoration provider (if it exists)
@@ -261,6 +278,8 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
     // ============================================================================
     // STEP 6: Initialize command handlers (depends on all above helpers)
     // ============================================================================
+    // Expose so commands (e.g. restart awareness meter) can force meter refresh
+    state.updateAwarenessMeter = updateAwarenessMeter;
     const commandHandlers = commandHandlersFactory({
         log,
         switchToMode,

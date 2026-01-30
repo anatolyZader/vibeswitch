@@ -70,6 +70,16 @@ class ScoreService {
     }
 
     /**
+     * Reset score state to zero (for reset/restart). Clears current score and EMA smoothing.
+     */
+    resetScoreState() {
+        this.currentScore = 0;
+        this.scores = { review: 0, blindAcceptance: 0, adaptation: 0, debt: 0 };
+        this.smoothedScore = 0;
+        this.hasSmoothedScore = false;
+    }
+
+    /**
      * Calculate awareness score from suggestions and debt
      * @param {Object} params - Calculation parameters
      * @param {Array} params.suggestions - All suggestions
@@ -236,6 +246,69 @@ class ScoreService {
     }
 
     /**
+     * Get structured breakdown for explainability (why did the meter move?).
+     * @param {Object} params - Same as calculateScore
+     * @returns {Object} { contributions, counts, topFactors }
+     */
+    getScoreBreakdown({ suggestions, debtService, recentWindowMs = DEFAULT_RECENT_WINDOW_MS }) {
+        const pendingSuggestions = suggestions.filter(s => s && s.status === 'pending');
+        const getDebtScore = () => {
+            if (!debtService) return 0;
+            return debtService.calculateDebtScore(pendingSuggestions, { useRiskBased: true });
+        };
+        const now = Date.now();
+        const recentSuggestions = this._filterRecentSuggestions(suggestions, now, recentWindowMs);
+        const completedSuggestions = suggestions.filter(s => s && s.status !== 'pending');
+        const horizonSuggestions = this._filterHorizonSuggestions(completedSuggestions, now);
+        const completed = horizonSuggestions.length > 0 ? horizonSuggestions : recentSuggestions.filter(s => s.status !== 'pending');
+        const debtScore = getDebtScore();
+
+        const counts = {
+            total: suggestions.length,
+            completed: completedSuggestions.length,
+            pending: pendingSuggestions.length,
+            reviewed: suggestions.filter(s => s && s.reviewed).length,
+            recent: recentSuggestions.length
+        };
+
+        if (completed.length === 0) {
+            const debtRisk01 = Math.max(0, Math.min(1, debtScore / 30));
+            const debtContribution = Math.round(RISK_WEIGHTS.debt * debtRisk01 * 100);
+            return {
+                contributions: { review: 0, blindAcceptance: 0, adaptation: 0, debt: debtContribution },
+                counts,
+                topFactors: debtScore > 0 ? [{ name: 'debt', contribution: debtContribution, direction: 'risk' }] : []
+            };
+        }
+
+        const reviewScore = calculateReviewScore(completed);
+        const blindAcceptanceRisk = calculateBlindAcceptanceScore(completed);
+        const adaptationScore = calculateAdaptationScore(completed);
+        const reviewRisk01 = Math.max(0, Math.min(1, (40 - reviewScore) / 40));
+        const adaptationRisk01 = Math.max(0, Math.min(1, (30 - adaptationScore) / 30));
+        const blindAcceptanceRisk01 = Math.max(0, Math.min(1, blindAcceptanceRisk / 30));
+        const debtRisk01 = Math.max(0, Math.min(1, debtScore / 30));
+
+        const reviewContribution = Math.round(RISK_WEIGHTS.review * reviewRisk01 * 100);
+        const blindAcceptanceContribution = Math.round(RISK_WEIGHTS.blindAcceptance * blindAcceptanceRisk01 * 100);
+        const adaptationContribution = Math.round(RISK_WEIGHTS.adaptation * adaptationRisk01 * 100);
+        const debtContribution = Math.round(RISK_WEIGHTS.debt * debtRisk01 * 100);
+
+        const factors = [
+            { name: 'review', contribution: reviewContribution, direction: 'risk' },
+            { name: 'blindAcceptance', contribution: blindAcceptanceContribution, direction: 'risk' },
+            { name: 'adaptation', contribution: adaptationContribution, direction: 'risk' },
+            { name: 'debt', contribution: debtContribution, direction: 'risk' }
+        ].filter(f => f.contribution > 0).sort((a, b) => b.contribution - a.contribution);
+
+        return {
+            contributions: { review: reviewContribution, blindAcceptance: blindAcceptanceContribution, adaptation: adaptationContribution, debt: debtContribution },
+            counts,
+            topFactors: factors.slice(0, 5)
+        };
+    }
+
+    /**
      * Get formatted score data for display
      * @param {Object} params - Parameters
      * @param {Array} params.suggestions - All suggestions
@@ -259,6 +332,7 @@ class ScoreService {
         const now = Date.now();
         const recentSuggestions = this._filterRecentSuggestions(suggestions, now, recentWindowMs);
         const allSuggestions = suggestions;
+        const debtAllFiles = debtSummary.allFiles || debtSummary.files || [];
 
         // Get pending suggestions with file paths
         const pendingSuggestions = allSuggestions
@@ -306,7 +380,13 @@ class ScoreService {
             },
             debt: {
                 unreviewedFiles: debtSummary.total,
-                files: debtSummary.files.map(f => ({
+                files: (debtSummary.files || []).map(f => ({
+                    path: getRelativePath(vscodeAdapter, f.path),
+                    fullPath: f.path,
+                    ageMinutes: Math.round(f.age / (1000 * 60)),
+                    modifications: f.modificationCount
+                })),
+                allFiles: debtAllFiles.map(f => ({
                     path: getRelativePath(vscodeAdapter, f.path),
                     fullPath: f.path,
                     ageMinutes: Math.round(f.age / (1000 * 60)),
