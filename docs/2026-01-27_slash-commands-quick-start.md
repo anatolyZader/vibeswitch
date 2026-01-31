@@ -42,26 +42,11 @@ Slow, collaborative AI assistance with step-by-step approval.
 
 ---
 
-### `/vibe-fast` - Temporary Autonomous
-Quick autonomous execution for current task only.
-
-**When to use:**
-- You're in DEV mode but need one fast task
-- Temporary bypass of approval workflow
-- After task, returns to previous mode
-
-**Behavior:**
-- ✅ Autonomous for THIS task only
-- ✅ Doesn't change persistent mode
-- ⚠️ Returns to previous mode after task
-
----
-
 ## How to Use
 
 1. **Open Cursor chat** (Cmd/Ctrl + L)
 2. **Type `/`** to see available commands
-3. **Select command** (`/vibe`, `/dev`, or `/vibe-fast`)
+3. **Select command** (`/vibe` or `/dev`)
 4. **Command applies** the mode behavior
 5. **VibeSwitch extension** syncs the mode state (if running)
 
@@ -91,8 +76,7 @@ Commands are stored in:
 ```
 .cursor/commands/
 ├── vibe.md          # VIBE mode command
-├── dev.md           # DEV mode command
-└── vibe-fast.md     # Temporary VIBE command
+└── dev.md           # DEV mode command
 ```
 
 These files are part of your workspace and can be:
@@ -145,9 +129,8 @@ This gives you fine-grained control over AI behavior per command.
 
 1. **Use `/vibe`** for fast development and iteration
 2. **Use `/dev`** for careful, collaborative work
-3. **Use `/vibe-fast`** for temporary autonomous tasks
-4. **Create custom commands** for project-specific workflows
-5. **Share commands** with your team via git
+3. **Create custom commands** for project-specific workflows
+4. **Share commands** with your team via git
 
 ---
 

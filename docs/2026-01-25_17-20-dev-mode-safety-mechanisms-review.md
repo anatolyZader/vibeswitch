@@ -9,7 +9,7 @@ The VibeSwitch extension implements a **defense-in-depth** approach to make DEV 
 ## 1. File Edit Protection (Auto-Revert System)
 
 ### Implementation
-- **Component**: `AlertFileEditDetector` (`business_modules/capability/app/alertFileEditDetector.js`)
+- **Component**: `AlertFileEditDetector` (`business_modules/mode-enforcement/app/alertFileEditDetector.js`)
 - **Hook**: `afterFileEdit` → `detect-edit.sh`
 
 ### How It Works
@@ -161,7 +161,7 @@ Use mcp__vibeswitch__submit_patch for file edits.
 ## 6. Hooks Configuration Guard
 
 ### Implementation
-- **Component**: `HooksJsonGuard` (`business_modules/capability/app/hooksJsonGuard.js`)
+- **Component**: `HooksJsonGuard` (`business_modules/mode-enforcement/app/hooksJsonGuard.js`)
 
 ### How It Works
 ```
@@ -329,7 +329,7 @@ All critical state stored **outside workspace** (agent cannot access):
 
 ## Conclusion
 
-The VibeSwitch DEV mode implements **production-grade capability enforcement** through multiple layers:
+The VibeSwitch DEV mode implements **production-grade mode enforcement** through multiple layers:
 
 1. **Hard enforcement** for shell commands and MCP tools (exit code 2 blocking)
 2. **Quasi-blocking** for file edits (immediate auto-revert)

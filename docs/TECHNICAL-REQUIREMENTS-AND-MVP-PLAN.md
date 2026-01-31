@@ -50,7 +50,7 @@ VibeSwitch is a **VS Code / Cursor extension** that lets you switch between two 
 | **MCP server** | Done | `submit_patch` / `apply_patch`; token verify (Ed25519); path safety; mode read from `mode.json`; consumed tokens. |
 | **Keypair & approval** | Done | Ed25519 keypair in context.secrets; approval UI; token generation with canonical payload + signature. |
 | **Config** | Done | `vibeswitch.*` settings: status bar, logging, rules path, telemetry, auto-revert, LLM, agents. |
-| **Tests** | Partial | Awareness (scoring, lifecycle, adapters), capability (mode, allowlist, hooks guard, keypair, alert detector, self-test), MCP path safety; extension smoke. |
+| **Tests** | Partial | Awareness (scoring, lifecycle, adapters), mode-enforcement (mode, allowlist, hooks guard, keypair, alert detector, self-test), MCP path safety; extension smoke. |
 
 ### 2.2 Gaps and Dependencies
 
@@ -110,7 +110,7 @@ MVP = “A user can install the extension, switch between VIBE and DEV, and in D
 - Multi-agent (QA/Security/Architecture) integration (optional; keep off by default).
 - File decoration / “file coloring” (can stay disabled).
 - Slash commands (already documented; no code change required for MVP).
-- New awareness algorithms or new capability checks beyond what’s already implemented.
+- New awareness algorithms or new mode-enforcement checks beyond what’s already implemented.
 
 ---
 
@@ -121,7 +121,7 @@ MVP = “A user can install the extension, switch between VIBE and DEV, and in D
 | Task | Owner | Notes |
 |------|--------|--------|
 | **1.1** Add hook scripts to repo | Dev | Create `scripts/hooks/` (or `assets/hooks/`) with `inject-context.sh`, `gate-shell.sh`, `gate-mcp.sh`, `detect-edit.sh`. Implement behavior per `docs/2026-01-26_15-30-dev-vs-vibe-mode-restrictions.md` and `.cursor/plans/mode_behavior_options_dc780365.plan.md` (allowlist, blocklist, mode read from `mode.json`, alert write for detect-edit). |
-| **1.2** Add `canonical.js` to repo | Dev | Implement canonical JSON serialization (RFC 8785–style) used by KeypairManager and MCP server; place in e.g. `business_modules/capability/app/` or shared `lib/`; MCP server and extension both use it. |
+| **1.2** Add `canonical.js` to repo | Dev | Implement canonical JSON serialization (RFC 8785–style) used by KeypairManager and MCP server; place in e.g. `business_modules/mode-enforcement/app/` or shared `lib/`; MCP server and extension both use it. |
 | **1.3** First-run / post-install setup | Dev | On activation (or dedicated command “VibeSwitch: Setup capability scripts”): if `~/.vibeswitch/hooks/` is missing or scripts missing, copy from extension install path to `~/.vibeswitch/hooks/` and chmod +x. Same for `~/.vibeswitch/lib/canonical.js` if MCP expects it there. Ensure CapabilitySelfTest checks pass after setup. |
 | **1.4** MCP server use of canonical | Dev | MCP server: either bundle `canonical.js` in its own tree and require it from there, or document that `~/.vibeswitch/lib/canonical.js` is written by extension on setup so MCP can require it. Prefer single source (repo) and copy to `~/.vibeswitch/lib` for MCP. |
 
@@ -211,5 +211,5 @@ Intentional follow-ups to be implemented after MVP release:
 - `.cursor/plans/mode_behavior_options_dc780365.plan.md` — Hook script behavior and config.
 - `package.json` — Commands, config, activation.
 - `extension.js` — Activation and composition.
-- `business_modules/capability/app/capabilitySelfTest.js` — Required hooks and config.
+- `business_modules/mode-enforcement/app/capabilitySelfTest.js` — Required hooks and config.
 - `business_modules/mcp-server/index.js` — MCP tools and token/path checks.

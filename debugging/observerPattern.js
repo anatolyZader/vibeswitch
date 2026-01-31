@@ -65,8 +65,105 @@ function historyObserver(maxSize = 100) {
     };
 }
 
+// ---------------------------------------------------------------------------
+// GoF State: object behavior changes with internal state.
+// Used for debug mode (idle / tracing / paused) so notify behavior varies by state.
+// ---------------------------------------------------------------------------
+
+/**
+ * Base state for debug subject: defines interface for handle/notify behavior.
+ */
+class DebugModeState {
+    get name() {
+        return 'base';
+    }
+
+    /**
+     * @param {StatefulDebugSubject} subject
+     * @param {string} eventName
+     * @param {Object} payload
+     */
+    notify(subject, eventName, payload) {
+        subject.notifyObservers(eventName, payload);
+    }
+}
+
+/**
+ * Idle state: notifies all observers as usual.
+ */
+class IdleDebugState extends DebugModeState {
+    get name() {
+        return 'idle';
+    }
+}
+
+/**
+ * Tracing state: notifies observers and optionally logs to console.
+ */
+class TracingDebugState extends DebugModeState {
+    get name() {
+        return 'tracing';
+    }
+
+    notify(subject, eventName, payload) {
+        console.log(`[Trace] ${eventName}`, payload);
+        subject.notifyObservers(eventName, payload);
+    }
+}
+
+/**
+ * Paused state: does not notify observers (events are dropped).
+ */
+class PausedDebugState extends DebugModeState {
+    get name() {
+        return 'paused';
+    }
+
+    notify(subject, eventName, payload) {
+        // no-op: drop events while paused
+    }
+}
+
+/**
+ * Subject whose notify behavior depends on current state (State pattern).
+ */
+class StatefulDebugSubject extends DebugEventSubject {
+    constructor() {
+        super();
+        this._state = new IdleDebugState();
+    }
+
+    /** Forward event to all observers (used by state implementations). */
+    notifyObservers(eventName, payload) {
+        for (const obs of this._observers) {
+            try {
+                obs(eventName, payload);
+            } catch (e) {
+                console.error('StatefulDebugSubject: observer error', e);
+            }
+        }
+    }
+
+    setState(state) {
+        this._state = state;
+    }
+
+    getState() {
+        return this._state;
+    }
+
+    notify(eventName, payload = {}) {
+        this._state.notify(this, eventName, payload);
+    }
+}
+
 module.exports = {
     DebugEventSubject,
     logObserver,
-    historyObserver
+    historyObserver,
+    DebugModeState,
+    IdleDebugState,
+    TracingDebugState,
+    PausedDebugState,
+    StatefulDebugSubject
 };

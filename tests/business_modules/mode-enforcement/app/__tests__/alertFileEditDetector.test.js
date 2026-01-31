@@ -12,7 +12,7 @@ const vscode = require('vscode');
 jest.mock('fs');
 jest.mock('vscode');
 
-const AlertFileEditDetector = require('../../../../../business_modules/capability/app/alertFileEditDetector');
+const AlertFileEditDetector = require('../../../../../business_modules/mode-enforcement/app/alertFileEditDetector');
 
 describe('AlertFileEditDetector', () => {
     let mockModeManager;

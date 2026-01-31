@@ -14,8 +14,7 @@
 
 ### 2. Command Files
 - ✅ `.cursor/commands/vibe.md` - VIBE mode command
-- ✅ `.cursor/commands/dev.md` - DEV mode command  
-- ✅ `.cursor/commands/vibe-fast.md` - Temporary VIBE command
+- ✅ `.cursor/commands/dev.md` - DEV mode command
 
 ---
 
@@ -61,7 +60,6 @@
 1. **Use slash commands** for quick mode switching:
    - Type `/vibe` for autonomous mode
    - Type `/dev` for collaborative mode
-   - Type `/vibe-fast` for temporary autonomous
 
 2. **Extension provides** persistent state and awareness:
    - Status bar shows current mode
@@ -93,8 +91,7 @@
 .cursor/
 ├── commands/              # NEW - Slash commands
 │   ├── vibe.md          # VIBE mode command
-│   ├── dev.md           # DEV mode command
-│   └── vibe-fast.md     # Temporary VIBE command
+│   └── dev.md           # DEV mode command
 ├── rules.md             # Active rules (managed by extension)
 ├── rules.vibe.md        # VIBE mode rules (existing)
 └── rules.dev.md         # DEV mode rules (existing)
@@ -109,7 +106,6 @@
 - ✅ **Team Sharing** - Commands in `.cursor/commands/` can be committed to git
 - ✅ **Quick Access** - Faster than clicking status bar
 - ✅ **Tool Restrictions** - Can specify which tools to use in command
-- ✅ **Temporary Overrides** - `/vibe-fast` for one-off autonomous tasks
 
 ### Extension Provides:
 - ✅ **Persistent State** - Mode persists across sessions
@@ -143,7 +139,6 @@
 
 - [ ] Type `/vibe` in Cursor chat - Does it apply VIBE behavior?
 - [ ] Type `/dev` in Cursor chat - Does it apply DEV behavior?
-- [ ] Type `/vibe-fast` - Does it work for temporary override?
 - [ ] Check status bar - Does extension show correct mode?
 - [ ] Switch mode via status bar - Does it update rules.md?
 - [ ] Create custom command - Does it appear in `/` autocomplete?

@@ -1,24 +1,24 @@
 /**
  * Mode Switching - Handles switching between VIBE and DEV modes
- * 
+ *
  * Orchestrates the mode switch process:
  * - Validates mode input
  * - Tracks usage statistics
- * - Copies mode-specific .cursor/rules.{mode}.md files to .cursor/rules.md
- * - Verifies file writes
- * - Applies mode-specific settings
- * - Triggers callbacks for UI updates
- * 
+ * - Assembles .cursor/rules.common.md + .cursor/rules.{mode}.md
+ * - Writes atomically (tmp + rename) with optional backup
+ * - Verifies write by stat size > 0 (no full-content compare)
+ * - Invalidates mode detection cache
+ * - Applies mode-specific settings (telemetry via optional adapter)
+ *
  * Note: Awareness monitor runs continuously and is NOT stopped/started on mode switch
  */
 
 const vscode = require('vscode');
-const fs = require('fs');
 const fsPromises = require('fs').promises;
 const path = require('path');
-const Mode = require('../domain/value_objects/mode');
 const modeSettingsAdapter = require('../infrastructure/adapters/modeSettingsAdapter');
 const modeDetection = require('./modeDetection');
+const ruleAssembler = require('./ruleAssembler');
 
 function getShowErrorMessage(vscodeAdapter) {
     if (vscodeAdapter && typeof vscodeAdapter.showErrorMessage === 'function') {
@@ -35,19 +35,22 @@ function getShowErrorMessage(vscodeAdapter) {
  * @param {Function} options.onModeSwitched - Callback when mode is switched (receives new mode)
  * @param {Object} options.usageStats - Usage statistics manager instance
  * @param {Object} options.vscodeAdapter - VS Code adapter (Ports and Adapters pattern) - optional for backward compatibility
+ * @param {Object} [options.telemetryAdapter] - Optional { log(event) } for telemetry; no-op if omitted
+ * @returns {Promise<object|undefined>} On success: { mode, rulesWritten: true, settingsApplied: true, rolledBack: false }. Undefined on early exit or error.
  */
 async function switchToMode(mode, options = {}) {
     const {
         currentMode,
         onModeSwitched,
         usageStats,
-        vscodeAdapter = null
+        vscodeAdapter = null,
+        telemetryAdapter = null
     } = options;
 
     // Validate mode input
     if (mode !== 'vibe' && mode !== 'dev') {
         console.error(`VibeSwitch: Invalid mode: ${mode}`);
-        return;
+        return undefined;
     }
 
     // Ensure workspace exists - use adapter if available, fallback to direct vscode
@@ -55,84 +58,105 @@ async function switchToMode(mode, options = {}) {
     if (!workspaceFolders || workspaceFolders.length === 0) {
         const showError = getShowErrorMessage(vscodeAdapter);
         showError('No workspace folder found. Please open a folder first.');
-        return;
+        return undefined;
     }
 
     const workspaceRoot = workspaceFolders[0].uri.fsPath;
-    
+    const cursorDir = path.join(workspaceRoot, '.cursor');
+    const rulesFile = path.join(cursorDir, 'rules.md');
+    const rulesTmp = path.join(cursorDir, 'rules.md.tmp');
+    const rulesBak = path.join(cursorDir, 'rules.md.bak');
+
     try {
         // Track mode switch in usage statistics
         if (usageStats && currentMode !== mode) {
             usageStats.trackModeSwitch(currentMode, mode);
         }
 
-        // Monitor stays active in both modes - no stop needed when switching
-        // (Awareness meter now runs in both DEV and VIBE modes)
-
         // Create .cursor directory if it doesn't exist
-        const cursorDir = path.join(workspaceRoot, '.cursor');
         try {
             await fsPromises.access(cursorDir);
         } catch {
             await fsPromises.mkdir(cursorDir, { recursive: true });
         }
 
-        // Switch .cursor/rules.md to point to the mode file
-        const rulesFile = path.join(cursorDir, 'rules.md');
-        const targetModeFile = path.join(cursorDir, `rules.${mode}.md`);
+        const effectiveRules = await ruleAssembler.assembleRules({ cursorDir, mode });
 
+        // Optional backup of current rules for rollback if settings fail
+        let previousContent = null;
         try {
-            await fsPromises.access(targetModeFile);
-        } catch {
-            console.error(`VibeSwitch: Target mode file not found: ${targetModeFile}`);
-            throw new Error(`Mode file not found: .cursor/rules.${mode}.md`);
+            previousContent = await fsPromises.readFile(rulesFile, 'utf8');
+        } catch (err) {
+            if (err.code !== 'ENOENT') throw err;
+        }
+        if (previousContent) {
+            await fsPromises.writeFile(rulesBak, previousContent, 'utf8');
         }
 
-        // Copy mode-specific file to .cursor/rules.md
-        const modeContent = await fsPromises.readFile(targetModeFile, 'utf8');
-        await fsPromises.writeFile(rulesFile, modeContent, 'utf8');
-        
-        // Verify the write was successful by reading it back
-        const writtenContent = await fsPromises.readFile(rulesFile, 'utf8');
-        if (writtenContent !== modeContent) {
-            console.error(`VibeSwitch: File write verification failed - content mismatch`);
-            throw new Error('Failed to write .cursor/rules.md file correctly');
+        await fsPromises.writeFile(rulesTmp, effectiveRules, 'utf8');
+
+        // Windows-safe replace: rename can fail with EEXIST/EPERM if target exists
+        try {
+            await fsPromises.rename(rulesTmp, rulesFile);
+        } catch (renameErr) {
+            if (renameErr.code === 'EEXIST' || renameErr.code === 'EPERM') {
+                await fsPromises.unlink(rulesFile);
+                await fsPromises.rename(rulesTmp, rulesFile);
+            } else {
+                throw renameErr;
+            }
         }
-        
-        // Update detection cache directly to prevent race conditions
-        // This is a bit of a hack but necessary since modeDetection module maintains its own state
-        // We manually set the cache so subsequent detections see the right mode immediately
-        const detectModule = require.cache[require.resolve('./modeDetection')];
-        if (detectModule && detectModule.exports) {
-            // The cache variables are not exported, but we can call with forceFresh
-            // to ensure next detection reads the file we just wrote
+
+        const stat = await fsPromises.stat(rulesFile);
+        if (stat.size <= 0) {
+            if (previousContent) {
+                await fsPromises.writeFile(rulesFile, previousContent, 'utf8');
+            } else {
+                await fsPromises.unlink(rulesFile).catch(() => {});
+            }
+            modeDetection.invalidateCache();
+            throw new Error('Failed to write .cursor/rules.md (zero-size file)');
         }
-        
+
+        modeDetection.invalidateCache();
         console.log(`VibeSwitch: Switched .cursor/rules.md to ${mode} mode (verified)`);
 
-        // #region agent log
-        fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'modeService.js:beforeApplySettings',message:'About to apply mode settings',data:{mode,skipCursorSettings:false},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A-E'})}).catch(()=>{});
-        // #endregion
+        try {
+            if (telemetryAdapter && typeof telemetryAdapter.log === 'function') {
+                telemetryAdapter.log({ location: 'modeService:beforeApplySettings', message: 'About to apply mode settings', data: { mode, skipCursorSettings: false }, timestamp: Date.now() });
+            }
+        } catch (_) { /* telemetry must not break mode switch */ }
 
-        // Apply mode settings INCLUDING cursor.* settings for approval enforcement
-        await modeSettingsAdapter.applyModeSettings(mode, false);
-        
-        // #region agent log
-        fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'modeService.js:afterApplySettings',message:'Mode settings applied',data:{mode},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A-E'})}).catch(()=>{});
+        try {
+            await modeSettingsAdapter.applyModeSettings(mode, false);
+        } catch (settingsError) {
+            if (previousContent) {
+                await fsPromises.writeFile(rulesFile, previousContent, 'utf8');
+                modeDetection.invalidateCache();
+            }
+            throw settingsError;
+        }
 
-        // Awareness monitor runs continuously - no need to start/stop on mode switch
-        // The monitor is started once on extension activation and stays active
+        try {
+            if (telemetryAdapter && typeof telemetryAdapter.log === 'function') {
+                telemetryAdapter.log({ location: 'modeService:afterApplySettings', message: 'Mode settings applied', data: { mode }, timestamp: Date.now() });
+            }
+        } catch (_) { /* telemetry must not break mode switch */ }
 
-        // Call mode switched callback
+        await fsPromises.unlink(rulesBak).catch(() => {});
+
         if (onModeSwitched) {
             onModeSwitched(mode);
         }
 
         console.log(`VibeSwitch: Successfully switched to ${mode.toUpperCase()} mode`);
+        return { mode, rulesWritten: true, settingsApplied: true, rolledBack: false };
     } catch (error) {
         console.error(`VibeSwitch: Error switching to ${mode} mode:`, error);
         const showError = getShowErrorMessage(vscodeAdapter);
         showError(`Failed to switch to ${mode.toUpperCase()} mode: ${error.message}`);
+    } finally {
+        await fsPromises.unlink(rulesTmp).catch(() => {});
     }
 }
 

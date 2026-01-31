@@ -10,7 +10,7 @@ const { execSync } = require('child_process');
 jest.mock('fs');
 jest.mock('child_process');
 
-const CapabilitySelfTest = require('../../../../../business_modules/capability/app/capabilitySelfTest');
+const CapabilitySelfTest = require('../../../../../business_modules/mode-enforcement/app/capabilitySelfTest');
 
 describe('CapabilitySelfTest', () => {
     beforeEach(() => {

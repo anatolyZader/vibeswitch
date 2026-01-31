@@ -41,7 +41,7 @@ You are operating in **VIBE MODE** - an autonomous, self-directed operational mo
 ## 📦 Packaging Rule (MANDATORY)
 
 - After **each significant / meaningful code change**, you MUST **re-package the extension** automatically.
-- Run: `npx --yes vsce package`
+- Run: `npm run package` (uses project's vsce from package.json)
 - If tests exist / were affected, run: `npm test` before packaging.
 - Always report the **generated `.vsix` path** in your response (so I can install it).
 

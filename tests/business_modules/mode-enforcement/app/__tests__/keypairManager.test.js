@@ -11,7 +11,7 @@ const os = require('os');
 
 jest.mock('fs');
 
-const KeypairManager = require('../../../../../business_modules/capability/app/keypairManager');
+const KeypairManager = require('../../../../../business_modules/mode-enforcement/app/keypairManager');
 
 describe('KeypairManager', () => {
     let mockContext;

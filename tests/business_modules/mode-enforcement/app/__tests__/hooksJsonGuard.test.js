@@ -13,7 +13,7 @@ const vscode = require('vscode');
 jest.mock('fs');
 jest.mock('vscode');
 
-const HooksJsonGuard = require('../../../../../business_modules/capability/app/hooksJsonGuard');
+const HooksJsonGuard = require('../../../../../business_modules/mode-enforcement/app/hooksJsonGuard');
 
 describe('HooksJsonGuard', () => {
     let mockContext;

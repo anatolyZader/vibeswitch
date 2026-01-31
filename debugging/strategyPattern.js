@@ -72,9 +72,56 @@ class DebugWriter {
     }
 }
 
+// ---------------------------------------------------------------------------
+// GoF Decorator: wrap a strategy to add behavior without changing the interface.
+// Used to add timestamp, prefix, or filtering around any WriteStrategy.
+// ---------------------------------------------------------------------------
+
+/**
+ * Decorator: wrap a WriteStrategy to add a timestamp to meta.
+ * @param {WriteStrategy} inner – underlying strategy
+ * @returns {WriteStrategy}
+ */
+function withTimestamp(inner) {
+    return function write(message, meta = {}) {
+        inner(message, { ...meta, timestamp: Date.now() });
+    };
+}
+
+/**
+ * Decorator: wrap a WriteStrategy to prefix every message.
+ * @param {WriteStrategy} inner – underlying strategy
+ * @param {string} prefix – e.g. "[VibeSwitch]"
+ * @returns {WriteStrategy}
+ */
+function withPrefix(inner, prefix = '') {
+    return function write(message, meta = {}) {
+        inner(prefix ? `${prefix} ${message}` : message, meta);
+    };
+}
+
+/**
+ * Decorator: wrap a WriteStrategy to only forward messages when level matches (or meta.level is absent).
+ * @param {WriteStrategy} inner – underlying strategy
+ * @param {string} [minLevel] – 'error' | 'warn' | 'info'; only forward if meta.level is at least this severity
+ * @returns {WriteStrategy}
+ */
+function withLevelFilter(inner, minLevel = 'info') {
+    const order = { error: 0, warn: 1, info: 2 };
+    return function write(message, meta = {}) {
+        const level = meta.level || 'info';
+        if (order[level] <= order[minLevel]) {
+            inner(message, meta);
+        }
+    };
+}
+
 module.exports = {
     DebugWriter,
     consoleStrategy,
     bufferStrategy,
-    silentStrategy
+    silentStrategy,
+    withTimestamp,
+    withPrefix,
+    withLevelFilter
 };

@@ -9,7 +9,7 @@ const fs = require('fs');
 const fsPromises = require('fs').promises;
 const modeSwitcher = require('./ui/modeSwitcherDisplay');
 const userStatsUI = require('./ui/statsDashboardDisplay');
-const { mapDomainStateToViewModel, getUnreviewedFilesForDisplay } = require('./ui/awarenessMeterDisplay');
+const { mapDomainStateToViewModel, getUnreviewedFilesForDisplay, getUnopenedAndUnreviewedForDisplay } = require('./ui/awarenessMeterDisplay');
 
 /**
  * Create command handlers with dependency injection
@@ -128,7 +128,7 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
             try {
                 const scoreData = state.awarenessEngine.getScore();
                 const mode = state.getMode ? state.getMode() : state.currentMode;
-                const unreviewed = getUnreviewedFilesForDisplay(scoreData);
+                const { unopened, unreviewedSuggestions } = getUnopenedAndUnreviewedForDisplay(scoreData);
                 let out = '';
                 out += '=== VibeSwitch Awareness State ===\n\n';
                 out += `Mode: ${mode || 'null'}\n`;
@@ -142,14 +142,26 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
                 out += '--- Suggestions ---\n';
                 const s = scoreData.suggestions || {};
                 out += `  Total: ${s.total ?? 0}  Pending: ${s.pending ?? 0}  Accepted: ${s.accepted ?? 0}  Rejected: ${s.rejected ?? 0}  Adapted: ${s.adapted ?? 0}\n\n`;
-                out += `--- Unreviewed files: ${unreviewed.count} ---\n`;
-                if (unreviewed.files.length === 0) {
+                out += `--- Unopened files: ${unopened.count} ---\n`;
+                if (unopened.files.length === 0) {
                     out += '  (none)\n';
                 } else {
-                    unreviewed.files.forEach((f, i) => {
+                    unopened.files.forEach((f, i) => {
                         const age = (f.ageMinutes || 0) < 60 ? `${f.ageMinutes || 0}m ago` : `${Math.round((f.ageMinutes || 0) / 60)}h ago`;
                         out += `  ${i + 1}. ${f.path || f.fullPath}  (${age})\n`;
                     });
+                }
+                out += `\n--- Unreviewed suggestions: ${unreviewedSuggestions.count} ---\n`;
+                if (unreviewedSuggestions.files.length === 0) {
+                    out += '  (none)\n';
+                } else {
+                    unreviewedSuggestions.files.slice(0, 20).forEach((f, i) => {
+                        const age = (f.ageMinutes || 0) < 60 ? `${f.ageMinutes || 0}m ago` : `${Math.round((f.ageMinutes || 0) / 60)}h ago`;
+                        out += `  ${i + 1}. ${f.path || f.fullPath}  (${age})\n`;
+                    });
+                    if (unreviewedSuggestions.files.length > 20) {
+                        out += `  ... and ${unreviewedSuggestions.files.length - 20} more\n`;
+                    }
                 }
                 out += '\n--- Debug ---\n';
                 const d = scoreData.debug || {};
@@ -438,11 +450,11 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
         },
 
         'vibeswitch.capabilitySelfTest': async () => {
-            if (!state.capability || !state.capability.selfTest) {
-                showWarningMessage('Capability enforcement not initialized');
+            if (!state.modeEnforcement || !state.modeEnforcement.selfTest) {
+                showWarningMessage('Mode enforcement not initialized');
                 return;
             }
-            const result = state.capability.selfTest.run();
+            const result = state.modeEnforcement.selfTest.run();
             let message = '=== Capability Self-Test ===\n\n';
             message += `Status: ${result.passed ? 'PASSED ✅' : 'FAILED ❌'}\n\n`;
             if (result.errors.length > 0) {
@@ -466,7 +478,7 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
             // #region agent log
             fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'vsCommandsFactory.js:setupCapability',message:'command_invoked',data:{hasExtensionPath:!!state.extensionContext?.extensionPath},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
             // #endregion
-            const capabilitySetup = require('./business_modules/capability/app/capabilitySetup');
+            const capabilitySetup = require('./business_modules/mode-enforcement/app/capabilitySetup');
             const extensionPath = state.extensionContext?.extensionPath;
             if (!extensionPath) {
                 showErrorMessage('Extension context not available');
@@ -490,8 +502,8 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
             state.outputChannel?.show(true);
             if (result.success) {
                 showInformationMessage('VibeSwitch capability scripts installed. Run Capability Self-Test to verify.');
-                if (state.capability?.selfTest) {
-                    const testResult = state.capability.selfTest.run();
+                if (state.modeEnforcement?.selfTest) {
+                    const testResult = state.modeEnforcement.selfTest.run();
                     if (testResult.passed) {
                         showInformationMessage('Capability self-test passed.');
                     } else {
@@ -504,7 +516,7 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
         },
 
         'vibeswitch.registerMcpServer': async () => {
-            const mcpRegistration = require('./business_modules/capability/app/mcpRegistration');
+            const mcpRegistration = require('./business_modules/mode-enforcement/app/mcpRegistration');
             const extensionPath = state.extensionContext?.extensionPath;
             if (!extensionPath) {
                 showErrorMessage('Extension context not available');

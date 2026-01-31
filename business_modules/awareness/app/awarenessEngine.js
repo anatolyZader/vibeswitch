@@ -538,15 +538,17 @@ class AwarenessEngine {
                 components: { review: 0, critical: 0, adaptation: 0, debt: 0 },
                 suggestions: { total: 0, pending: 0, accepted: 0, rejected: 0, adapted: 0, recentTotal: 0, pendingFiles: [] },
                 debt: { unreviewedFiles: 0, files: [] },
+                unopenedFiles: { count: 0, files: [] },
+                unreviewedSuggestions: { count: 0, files: [] },
                 debug: { lastActivity: 'None', monitoringActive: false, totalDebtEntries: 0, recentWindowCount: 0, totalTrackedCount: 0 }
             };
         }
-        
+
         const suggestions = this.suggestionAggregate ? this.suggestionAggregate.getSuggestions() : [];
-        
+
         // Get current score state from ScoreService (single source of truth)
         const scoreState = this.scoreService.getScoreState();
-        
+
         const result = this.scoreService.getScoreData({
             suggestions,
             debtService: this.debtService,
@@ -555,6 +557,17 @@ class AwarenessEngine {
             vscodeAdapter: this.vscodeAdapter,
             updateTimer: this.updateTimer
         });
+
+        // Split into two measures: unopened files (debt files user hasn't opened) and unreviewed suggestions (pending)
+        const sessionUris = this.sessionTracker ? this.sessionTracker.getSessionUris() : new Set();
+        const debtFiles = result.debt && result.debt.files ? result.debt.files : [];
+        const unopenedFilesList = debtFiles.filter(f => !sessionUris.has(f.fullPath || f.path || ''));
+        result.unopenedFiles = { count: unopenedFilesList.length, files: unopenedFilesList };
+        result.unreviewedSuggestions = {
+            count: result.suggestions ? result.suggestions.pending : 0,
+            files: result.suggestions && result.suggestions.pendingFiles ? result.suggestions.pendingFiles : []
+        };
+
         return result;
     }
 

@@ -4,7 +4,7 @@ Run these steps before releasing a new version of the VibeSwitch extension.
 
 ## 0. Tests (recommended)
 
-- Run **`npm run test:mvp`** (stable suites only: awareness, golden, property, persistence, capability, scoring, ui, mcp-server). Use this for CI and pre-release; `npm test` runs the full suite including suites that may be broken or skipped.
+- Run **`npm run test:mvp`** (stable suites only: awareness, golden, property, persistence, mode-enforcement, scoring, ui, mcp-server). Use this for CI and pre-release; `npm test` runs the full suite including suites that may be broken or skipped.
 - Optionally run **`npm run test:electron`** with `VIBESWITCH_INTEGRATION_TEST=1` if extension-host tests are set up.
 
 ## 1. Package

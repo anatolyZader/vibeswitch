@@ -567,6 +567,7 @@ class SuggestionLifecycleService {
                     }
                     this.suggestionAggregate.updateSuggestionStatus(suggestion, 'rejected');
                     this.suggestionAggregate.updateBatchOutcome(suggestion);
+                    this._addFileDebtOnResolve(suggestion);
                     if (this.loggerAdapter) {
                         this.loggerAdapter.debug(`[DEBUG] Tiny suggestion rejected: empty after validation`);
                     }
@@ -582,6 +583,7 @@ class SuggestionLifecycleService {
                 }
                 this.suggestionAggregate.updateSuggestionStatus(suggestion, 'rejected');
                 this.suggestionAggregate.updateBatchOutcome(suggestion);
+                this._addFileDebtOnResolve(suggestion);
                 if (this.loggerAdapter) {
                     this.loggerAdapter.debug(`[DEBUG] Suggestion rejected: ${(sizeRatio * 100).toFixed(1)}% of original`);
                 }
@@ -591,6 +593,7 @@ class SuggestionLifecycleService {
                 }
                 this.suggestionAggregate.updateSuggestionStatus(suggestion, 'adapted');
                 this.suggestionAggregate.updateBatchOutcome(suggestion);
+                this._addFileDebtOnResolve(suggestion);
                 if (this.loggerAdapter) {
                     this.loggerAdapter.debug(`[DEBUG] Suggestion adapted by user`);
                 }
@@ -623,6 +626,7 @@ class SuggestionLifecycleService {
                     }
                     this.suggestionAggregate.updateSuggestionStatus(suggestion, 'accepted');
                     this.suggestionAggregate.updateBatchOutcome(suggestion);
+                    this._addFileDebtOnResolve(suggestion);
                     if (this.loggerAdapter) {
                         this.loggerAdapter.debug(`[DEBUG] Suggestion accepted (${sourceType}, ${acceptanceType})`);
                     }
@@ -748,6 +752,24 @@ class SuggestionLifecycleService {
 
         // Immediately update score to reflect new activity
         safe('updateScore', () => this.updateScore?.());
+    }
+
+    /**
+     * When a normal text-change suggestion is resolved (accepted/rejected/adapted), add file-level debt
+     * so the file shows as "unreviewed" until the user opens it. File-write/creation/external already
+     * added debt when the suggestion was created; skip those to avoid double-counting.
+     * @param {Suggestion} suggestion - Resolved suggestion entity
+     * @private
+     */
+    _addFileDebtOnResolve(suggestion) {
+        if (!this.debtService) return;
+        if (suggestion.isFileWrite || suggestion.isFileCreation || suggestion.isExternalCreation) return;
+        const uri = suggestion.document;
+        if (!uri) return;
+        this.debtService.addToDebt(uri, suggestion.size || 1, () => {
+            safe('updateScore', () => this.updateScore?.());
+        });
+        safe('updateFileColors', () => this.updateFileColorsInExplorer?.());
     }
 
     /**

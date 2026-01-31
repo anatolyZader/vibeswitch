@@ -13,7 +13,7 @@ const os = require('os');
 // Mock fs before requiring the module
 jest.mock('fs');
 
-const ModeManager = require('../../../../../business_modules/capability/app/modeManager');
+const ModeManager = require('../../../../../business_modules/mode-enforcement/app/modeManager');
 
 describe('ModeManager', () => {
     let mockContext;

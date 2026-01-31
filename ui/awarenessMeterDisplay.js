@@ -62,33 +62,51 @@ function getScoreEmoji(score) {
 }
 
 /**
- * Build merged list of unreviewed files: file-level debt + files with pending suggestions.
- * Dedupes by fullPath so the same file is not counted twice. Sorted oldest first.
- * Count uses backend debt.unreviewedFiles + pending files not already in debt (so we don't undercount when debt.files is only "top 10").
+ * Two measures: unopened files (debt files user hasn't opened) and unreviewed suggestions (pending).
+ * Uses scoreData.unopenedFiles and scoreData.unreviewedSuggestions when present (from engine); otherwise falls back to debt + suggestions.
+ * @param {Object} scoreData - Result of awarenessEngine.getScore()
+ * @returns {{ unopened: { count: number, files: Array }, unreviewedSuggestions: { count: number, files: Array } }}
+ */
+function getUnopenedAndUnreviewedForDisplay(scoreData) {
+    const unopened = (scoreData && scoreData.unopenedFiles) ? scoreData.unopenedFiles : { count: 0, files: [] };
+    const unreviewedSuggestions = (scoreData && scoreData.unreviewedSuggestions) ? scoreData.unreviewedSuggestions : { count: 0, files: [] };
+    // Fallback when engine didn't add the split (e.g. older code path)
+    if (unopened.count === 0 && unreviewedSuggestions.count === 0 && scoreData && scoreData.debt) {
+        const debtFiles = scoreData.debt.files || [];
+        const pendingFiles = (scoreData.suggestions && scoreData.suggestions.pendingFiles) ? scoreData.suggestions.pendingFiles : [];
+        const pendingCount = (scoreData.suggestions && scoreData.suggestions.pending) != null ? scoreData.suggestions.pending : pendingFiles.length;
+        return {
+            unopened: { count: debtFiles.length, files: debtFiles.map(f => ({ path: f.path || f.fullPath, fullPath: f.fullPath || f.path, ageMinutes: f.ageMinutes || 0 })) },
+            unreviewedSuggestions: { count: pendingCount, files: pendingFiles }
+        };
+    }
+    return {
+        unopened: { count: unopened.count || 0, files: unopened.files || [] },
+        unreviewedSuggestions: { count: unreviewedSuggestions.count || 0, files: unreviewedSuggestions.files || [] }
+    };
+}
+
+/**
+ * Build merged list of unreviewed files (backward compat): unopened files + files with unreviewed (pending) suggestions.
+ * Dedupes by fullPath. Use getUnopenedAndUnreviewedForDisplay for the two-measure split.
  * @param {Object} scoreData - Result of awarenessEngine.getScore()
  * @returns {{ count: number, files: Array<{ path: string, fullPath: string, ageMinutes: number }> }}
  */
 function getUnreviewedFilesForDisplay(scoreData) {
-    const debt = (scoreData && scoreData.debt) ? scoreData.debt : { unreviewedFiles: 0, files: [] };
-    const debtFiles = debt.files || [];
-    const pendingFiles = (scoreData && scoreData.suggestions && scoreData.suggestions.pendingFiles) ? scoreData.suggestions.pendingFiles : [];
-    const debtPathSet = new Set(debtFiles.map(f => (f.fullPath || f.path || '').toString()).filter(Boolean));
-    const pendingNotInDebt = pendingFiles.filter(f => !debtPathSet.has((f.fullPath || f.path || '').toString())).length;
-    const count = (debt.unreviewedFiles || 0) + pendingNotInDebt;
-
+    const { unopened, unreviewedSuggestions } = getUnopenedAndUnreviewedForDisplay(scoreData);
     const byPath = new Map();
-    for (const f of debtFiles) {
+    for (const f of unopened.files) {
         const key = (f.fullPath || f.path || '').toString();
         if (key) byPath.set(key, { path: f.path || key, fullPath: f.fullPath || key, ageMinutes: typeof f.ageMinutes === 'number' ? f.ageMinutes : 0 });
     }
-    for (const f of pendingFiles) {
+    for (const f of unreviewedSuggestions.files) {
         const key = (f.fullPath || f.path || '').toString();
         if (key && !byPath.has(key)) {
             byPath.set(key, { path: f.path || key, fullPath: f.fullPath || key, ageMinutes: typeof f.ageMinutes === 'number' ? f.ageMinutes : 0 });
         }
     }
     const files = Array.from(byPath.values()).sort((a, b) => (b.ageMinutes || 0) - (a.ageMinutes || 0));
-    return { count, files };
+    return { count: files.length, files };
 }
 
 /**
@@ -106,6 +124,7 @@ function mapDomainStateToViewModel(scoreData, currentMode = 'dev') {
     const segments = getScoreMeter(score);
     const emoji = getScoreEmoji(score);
     const hasAnySuggestions = scoreData.suggestions && scoreData.suggestions.total > 0;
+    const { unopened, unreviewedSuggestions } = getUnopenedAndUnreviewedForDisplay(scoreData);
     const unreviewed = getUnreviewedFilesForDisplay(scoreData);
     const hasReviewDebt = unreviewed.count > 0;
     const hasRecentActivity = scoreData.debug && scoreData.debug.recentWindowCount > 0;
@@ -121,7 +140,11 @@ function mapDomainStateToViewModel(scoreData, currentMode = 'dev') {
         confidence = 'none';
     } else if (!hasRecentActivity && hasReviewDebt) {
         label = `${segments} (${unreviewed.count})`;
-        tooltipLines = [`${unreviewed.count} unreviewed file(s)`, `Risk: ${score}/100`, `Debt: ${scoreData.components?.debt ?? 0}/30`];
+        tooltipLines = [
+            `Unopened files: ${unopened.count}  Unreviewed suggestions: ${unreviewedSuggestions.count}`,
+            `Risk: ${score}/100`,
+            `Debt: ${scoreData.components?.debt ?? 0}/30`
+        ];
         warning = score >= 80;
     } else {
         label = segments;
@@ -224,19 +247,21 @@ Click for detailed statistics`;
         } else if (!hasRecentActivity && hasReviewDebt) {
             // No recent activity (10s window), but there's review debt - show debt indicator
             const debtScore = scoreData.components.debt;
+            const { unopened: unopenedCompact, unreviewedSuggestions: unreviewedCompactSuggestions } = getUnopenedAndUnreviewedForDisplay(scoreData);
             // Use the total score (already normalized/combined by ScoreService) so the meter
             // doesn't "snap back" to green while debt/pending reviews are still outstanding.
             let displayScore = scoreData.total || 0;
             displayScore = Math.max(0, Math.min(100, displayScore));
             const meter = getScoreMeter(displayScore);
             const emoji = getScoreEmoji(displayScore);
-            
-            awarenessBarItem.text = `${emoji} ${meter} (${unreviewedCompact.count})`;
-            const filesList = unreviewedCompact.files.slice(0, 10).map(f => `• ${f.path || f.fullPath} (${(f.ageMinutes || 0) < 60 ? `${f.ageMinutes || 0}m ago` : `${Math.round((f.ageMinutes || 0) / 60)}h ago`})`).join('\n');
-            const moreLine = unreviewedCompact.count > 10 ? `\n... and ${unreviewedCompact.count - 10} more` : '';
+            const mergedFiles = getUnreviewedFilesForDisplay(scoreData);
+
+            awarenessBarItem.text = `${emoji} ${meter} (${mergedFiles.count})`;
+            const filesList = mergedFiles.files.slice(0, 10).map(f => `• ${f.path || f.fullPath} (${(f.ageMinutes || 0) < 60 ? `${f.ageMinutes || 0}m ago` : `${Math.round((f.ageMinutes || 0) / 60)}h ago`})`).join('\n');
+            const moreLine = mergedFiles.count > 10 ? `\n... and ${mergedFiles.count - 10} more` : '';
             awarenessBarItem.tooltip = `${currentMode.toUpperCase()} Mode Awareness: Review Debt Detected
 
-📁 ${unreviewedCompact.count} unreviewed file(s) with AI-generated changes
+📁 Unopened files: ${unopenedCompact.count}  ⏳ Unreviewed suggestions: ${unreviewedCompactSuggestions.count}
 
 Recent Activity: None (last 10 seconds)
 Total Risk Score: ${displayScore}/100
@@ -303,25 +328,27 @@ Suggestions tracked: ${scoreData.suggestions.total}
 ❌ Rejected: ${scoreData.suggestions.rejected}
 ⏳ Pending: ${scoreData.suggestions.pending}`;
 
-            // Add unreviewed section: file-level debt + files with pending suggestions (merged, deduped)
-            const unreviewed = getUnreviewedFilesForDisplay(scoreData);
-            if (unreviewed.count > 0) {
-                tooltip += `\n\n📁 UNREVIEWED AI CHANGES: ${unreviewed.count} file(s)`;
-                
-                // Show top 10 oldest (debt + pending merged, sorted oldest first)
-                const filesToShow = unreviewed.files.slice(0, 10);
-                filesToShow.forEach(file => {
-                    const timeStr = (file.ageMinutes || 0) < 60
-                        ? `${file.ageMinutes || 0}m ago`
-                        : `${Math.round((file.ageMinutes || 0) / 60)}h ago`;
-                    tooltip += `\n  • ${file.path || file.fullPath} (${timeStr})`;
-                });
-                
-                if (unreviewed.count > 10) {
-                    tooltip += `\n  ... and ${unreviewed.count - 10} more`;
+            // Add two measures: unopened files and unreviewed suggestions
+            const { unopened: unopenedTip, unreviewedSuggestions: unreviewedTip } = getUnopenedAndUnreviewedForDisplay(scoreData);
+            if (unopenedTip.count > 0 || unreviewedTip.count > 0) {
+                tooltip += `\n\n📁 Unopened files: ${unopenedTip.count}  ⏳ Unreviewed suggestions: ${unreviewedTip.count}`;
+                if (unopenedTip.count > 0) {
+                    tooltip += `\n  Unopened (open file to start review):`;
+                    unopenedTip.files.slice(0, 5).forEach(file => {
+                        const timeStr = (file.ageMinutes || 0) < 60 ? `${file.ageMinutes || 0}m ago` : `${Math.round((file.ageMinutes || 0) / 60)}h ago`;
+                        tooltip += `\n    • ${file.path || file.fullPath} (${timeStr})`;
+                    });
+                    if (unopenedTip.count > 5) tooltip += `\n    ... and ${unopenedTip.count - 5} more`;
                 }
-                
-                tooltip += `\n\n⚠️  Open and review these files to clear debt!`;
+                if (unreviewedTip.count > 0) {
+                    tooltip += `\n  Unreviewed suggestions (pending):`;
+                    unreviewedTip.files.slice(0, 5).forEach(file => {
+                        const timeStr = (file.ageMinutes || 0) < 60 ? `${file.ageMinutes || 0}m ago` : `${Math.round((file.ageMinutes || 0) / 60)}h ago`;
+                        tooltip += `\n    • ${file.path || file.fullPath} (${timeStr})`;
+                    });
+                    if (unreviewedTip.count > 5) tooltip += `\n    ... and ${unreviewedTip.count - 5} more`;
+                }
+                tooltip += `\n\n⚠️  Open files and engage (scroll/cursor) to clear debt!`;
             } else {
                 tooltip += `\n\n✅ No unreviewed files - great job!`;
             }
@@ -363,5 +390,6 @@ module.exports = {
     getScoreEmoji,
     mapDomainStateToViewModel,
     normalizeTo100,
-    getUnreviewedFilesForDisplay
+    getUnreviewedFilesForDisplay,
+    getUnopenedAndUnreviewedForDisplay
 };

@@ -10,7 +10,7 @@ const os = require('os');
 
 jest.mock('fs');
 
-const WorkspaceAllowlist = require('../../../../../business_modules/capability/app/workspaceAllowlist');
+const WorkspaceAllowlist = require('../../../../../business_modules/mode-enforcement/app/workspaceAllowlist');
 
 describe('WorkspaceAllowlist', () => {
     const STATE_DIR = path.join(os.homedir(), '.vibeswitch', 'state');

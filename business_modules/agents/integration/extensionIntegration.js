@@ -40,7 +40,7 @@ class AgentsExtensionIntegration {
                     if (token) return token;
                     
                     // Try to get from keypair manager if available
-                    if (state.capability && state.capability.keypairManager) {
+                    if (state.modeEnforcement && state.modeEnforcement.keypairManager) {
                         // Generate token using keypair (future implementation)
                         return null;
                     }

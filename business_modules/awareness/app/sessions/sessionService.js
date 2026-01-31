@@ -59,6 +59,15 @@ class SessionService {
     }
 
     /**
+     * Get URIs of files that currently have an active review session (user has opened them).
+     * Used to split "unopened files" (debt files with no session) from "opened but unreviewed".
+     * @returns {Set<string>} Set of normalized URI strings
+     */
+    getSessionUris() {
+        return new Set(this.sessions.keys());
+    }
+
+    /**
      * Update cursor activity for a file being reviewed
      * @param {string} filePathOrUri - File path (fsPath) or URI string
      */
@@ -87,28 +96,36 @@ class SessionService {
     /**
      * Check session progress periodically
      * Uses ReviewSession entity methods for business logic
+     *
+     * To mark a file as reviewed, the user must open it AND meet engagement criteria:
+     * - Minimum time with the file open (MINIMUM_REVIEW_TIME_MS)
+     * - AND either minimum cursor movements or minimum scroll events (scroll/hover over content)
+     * This prevents "just opening" from clearing unreviewed; real engagement is required.
      */
     checkProgress() {
-        const MINIMUM_REVIEW_TIME = 5000; // 5 seconds
-        const ACTIVITY_TIMEOUT = 60000; // 1 minute
-        
+        // Substantive review: open file + dwell time + scroll/cursor over content (not just opening)
+        const MINIMUM_REVIEW_TIME_MS = 5000;   // 5 seconds with file open
+        const MINIMUM_CURSOR_MOVEMENTS = 5;   // or scroll/hover that many times
+        const MINIMUM_SCROLL_EVENTS = 3;
+        const ACTIVITY_TIMEOUT_MS = 60000;    // 1 minute inactivity → timeout
+
         if (this.sessions.size === 0) {
             return;
         }
-        
+
         for (const [uri, session] of this.sessions.entries()) {
             const hasUnreviewedDebt = this.debtService && this.debtService.hasUnreviewedDebt(uri);
-            const hasPendingSuggestions = this.suggestionLifecycleService ? 
+            const hasPendingSuggestions = this.suggestionLifecycleService ?
                 this.suggestionLifecycleService.getPendingSuggestionsForFile(uri).length > 0 : false;
-            
+
             // If no debt and no pending suggestions, remove session
             if (!hasUnreviewedDebt && !hasPendingSuggestions) {
                 this.sessions.delete(uri);
                 continue;
             }
-            
+
             // Check if session timed out
-            if (session.hasTimedOut(ACTIVITY_TIMEOUT)) {
+            if (session.hasTimedOut(ACTIVITY_TIMEOUT_MS)) {
                 if (this.debtService && hasUnreviewedDebt) {
                     const debt = this.debtService.getDebt(uri);
                     if (debt) {
@@ -119,9 +136,9 @@ class SessionService {
                 this.sessions.delete(uri);
                 continue;
             }
-            
-            // Check if user has reviewed enough
-            if (session.hasSufficientEngagement(MINIMUM_REVIEW_TIME, 5, 3)) {
+
+            // Check if user has reviewed enough (open + time + scroll/cursor engagement)
+            if (session.hasSufficientEngagement(MINIMUM_REVIEW_TIME_MS, MINIMUM_CURSOR_MOVEMENTS, MINIMUM_SCROLL_EVENTS)) {
                 let needsScoreUpdate = false;
                 
                 // Mark debt as paid

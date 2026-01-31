@@ -171,7 +171,7 @@ class IAwarenessVSCodePort {
 
     /**
      * Create a file system watcher for the workspace (e.g. to detect agent-created files).
-     * @param {string|Object} globPattern - Glob pattern (e.g. '**/*') or RelativePattern
+     * @param {string|Object} globPattern - Glob pattern or RelativePattern (e.g. match all files)
      * @returns {Object} FileSystemWatcher with onDidCreate, onDidChange, onDidDelete (each returns Disposable)
      */
     createFileSystemWatcher(globPattern) {

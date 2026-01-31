@@ -1198,7 +1198,7 @@ Before shipping, verify:
 **Shared Modules** (`$HOME/.vibeswitch/lib/`):
 - `canonical.js` - RFC 8785-style canonical JSON
 
-**Extension Components** (`business_modules/capability/`):
+**Extension Components** (`business_modules/mode-enforcement/`):
 - `ModeManager` - globalState source + filesystem mirror
 - `HooksJsonGuard` - Watch + atomic restore + debounce
 - `CapabilitySelfTest` - Integrity verification

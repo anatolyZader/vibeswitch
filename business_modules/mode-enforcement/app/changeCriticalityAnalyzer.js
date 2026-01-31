@@ -64,7 +64,7 @@ const CORE_EXTENSION_FILES = [
 const CORE_MODULE_DIRS = [
     'business_modules/awareness/app',
     'business_modules/mode/app',
-    'business_modules/capability/app'
+    'business_modules/mode-enforcement/app'
 ];
 
 // Cache for dependency counts (key: relativePath, value: count)

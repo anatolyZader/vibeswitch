@@ -1,7 +1,7 @@
 /**
- * Capability Enforcement Module
- * 
- * Provides hard enforcement of DEV/VIBE mode capabilities through:
+ * Mode-Enforcement Module
+ *
+ * Provides hard enforcement of DEV/VIBE mode through:
  * - ModeManager: Secure mode storage with filesystem mirror for hooks
  * - HooksJsonGuard: Tamper detection and restoration of hooks.json
  * - CapabilitySelfTest: Integrity verification of the setup

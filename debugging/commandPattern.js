@@ -103,9 +103,73 @@ class CommandInvoker {
     }
 }
 
+// ---------------------------------------------------------------------------
+// GoF Observer: define a one-to-many dependency so observers are notified
+// when a subject’s state changes. Used for debug events (e.g. command run, state change).
+// ---------------------------------------------------------------------------
+
+/**
+ * Subject: maintains a list of observers and notifies them on state/event changes.
+ */
+class DebugSubject {
+    constructor() {
+        this._observers = new Set();
+    }
+
+    /**
+     * @param {function(*): void} observer – callback(event) when subject notifies
+     */
+    subscribe(observer) {
+        if (typeof observer === 'function') this._observers.add(observer);
+    }
+
+    unsubscribe(observer) {
+        this._observers.delete(observer);
+    }
+
+    /**
+     * Notify all observers with an event payload.
+     * @param {*} event – e.g. { type: 'commandExecuted', command, result }
+     */
+    notify(event) {
+        for (const obs of this._observers) {
+            try {
+                obs(event);
+            } catch (err) {
+                console.error('[DebugSubject] observer error:', err);
+            }
+        }
+    }
+}
+
+/**
+ * Concrete subject that emits events when commands are run (combines Command + Observer).
+ */
+class ObservableCommandInvoker extends CommandInvoker {
+    constructor(undoStackSize = 50) {
+        super(undoStackSize);
+        this._subject = new DebugSubject();
+    }
+
+    subscribe(observer) {
+        this._subject.subscribe(observer);
+    }
+
+    unsubscribe(observer) {
+        this._subject.unsubscribe(observer);
+    }
+
+    run(command) {
+        super.run(command);
+        this._subject.notify({ type: 'commandExecuted', command });
+    }
+}
+
 module.exports = {
     DebugCommand,
     LogMarkerCommand,
     ToggleFlagCommand,
-    CommandInvoker
+    CommandInvoker,
+    DebugSubject,
+    ObservableCommandInvoker
 };

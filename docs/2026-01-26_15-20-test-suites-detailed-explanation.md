@@ -8,7 +8,7 @@
 ## Table of Contents
 
 1. [Awareness Scoring Test Suites](#awareness-scoring-test-suites)
-2. [Capability Enforcement Test Suites](#capability-enforcement-test-suites)
+2. [Mode-Enforcement Test Suites](#mode-enforcement-test-suites)
 3. [MCP Server Test Suites](#mcp-server-test-suites)
 4. [Domain Entity Test Suites](#domain-entity-test-suites)
 
@@ -331,7 +331,7 @@
 
 ### 12. `capabilitySelfTest.test.js` (~10 tests)
 
-**Purpose:** Tests the self-test system that verifies capability enforcement is properly configured.
+**Purpose:** Tests the self-test system that verifies mode enforcement is properly configured.
 
 **What it tests:**
 - ✅ **jq installation check:**

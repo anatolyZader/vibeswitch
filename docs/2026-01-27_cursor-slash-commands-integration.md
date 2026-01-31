@@ -39,7 +39,6 @@ Create slash commands that switch modes AND apply mode-specific instructions:
 Keep existing rules.md switching, but add commands for specific workflows:
 
 ```
-/vibe-fast    → Temporary autonomous mode for current task
 /dev-review   → Collaborative review mode for current task
 ```
 
@@ -61,8 +60,7 @@ Create commands in `.cursor/commands/` directory:
 .cursor/
 ├── commands/
 │   ├── vibe.md          # VIBE mode command
-│   ├── dev.md           # DEV mode command
-│   └── vibe-fast.md     # Optional: quick VIBE workflow
+│   └── dev.md           # DEV mode command
 ├── rules.md             # Current active rules (existing)
 ├── rules.vibe.md        # VIBE mode rules (existing)
 └── rules.dev.md         # DEV mode rules (existing)
@@ -156,29 +154,6 @@ Use only these tools for modifications:
 After applying this behavior, also switch the workspace to DEV mode by updating `.cursor/rules.md` to match `.cursor/rules.dev.md` content.
 ```
 
-### 3. `/vibe-fast` Command (Optional)
-
-**File:** `.cursor/commands/vibe-fast.md`
-
-```markdown
-# Quick VIBE Mode - Temporary Autonomous
-
-Temporarily enable autonomous behavior for the current task only.
-
-## Behavior
-- Operate autonomously for THIS task only
-- After task completion, return to previous mode
-- Use all tools freely
-- Make decisions independently
-
-## Tool Usage
-- ✅ All tools available
-- ✅ No approval required
-- ✅ Execute immediately
-
-## Note
-This is a temporary override. The persistent mode (from rules.md) remains unchanged.
-```
 
 ---
 
@@ -350,17 +325,7 @@ User types: /vibe
 → User can now work autonomously
 ```
 
-### Workflow 2: Temporary Override
-
-```
-User is in DEV mode
-User types: /vibe-fast
-→ Temporary autonomous behavior for current task
-→ Rules.md stays as DEV (persistent mode unchanged)
-→ After task, returns to DEV behavior
-```
-
-### Workflow 3: Team Collaboration
+### Workflow 2: Team Collaboration
 
 ```
 Team member creates /review command

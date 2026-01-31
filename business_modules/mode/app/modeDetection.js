@@ -88,5 +88,15 @@ function detectCurrentMode(forceFresh = false) {
     return detectedMode;
 }
 
+/**
+ * Invalidate the detection cache so the next detectCurrentMode() reads from disk.
+ * Call after mode switch (e.g. after writing rules.md) so detection sees the new state.
+ */
+function invalidateCache() {
+    lastDetectedMode = null;
+    lastDetectionTime = 0;
+}
+
 module.exports = detectCurrentMode;
+module.exports.invalidateCache = invalidateCache;
 

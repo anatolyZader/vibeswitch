@@ -20,7 +20,7 @@ const {
     AlertFileEditDetector,
     KeypairManager,
     ApprovalManager
-} = require('./business_modules/capability');
+} = require('./business_modules/mode-enforcement');
 
 /**
  * Register all VS Code commands
@@ -122,7 +122,7 @@ async function activate(context) {
         state.outputChannel = vscode.window.createOutputChannel('VibeSwitch');
         // context.subscriptions is an array of disposables (e.g., event listeners, output channels, status bar items).
         // When the extension deactivates, VS Code calls dispose() on each item in this array.
-        // Pushing state.outputChannel ensures it's cleaned up automatically.;
+        // Pushing state.outputChannel ensures it's cleaned up automatically.
         context.subscriptions.push(state.outputChannel);
         
         initializeLogger(state.outputChannel);
@@ -132,7 +132,7 @@ async function activate(context) {
         // Create log wrapper function for extension-level code
         log = createLogWrapperFunc();
         
-        // ========== CAPABILITY ENFORCEMENT INITIALIZATION ==========
+        // ========== MODE-ENFORCEMENT INITIALIZATION ==========
         // Initialize early before any other components
         
         // 1. Mode Manager - source of truth in globalState, mirror to filesystem
@@ -173,7 +173,7 @@ async function activate(context) {
                     fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'extension.js:setup_choice',message:'user_choice',data:{choice:choice||'dismissed'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H5'})}).catch(()=>{});
                     // #endregion
                     if (choice === 'Setup') {
-                        const capabilitySetup = require('./business_modules/capability/app/capabilitySetup');
+                        const capabilitySetup = require('./business_modules/mode-enforcement/app/capabilitySetup');
                         const setupResult = capabilitySetup.runSetup(context.extensionPath);
                         // #region agent log
                         fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'extension.js:setup_done',message:'setup_after_prompt',data:{success:setupResult.success,copied:setupResult.copied?.length,errors:setupResult.errors?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
@@ -231,8 +231,8 @@ async function activate(context) {
         context.subscriptions.push({ dispose: () => approvalManager.dispose() });
         log('VibeSwitch: ApprovalManager started');
         
-        // Store capability components in state for later access
-        state.capability = {
+        // Store mode-enforcement components in state for later access
+        state.modeEnforcement = {
             modeManager,
             workspaceAllowlist,
             selfTest,
@@ -242,7 +242,7 @@ async function activate(context) {
             approvalManager
         };
         
-        // ========== END CAPABILITY ENFORCEMENT ==========
+        // ========== END MODE-ENFORCEMENT ==========
         
         // ========== MULTI-AGENT ARCHITECTURE INITIALIZATION ==========
         // Initialize agents integration if enabled
@@ -415,7 +415,11 @@ async function activate(context) {
     } catch (error) {
         const errorMessage = `VibeSwitch: Error during activation: ${error.message}`;
         const stackTrace = error.stack ? `Stack trace: ${error.stack}` : '';
-        
+        // SyntaxError often includes fileName/lineNumber in stack; log fully for "Invalid or unexpected token"
+        const detail = error instanceof SyntaxError && error.stack
+            ? `${error.message}\n${error.stack}`
+            : errorMessage;
+
         if (log) {
             log(errorMessage, true, true);
             log(stackTrace, true, false);
@@ -427,7 +431,8 @@ async function activate(context) {
                 state.outputChannel.show(true);
             }
         }
-        
+        console.error('VibeSwitch activation detail:', detail);
+
         // Show user-facing error message
         try {
             const errorAdapter = container.getAdapter('awareness', 'vscodeAdapter');
