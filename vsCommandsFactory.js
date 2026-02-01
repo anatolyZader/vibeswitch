@@ -11,6 +11,7 @@ const modeSwitcher = require('./ui/modeSwitcherDisplay');
 const userStatsUI = require('./ui/statsDashboardDisplay');
 const { mapDomainStateToViewModel, getUnreviewedFilesForDisplay, getUnopenedAndUnreviewedForDisplay } = require('./ui/awarenessMeterDisplay');
 const { triggerFlashNow } = require('./ui/frameFlash');
+const dashboardDisplay = require('./ui/dashboardDisplay');
 
 /**
  * Create command handlers with dependency injection
@@ -124,6 +125,11 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
                 log(`VibeSwitch: Error restarting awareness meter: ${error.message}`, true, true);
                 showErrorMessage(`Failed to reset: ${error.message}`);
             }
+        },
+
+        'vibeswitch.openDashboard': async () => {
+            const mode = state.getMode ? state.getMode() : state.currentMode;
+            await dashboardDisplay.openDashboard(state.awarenessEngine, mode, state.dashboardContentProvider);
         },
 
         'vibeswitch.showAwarenessState': () => {

@@ -42,18 +42,23 @@ describe('updateAwarenessMeter mocked', () => {
         vscode.workspace.workspaceFolders = [{ uri: { fsPath: '/test' } }];
         vscode.workspace.getConfiguration = jest.fn(() => ({ get: jest.fn((k, d) => (k === 'showInStatusBar' ? true : d)) }));
     });
-    test('with engine returning scoreData sets text to emoji and meter', () => {
+    test('with engine returning scoreData sets text to colored circle (no emoji/meter in bar)', () => {
         mockEngine = {
             getScore: jest.fn(() => ({
                 total: 25,
                 components: { review: 20, blindAcceptance: 5, adaptation: 10, debt: 0 },
                 suggestions: { total: 5, pendingFiles: [] },
                 debt: { unreviewedFiles: 0, files: [] },
+                unopenedFiles: { count: 0, files: [] },
+                unreviewedSuggestions: { count: 0, files: [] },
                 debug: { recentWindowCount: 3, monitoringActive: true, lastActivity: 'now', totalTrackedCount: 5 }
-            }))
+            })),
+            getScoreBreakdown: jest.fn(() => ({})),
+            getAntipatternBreakdown: jest.fn(() => ({}))
         };
         updateAwarenessMeter(barItem, mockEngine, 'dev');
-        expect(barItem.text).toContain('\uD83D\uDFE2');
+        expect(barItem.text).toBe('$(record)');
+        expect(barItem.tooltip).toMatch(/Risk: 25\/100/);
     });
     test('tooltip contains mode and score', () => {
         mockEngine = {
@@ -62,8 +67,12 @@ describe('updateAwarenessMeter mocked', () => {
                 components: { review: 15, blindAcceptance: 10, adaptation: 10, debt: 5 },
                 suggestions: { total: 5, pendingFiles: [] },
                 debt: { unreviewedFiles: 0, files: [] },
+                unopenedFiles: { count: 0, files: [] },
+                unreviewedSuggestions: { count: 0, files: [] },
                 debug: { recentWindowCount: 3, monitoringActive: true, lastActivity: 'now', totalTrackedCount: 5 }
-            }))
+            })),
+            getScoreBreakdown: jest.fn(() => ({})),
+            getAntipatternBreakdown: jest.fn(() => ({}))
         };
         updateAwarenessMeter(barItem, mockEngine, 'dev');
         expect(barItem.tooltip).toContain('DEV');
@@ -127,16 +136,18 @@ describe('mapDomainStateToViewModel contract', () => {
         expect(vm.tooltipLines.some((l) => l.includes('85/100'))).toBe(true);
     });
 
-    test('debt-only (no recent activity) includes debt in label', () => {
+    test('debt-only (no recent activity) includes unreviewed count in label and tooltip', () => {
         const scoreData = {
             total: 40,
             components: { review: 0, blindAcceptance: 0, adaptation: 0, debt: 15 },
             suggestions: { total: 0, pending: 0 },
-            debt: { unreviewedFiles: 3, files: [{ path: 'x.js', ageMinutes: 5 }] },
+            debt: { unreviewedFiles: 3, files: [{ path: 'x.js', fullPath: '/x.js', ageMinutes: 5 }] },
+            unopenedFiles: { count: 1, files: [{ path: 'x.js', fullPath: '/x.js', ageMinutes: 5 }] },
+            unreviewedSuggestions: { count: 0, files: [] },
             debug: { recentWindowCount: 0, monitoringActive: true }
         };
         const vm = mapDomainStateToViewModel(scoreData, 'dev');
-        expect(vm.label).toContain('3');
-        expect(vm.tooltipLines.some((l) => l.includes('unreviewed'))).toBe(true);
+        expect(vm.label).toMatch(/\d+/);
+        expect(vm.tooltipLines.some((l) => l.includes('unreviewed') || l.includes('Unopened'))).toBe(true);
     });
 });

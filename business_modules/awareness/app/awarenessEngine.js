@@ -585,7 +585,57 @@ class AwarenessEngine {
             debtService: this.debtService
         });
     }
-    
+
+    /**
+     * Get antipattern breakdown for dashboard: Flooding, Response drill, Context spread.
+     * Does not change existing score formula; additive for UI only.
+     * @returns {Object} { flooding: { count, risk0To100 }, responseDrill: { count, risk0To100 }, contextSpread: { maxBatchSize, distinctFiles, risk0To100 } }
+     */
+    getAntipatternBreakdown() {
+        const empty = {
+            flooding: { count: 0, risk0To100: 0 },
+            responseDrill: { count: 0, risk0To100: 0 },
+            contextSpread: { maxBatchSize: 0, distinctFiles: 0, risk0To100: 0 }
+        };
+        if (!this.suggestionAggregate) return empty;
+
+        const batches = this.suggestionAggregate.getBatches();
+        const now = Date.now();
+        const FLOODING_WINDOW_MS = 5 * 60 * 1000;   // 5 min
+        const DRILL_WINDOW_MS = 5 * 60 * 1000;    // 5 min
+        const SPREAD_WINDOW_MS = 10 * 60 * 1000;  // 10 min
+
+        const recentForFlooding = batches.filter(b => (now - (b.timestamp || 0)) <= FLOODING_WINDOW_MS);
+        const floodingCount = recentForFlooding.length;
+        const floodingRisk = Math.min(100, floodingCount * 33); // 0=0, 1=33, 2=66, 3+=100
+
+        const recentForDrill = batches.filter(b => {
+            const age = now - (b.timestamp || 0);
+            return age <= DRILL_WINDOW_MS && b.isKeepAllPattern && b.isKeepAllPattern();
+        });
+        const responseDrillCount = recentForDrill.length;
+        const responseDrillRisk = Math.min(100, responseDrillCount * 50); // 0=0, 1=50, 2+=100
+
+        const recentForSpread = batches.filter(b => (now - (b.timestamp || 0)) <= SPREAD_WINDOW_MS);
+        let maxBatchSize = 0;
+        const filesSet = new Set();
+        recentForSpread.forEach(b => {
+            const n = (b.suggestionIds && b.suggestionIds.length) || 0;
+            if (n > maxBatchSize) maxBatchSize = n;
+            if (b.filePath) filesSet.add(b.filePath);
+        });
+        const distinctFiles = filesSet.size;
+        const spreadRiskFromSize = Math.min(100, (maxBatchSize / 10) * 50);   // 10+ suggestions = 50
+        const spreadRiskFromFiles = Math.min(100, distinctFiles * 15);        // 7+ files = 105 -> 100
+        const contextSpreadRisk = Math.min(100, Math.round(spreadRiskFromSize + spreadRiskFromFiles * 0.5));
+
+        return {
+            flooding: { count: floodingCount, risk0To100: floodingRisk },
+            responseDrill: { count: responseDrillCount, risk0To100: responseDrillRisk },
+            contextSpread: { maxBatchSize, distinctFiles, risk0To100: contextSpreadRisk }
+        };
+    }
+
     /**
      * Get change ledger service (for test-only checkpoint save/restore).
      * @returns {ChangeLedgerService|null}

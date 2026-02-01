@@ -360,6 +360,14 @@ class SuggestionAggregate {
     }
 
     /**
+     * Get all batches (for antipattern aggregation: flooding, response drill, context spread).
+     * @returns {Array<SuggestionBatch>} Array of batch entities
+     */
+    getBatches() {
+        return Array.from(this.batchesById.values());
+    }
+
+    /**
      * Update batch outcome when suggestion status changes
      * Uses aggregate's batch mapping (not suggestion.batchId) for consistency
      * @param {Suggestion} suggestion - Suggestion entity

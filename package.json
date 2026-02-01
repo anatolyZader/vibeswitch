@@ -85,6 +85,11 @@
         "category": "VibeSwitch"
       },
       {
+        "command": "vibeswitch.openDashboard",
+        "title": "Open VibeSwitch Dashboard",
+        "category": "VibeSwitch"
+      },
+      {
         "command": "vibeswitch.diagnoseMonitor",
         "title": "Diagnose Awareness Monitor",
         "category": "VibeSwitch"

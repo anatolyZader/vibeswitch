@@ -357,8 +357,7 @@ async function activate(context) {
         state.statusBarItem.name = 'VibeSwitch Mode';
         state.awarenessBarItem.name = 'VibeSwitch Awareness';
         state.statusBarItem.command = 'vibeswitch.switchMode';
-        // Awareness meter is not clickable (removed command to prevent untitled editor tab popup)
-        state.awarenessBarItem.command = undefined;
+        state.awarenessBarItem.command = 'vibeswitch.openDashboard';
         
         // Register status bar items for cleanup
         context.subscriptions.push(state.statusBarItem);
@@ -376,7 +375,15 @@ async function activate(context) {
         if (initFileDecorations) {
             initFileDecorations();
         }
-        
+
+        // Dashboard content provider: fixed URI so clicking the status bar circle again focuses the same tab and refreshes content
+        const { DashboardContentProvider } = require('./ui/dashboardDisplay');
+        const dashboardContentProvider = new DashboardContentProvider();
+        context.subscriptions.push(
+            vscode.workspace.registerTextDocumentContentProvider('vibeswitch-dashboard', dashboardContentProvider)
+        );
+        state.dashboardContentProvider = dashboardContentProvider;
+
         // Register all commands
         registerCommands(context, commandHandlers, log);
         

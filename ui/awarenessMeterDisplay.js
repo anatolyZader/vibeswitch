@@ -6,6 +6,7 @@
 
 const vscode = require('vscode');
 const { flashCyanIfHighScore } = require('./frameFlash');
+const { getCircleState } = require('./dashboardContent');
 
 /**
  * Helper function: Generates a visual meter bar representation of the awareness score
@@ -196,187 +197,53 @@ function updateAwarenessMeter(awarenessBarItem, awarenessEngine, currentMode, ou
         return;
     }
 
-    // Show awareness meter in both DEV and VIBE modes
+    // Show colored circle in both DEV and VIBE modes (click opens dashboard, hover shows schematic)
     if (currentMode === 'vibe' || currentMode === 'dev') {
-        // DEV mode: Show real-time awareness score
         let scoreData;
+        let scoreBreakdown = null;
+        let antipatternBreakdown = null;
         try {
             scoreData = awarenessEngine.getScore();
+            if (awarenessEngine.getScoreBreakdown) {
+                scoreBreakdown = awarenessEngine.getScoreBreakdown();
+            }
+            if (awarenessEngine.getAntipatternBreakdown) {
+                antipatternBreakdown = awarenessEngine.getAntipatternBreakdown();
+            }
         } catch (error) {
             if (outputChannel) {
                 outputChannel.appendLine(`ERROR getting score from awareness monitor: ${error.message}`);
             }
-            awarenessBarItem.text = '$(graph) ERR';
-            awarenessBarItem.tooltip = `Awareness meter error: ${error.message}`;
+            awarenessBarItem.text = '$(record)';
+            awarenessBarItem.tooltip = `Awareness error: ${error.message}. Click to open dashboard.`;
+            awarenessBarItem.backgroundColor = undefined;
             awarenessBarItem.show();
             return;
         }
-        
-        if (!scoreData) {
-            awarenessBarItem.text = '$(graph) --';
-            awarenessBarItem.tooltip = 'Awareness meter: No data available';
-            awarenessBarItem.show();
-            return;
-        }
-        
-        const score = scoreData.total || 0;
 
-        // When score crosses high threshold, flash UI (editor + status bar) cyan
+        if (!scoreData) {
+            awarenessBarItem.text = '$(record)';
+            awarenessBarItem.tooltip = 'No data. Click to open dashboard.';
+            awarenessBarItem.backgroundColor = undefined;
+            awarenessBarItem.show();
+            return;
+        }
+
+        const score = scoreData.total || 0;
         try {
             flashCyanIfHighScore(score);
-        } catch (_) {
-            // ignore
-        }
-        
-        // Handle "no data" state (no AI suggestions detected yet)
-        // Check if we have ANY suggestions (including pending) to show activity
-        const hasAnySuggestions = scoreData.suggestions.total > 0;
-        const hasRecentActivity = scoreData.debug.recentWindowCount > 0;
-        const unreviewedCompact = getUnreviewedFilesForDisplay(scoreData);
-        const hasReviewDebt = unreviewedCompact.count > 0;
-        
-        // NOTE: ScoreService uses 0 to represent "no activity" (not -1).
-        // If we have no tracked suggestions and no debt, show a neutral state instead of 🟢 0/100.
-        if (!hasAnySuggestions && !hasReviewDebt) {
-            // Truly no activity - no suggestions and no debt
-            awarenessBarItem.text = `⚪ No Activity`;
-            awarenessBarItem.tooltip = `${currentMode.toUpperCase()} Mode Awareness: Waiting for AI activity...
+        } catch (_) {}
 
-No AI suggestions detected yet.
-The meter will update once AI generates code.
-
-Monitoring: ${scoreData.debug.monitoringActive ? '✅ Active' : '❌ Inactive'}
-Last Activity: ${scoreData.debug.lastActivity}
-Total Tracked: ${scoreData.debug.totalTrackedCount}
-Recent (10s): ${scoreData.debug.recentWindowCount}
-
-Click for detailed statistics`;
-            awarenessBarItem.backgroundColor = undefined;
-        } else if (!hasRecentActivity && hasReviewDebt) {
-            // No recent activity (10s window), but there's review debt - show debt indicator
-            const debtScore = scoreData.components.debt;
-            const { unopened: unopenedCompact, unreviewedSuggestions: unreviewedCompactSuggestions } = getUnopenedAndUnreviewedForDisplay(scoreData);
-            // Use the total score (already normalized/combined by ScoreService) so the meter
-            // doesn't "snap back" to green while debt/pending reviews are still outstanding.
-            let displayScore = scoreData.total || 0;
-            displayScore = Math.max(0, Math.min(100, displayScore));
-            const meter = getScoreMeter(displayScore);
-            const emoji = getScoreEmoji(displayScore);
-            const mergedFiles = getUnreviewedFilesForDisplay(scoreData);
-
-            awarenessBarItem.text = `${emoji} ${meter} (${mergedFiles.count})`;
-            const filesList = mergedFiles.files.slice(0, 10).map(f => `• ${f.path || f.fullPath} (${(f.ageMinutes || 0) < 60 ? `${f.ageMinutes || 0}m ago` : `${Math.round((f.ageMinutes || 0) / 60)}h ago`})`).join('\n');
-            const moreLine = mergedFiles.count > 10 ? `\n... and ${mergedFiles.count - 10} more` : '';
-            awarenessBarItem.tooltip = `${currentMode.toUpperCase()} Mode Awareness: Review Debt Detected
-
-📁 Unopened files: ${unopenedCompact.count}  ⏳ Unreviewed suggestions: ${unreviewedCompactSuggestions.count}
-
-Recent Activity: None (last 10 seconds)
-Total Risk Score: ${displayScore}/100
-Review Debt Score: ${debtScore}/30
-
-${filesList}${moreLine}
-
-Click for detailed statistics`;
-            // Only show error background when score reaches critical red level (80+)
-            // Red bulb + background = critically low awareness
-            if (displayScore >= 80) {
-                awarenessBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
-            } else {
-                awarenessBarItem.backgroundColor = undefined;
-            }
+        const circle = getCircleState(scoreData, scoreBreakdown, currentMode, antipatternBreakdown);
+        awarenessBarItem.text = circle.text;
+        awarenessBarItem.tooltip = circle.tooltip;
+        if (circle.backgroundColor === null) {
+            awarenessBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
         } else {
-            // Show meter (real-time awareness score)
-            let displayScore = score;
-            
-            // Ensure displayScore is valid (0-100)
-            displayScore = Math.max(0, Math.min(100, displayScore));
-            
-            const meter = getScoreMeter(displayScore);
-            const emoji = getScoreEmoji(displayScore);
-            
-            awarenessBarItem.text = `${emoji} ${meter}`;
-            
-            // Build tooltip with component breakdown
-            // Note: score is RiskScore (0-100, higher = worse)
-            // Review and Adaptation are "good" scores (higher = better)
-            // Blind Acceptance and Debt are "risk" scores (higher = worse)
-            const scoreDisplay = `${score}/100`;
-            
-            // Calculate risk components for display (show both "good" and "risk" for clarity)
-            const reviewRisk = 40 - scoreData.components.review;
-            const reviewRisk01 = Math.max(0, Math.min(1, reviewRisk / 40));
-            const adaptationRisk = 30 - scoreData.components.adaptation;
-            const adaptationRisk01 = Math.max(0, Math.min(1, adaptationRisk / 30));
-            const blindAcceptanceRisk01 = Math.max(0, Math.min(1, scoreData.components.blindAcceptance / 30));
-            const debtRisk01 = Math.max(0, Math.min(1, scoreData.components.debt / 30));
-            
-            // Calculate weighted contributions to final score (makes tuning easier)
-            const RISK_WEIGHTS = { review: 0.30, blindAcceptance: 0.30, adaptation: 0.20, debt: 0.20 };
-            const reviewContribution = Math.round(RISK_WEIGHTS.review * reviewRisk01 * 100);
-            const blindAcceptanceContribution = Math.round(RISK_WEIGHTS.blindAcceptance * blindAcceptanceRisk01 * 100);
-            const adaptationContribution = Math.round(RISK_WEIGHTS.adaptation * adaptationRisk01 * 100);
-            const debtContribution = Math.round(RISK_WEIGHTS.debt * debtRisk01 * 100);
-            
-            let tooltip = `${currentMode.toUpperCase()} Mode Risk Score: ${scoreDisplay} (higher = worse)
-
-Component Breakdown (with contributions):
-Review Quality: ${scoreData.components.review}/40 (higher = better)
-  → Review Risk: ${reviewRisk}/40 → contributes ${reviewContribution} points (${RISK_WEIGHTS.review * 100}% weight)
-Blind Acceptance Risk: ${scoreData.components.blindAcceptance}/30 (higher = worse)
-  → contributes ${blindAcceptanceContribution} points (${RISK_WEIGHTS.blindAcceptance * 100}% weight)
-Adaptation Quality: ${scoreData.components.adaptation}/30 (higher = better)
-  → Adaptation Risk: ${adaptationRisk}/30 → contributes ${adaptationContribution} points (${RISK_WEIGHTS.adaptation * 100}% weight)
-Debt Risk: ${scoreData.components.debt}/30 (higher = worse)
-  → contributes ${debtContribution} points (${RISK_WEIGHTS.debt * 100}% weight)
-
-Suggestions tracked: ${scoreData.suggestions.total}
-✅ Accepted: ${scoreData.suggestions.accepted}
-✏️  Adapted: ${scoreData.suggestions.adapted}
-❌ Rejected: ${scoreData.suggestions.rejected}
-⏳ Pending: ${scoreData.suggestions.pending}`;
-
-            // Add two measures: unopened files and unreviewed suggestions
-            const { unopened: unopenedTip, unreviewedSuggestions: unreviewedTip } = getUnopenedAndUnreviewedForDisplay(scoreData);
-            if (unopenedTip.count > 0 || unreviewedTip.count > 0) {
-                tooltip += `\n\n📁 Unopened files: ${unopenedTip.count}  ⏳ Unreviewed suggestions: ${unreviewedTip.count}`;
-                if (unopenedTip.count > 0) {
-                    tooltip += `\n  Unopened (open file to start review):`;
-                    unopenedTip.files.slice(0, 5).forEach(file => {
-                        const timeStr = (file.ageMinutes || 0) < 60 ? `${file.ageMinutes || 0}m ago` : `${Math.round((file.ageMinutes || 0) / 60)}h ago`;
-                        tooltip += `\n    • ${file.path || file.fullPath} (${timeStr})`;
-                    });
-                    if (unopenedTip.count > 5) tooltip += `\n    ... and ${unopenedTip.count - 5} more`;
-                }
-                if (unreviewedTip.count > 0) {
-                    tooltip += `\n  Unreviewed suggestions (pending):`;
-                    unreviewedTip.files.slice(0, 5).forEach(file => {
-                        const timeStr = (file.ageMinutes || 0) < 60 ? `${file.ageMinutes || 0}m ago` : `${Math.round((file.ageMinutes || 0) / 60)}h ago`;
-                        tooltip += `\n    • ${file.path || file.fullPath} (${timeStr})`;
-                    });
-                    if (unreviewedTip.count > 5) tooltip += `\n    ... and ${unreviewedTip.count - 5} more`;
-                }
-                tooltip += `\n\n⚠️  Open files and engage (scroll/cursor) to clear debt!`;
-            } else {
-                tooltip += `\n\n✅ No unreviewed files - great job!`;
-            }
-
-            tooltip += `\n\nLast Activity: ${scoreData.debug.lastActivity}
-Monitoring: ${scoreData.debug.monitoringActive ? '✅ Active' : '❌ Inactive'}`;
-            
-            awarenessBarItem.tooltip = tooltip;
-            
-            // Only show error background when score reaches critical red level (80+)
-            // Red bulb + background = critically low awareness
-            if (displayScore >= 80) {
-                awarenessBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
-            } else {
-                awarenessBarItem.backgroundColor = undefined;
-            }
+            awarenessBarItem.backgroundColor = circle.backgroundColor;
         }
     } else {
-        // No mode set
-        awarenessBarItem.text = '$(graph)';
+        awarenessBarItem.text = '$(record)';
         awarenessBarItem.tooltip = 'Mode not set';
         awarenessBarItem.backgroundColor = undefined;
     }
