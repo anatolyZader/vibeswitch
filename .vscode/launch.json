@@ -11,7 +11,7 @@
       "outFiles": [
         "${workspaceFolder}/**/*.js"
       ],
-      "preLaunchTask": ""
+      "preLaunchTask": "build"
     },
     {
       "name": "Extension Tests",

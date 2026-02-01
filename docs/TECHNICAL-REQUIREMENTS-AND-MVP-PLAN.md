@@ -58,7 +58,7 @@ VibeSwitch is a **VS Code / Cursor extension** that lets you switch between two 
 |-----|----------|--------|
 | **Hook scripts not in repo** | High | `gate-shell.sh`, `gate-mcp.sh`, `inject-context.sh`, `detect-edit.sh` must exist under `~/.vibeswitch/hooks/` and be executable. CapabilitySelfTest fails if missing. Repo has **no** `.sh` files; scripts are referenced in docs/plans only. |
 | **Hook script installation** | High | No post-install or first-run step copies/creates scripts in `~/.vibeswitch/hooks/`. Users must create or install them elsewhere. |
-| **MCP server packaging** | Medium | MCP server lives in `business_modules/mcp-server/` with its own `package.json`. Not clear if it’s packaged with extension or run separately; Cursor MCP config (e.g. `mcp-server.json` in `~/.vibeswitch/state/`) must point to it. |
+| **MCP server packaging** | Medium | MCP server lives in `mcp-servers/mode-enforcement/` with its own `package.json`. Not clear if it’s packaged with extension or run separately; Cursor MCP config (e.g. `mcp-server.json` in `~/.vibeswitch/state/`) must point to it. |
 | **`canonical.js` for MCP** | Medium | MCP server `require()`s `~/.vibeswitch/lib/canonical.js`. That file is not in the repo (keypair/token canonicalization). Must be shipped or generated (e.g. from extension). |
 | **File coloring** | Low | Disabled in `initializeHelpers.js` (noise/load). Optional for MVP. |
 | **Auto-revert default** | Low | `package.json` has `autoRevertUnapprovedEdits: false`; docs say “default true”. Align default and docs for MVP. |
@@ -129,8 +129,8 @@ MVP = “A user can install the extension, switch between VIBE and DEV, and in D
 
 | Task | Owner | Notes |
 |------|--------|--------|
-| **2.1** Document or automate MCP registration | Dev | Document in README: add MCP server to Cursor (e.g. path to `node .../mcp-server/index.js` or `npx`/binary). Optionally: command “VibeSwitch: Register MCP server” that writes Cursor’s MCP config (path/args) for vibeswitch. |
-| **2.2** Package MCP with extension | Dev | Ensure `business_modules/mcp-server` is included in extension package and that its dependency `@modelcontextprotocol/sdk` is installed (e.g. bundle in extension node_modules or document `npm install` in mcp-server dir). |
+| **2.1** Document or automate MCP registration | Dev | Document in README: add MCP server to Cursor (e.g. path to `node .../mcp-servers/mode-enforcement/index.js` or `npx`/binary). Optionally: command “VibeSwitch: Register MCP server” that writes Cursor’s MCP config (path/args) for vibeswitch. |
+| **2.2** Package MCP with extension | Dev | Ensure `mcp-servers/mode-enforcement` is included in extension package and that its dependency `@modelcontextprotocol/sdk` is installed (e.g. bundle in extension node_modules or document `npm install` in mcp-server dir). |
 | **2.3** Workspace allowlist sync | Done | Extension already syncs workspace folders to `~/.vibeswitch/state/workspaces.json`; MCP server reads it. Verify on first workspace open. |
 
 ### 4.3 Phase 3: Config and docs alignment
@@ -212,4 +212,4 @@ Intentional follow-ups to be implemented after MVP release:
 - `package.json` — Commands, config, activation.
 - `extension.js` — Activation and composition.
 - `business_modules/mode-enforcement/app/capabilitySelfTest.js` — Required hooks and config.
-- `business_modules/mcp-server/index.js` — MCP tools and token/path checks.
+- `mcp-servers/mode-enforcement/index.js` — MCP tools and token/path checks.

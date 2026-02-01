@@ -10,6 +10,7 @@ const fsPromises = require('fs').promises;
 const modeSwitcher = require('./ui/modeSwitcherDisplay');
 const userStatsUI = require('./ui/statsDashboardDisplay');
 const { mapDomainStateToViewModel, getUnreviewedFilesForDisplay, getUnopenedAndUnreviewedForDisplay } = require('./ui/awarenessMeterDisplay');
+const { triggerFlashNow } = require('./ui/frameFlash');
 
 /**
  * Create command handlers with dependency injection
@@ -88,6 +89,16 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
             }
             showInformationMessage('VibeSwitch status bar items shown');
             log('Status bar items manually shown via command');
+        },
+
+        'vibeswitch.flashWindowBorder': () => {
+            try {
+                triggerFlashNow();
+                showInformationMessage('Cyan flash triggered. If you saw no effect, try Developer: Reload Window (extension host may be unresponsive).');
+            } catch (error) {
+                log(`VibeSwitch: Error triggering flash: ${error.message}`, true, false);
+                showErrorMessage(`Flash failed: ${error.message}. Try Developer: Reload Window.`);
+            }
         },
 
         'vibeswitch.restartAwarenessMeter': async () => {

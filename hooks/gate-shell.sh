@@ -28,10 +28,6 @@ has_dangerous_chars() {
   return 1
 }
 
-if has_dangerous_chars "$COMMAND"; then
-  deny '{"permission":"deny","user_message":"Blocked: shell operators","agent_message":"Shell chaining/redirection/subshell not allowed. Plain $VAR is OK."}'
-fi
-
 COMMAND_NORM="$(printf '%s' "$COMMAND" | sed -e 's/^[[:space:]]\+//' -e 's/[[:space:]]\+$//')"
 
 is_blocked() {
@@ -56,6 +52,9 @@ is_allowed() {
 }
 
 if [ "$MODE" = "dev" ]; then
+  if has_dangerous_chars "$COMMAND"; then
+    deny '{"permission":"deny","user_message":"Blocked: shell operators","agent_message":"Shell chaining/redirection/subshell not allowed. Plain $VAR is OK."}'
+  fi
   is_blocked "$COMMAND_NORM" && deny '{"permission":"deny","user_message":"DEV: Blocked","agent_message":"DEV: Command blocked."}'
   is_allowed "$COMMAND_NORM" && { echo '{"permission":"allow"}'; exit 0; }
   deny '{"permission":"deny","user_message":"DEV: Not allowed","agent_message":"DEV: Not in allowlist."}'

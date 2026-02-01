@@ -1,0 +1,12 @@
+{
+  "name": "vibeswitch-mcp-mode-enforcement",
+  "version": "1.0.0",
+  "description": "VibeSwitch MCP Server for mode-enforced file modifications (submit_patch / apply_patch)",
+  "main": "index.js",
+  "bin": {
+    "vibeswitch-mcp-mode-enforcement": "./index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}

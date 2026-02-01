@@ -2,7 +2,7 @@
   "name": "vibeswitch",
   "displayName": "VibeSwitch - Stay Aware, Stay in Control: Steer Your AI Speed",
   "description": "Stop working on autopilot with AI. Live awareness monitoring helps you stay conscious and intentional.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "your-publisher-name",
   "icon": "ui/images/logo-steering-stick.png",
   "engines": {
@@ -26,7 +26,7 @@
   "activationEvents": [
     "onStartupFinished"
   ],
-  "main": "./extension.js",
+  "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
@@ -67,6 +67,11 @@
       {
         "command": "vibeswitch.showStatusBar",
         "title": "Show Status Bar Items",
+        "category": "VibeSwitch"
+      },
+      {
+        "command": "vibeswitch.flashWindowBorder",
+        "title": "Flash (Test Window Border)",
         "category": "VibeSwitch"
       },
       {
@@ -139,6 +144,30 @@
           "type": "boolean",
           "default": true,
           "description": "Show mode indicator and awareness meter in status bar"
+        },
+        "vibeswitch.awarenessHighScoreFrameFlash": {
+          "type": "boolean",
+          "default": true,
+          "description": "When awareness (risk) score crosses the threshold, briefly flash the window outer border cyan. Windows: uses window.border (VS Code 1.104+). macOS/Linux: uses workbench.colorCustomizations with custom title bar (window.titleBarStyle: custom)."
+        },
+        "vibeswitch.awarenessHighScoreFrameFlashThreshold": {
+          "type": "number",
+          "default": 60,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Risk score (0–100) at or above which the window border flash triggers (e.g. 60 = warning level)."
+        },
+        "vibeswitch.awarenessHighScoreFrameFlashDurationMs": {
+          "type": "number",
+          "default": 1500,
+          "minimum": 200,
+          "maximum": 10000,
+          "description": "How long the cyan border is shown before restoring (milliseconds)."
+        },
+        "vibeswitch.awarenessHighScoreFrameFlashColor": {
+          "type": "string",
+          "default": "#00FFFF",
+          "description": "Hex color for the window border flash (e.g. #00FFFF for cyan)."
         },
         "vibeswitch.disableLogging": {
           "type": "boolean",
@@ -298,12 +327,13 @@
     }
   },
   "scripts": {
+    "build": "node scripts/build-extension.js",
     "test": "jest",
     "test:mvp": "jest --testPathIgnorePatterns=sessionTracker.reviewSession --testPathIgnorePatterns=agentSuggestionHandler.batch --testPathIgnorePatterns=awarenessService.adapters --testPathIgnorePatterns=extension.test --testPathIgnorePatterns=tests/electron",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:electron": "VIBESWITCH_INTEGRATION_TEST=1 node tests/electron/runTest.js",
-    "package": "vsce package",
+    "package": "npm run build && vsce package",
     "lint": "echo 'No linter configured yet'",
     "create-md": "node scripts/create-md.js"
   },

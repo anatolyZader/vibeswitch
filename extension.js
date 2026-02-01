@@ -147,7 +147,11 @@ async function activate(context) {
         }
         log('VibeSwitch: WorkspaceAllowlist synced');
         
-        // 3. Capability Self-Test - verify setup integrity
+        // 3. Sync hooks and lib from extension to ~/.vibeswitch (so Cursor runs latest hook code)
+        const capabilitySetup = require('./business_modules/mode-enforcement/app/capabilitySetup');
+        capabilitySetup.runSetup(context.extensionPath);
+
+        // 4. Capability Self-Test - verify setup integrity
         const selfTest = new CapabilitySelfTest();
         let testResult = selfTest.run();
         // #region agent log
@@ -204,7 +208,7 @@ async function activate(context) {
         });
         context.subscriptions.push({ dispose: () => selfTest.dispose() });
         
-        // 4. HooksJsonGuard - watch and protect hooks.json
+        // 5. HooksJsonGuard - watch and protect hooks.json
         const hooksGuard = new HooksJsonGuard(context, modeManager);
         if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
             hooksGuard.start(vscode.workspace.workspaceFolders[0].uri.fsPath);
@@ -212,7 +216,7 @@ async function activate(context) {
         context.subscriptions.push({ dispose: () => hooksGuard.dispose() });
         log('VibeSwitch: HooksJsonGuard started');
         
-        // 5. AlertFileEditDetector - monitor for unapproved edits with auto-revert
+        // 6. AlertFileEditDetector - monitor for unapproved edits with auto-revert
         const autoRevertEnabled = vscode.workspace.getConfiguration('vibeswitch').get('autoRevertUnapprovedEdits', false);
         const alertDetector = new AlertFileEditDetector(modeManager, { autoRevert: autoRevertEnabled });
         alertDetector.createBadge(context);
@@ -220,12 +224,12 @@ async function activate(context) {
         context.subscriptions.push({ dispose: () => alertDetector.dispose() });
         log(`VibeSwitch: AlertFileEditDetector started (autoRevert: ${autoRevertEnabled})`);
         
-        // 6. KeypairManager - Ed25519 keypair for token signing
+        // 7. KeypairManager - Ed25519 keypair for token signing
         const keypairManager = new KeypairManager(context);
         await keypairManager.initialize();
         log('VibeSwitch: KeypairManager initialized');
         
-        // 7. ApprovalManager - MCP patch request approval workflow
+        // 8. ApprovalManager - MCP patch request approval workflow
         const approvalManager = new ApprovalManager(context, keypairManager, modeManager);
         approvalManager.start();
         context.subscriptions.push({ dispose: () => approvalManager.dispose() });
@@ -294,6 +298,10 @@ async function activate(context) {
                 }
             }
         });
+
+        // Restore window border and clear frame-flash timeout on deactivate
+        const { disposeFrameFlash } = require('./ui/frameFlash');
+        context.subscriptions.push({ dispose: disposeFrameFlash });
         
         // Set callbacks for UI updates and UsageStats integration
         awarenessEngine.setCallbacks({

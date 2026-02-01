@@ -5,6 +5,7 @@
  */
 
 const vscode = require('vscode');
+const { flashCyanIfHighScore } = require('./frameFlash');
 
 /**
  * Helper function: Generates a visual meter bar representation of the awareness score
@@ -219,6 +220,13 @@ function updateAwarenessMeter(awarenessBarItem, awarenessEngine, currentMode, ou
         }
         
         const score = scoreData.total || 0;
+
+        // When score crosses high threshold, flash UI (editor + status bar) cyan
+        try {
+            flashCyanIfHighScore(score);
+        } catch (_) {
+            // ignore
+        }
         
         // Handle "no data" state (no AI suggestions detected yet)
         // Check if we have ANY suggestions (including pending) to show activity

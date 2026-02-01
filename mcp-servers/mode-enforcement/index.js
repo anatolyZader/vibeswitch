@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * VibeSwitch MCP Server
+ * VibeSwitch MCP Server: mode-enforcement (submit_patch / apply_patch)
  * Tools: mcp__vibeswitch__submit_patch, mcp__vibeswitch__apply_patch
  */
 
