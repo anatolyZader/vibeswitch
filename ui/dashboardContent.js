@@ -51,7 +51,7 @@ function componentToRisk100(value, max, invert = false) {
  */
 function getCircleState(scoreData, scoreBreakdown, currentMode, antipatternBreakdown) {
     const noData = {
-        text: '$(record)',
+        text: '$(record) REPORT',
         backgroundColor: undefined,
         tooltip: 'VibeSwitch: No data. Click to open dashboard.'
     };
@@ -79,14 +79,35 @@ function getCircleState(scoreData, scoreBreakdown, currentMode, antipatternBreak
     const tooltip = buildSchematicTooltip(scoreData, scoreBreakdown, currentMode, antipatternBreakdown);
 
     return {
-        text: '$(record)',
+        text: '$(record) REPORT',
         backgroundColor,
         tooltip
     };
 }
 
 /**
- * Build concise schematic tooltip: risk score, one line per antipattern, then files section.
+ * Canonical "Ownership & Engagement" risk (0-100): weighted blend of blind acceptance, review, adaptation.
+ * Same weight as in main score: blind 30, review 40, adaptation 30.
+ */
+function ownershipEngagementRisk100(c) {
+    const blindRisk = componentToRisk100(c.blindAcceptance ?? 0, 30, false);
+    const reviewRisk = componentToRisk100(c.review ?? 0, 40, true);
+    const overDelegationRisk = componentToRisk100(c.adaptation ?? 0, 30, true);
+    return Math.round((blindRisk * 30 + reviewRisk * 40 + overDelegationRisk * 30) / 100);
+}
+
+/**
+ * Canonical "Interaction Quality" risk (0-100): max of flooding and response-drill (loop risk).
+ */
+function interactionQualityRisk100(antipatternBreakdown) {
+    if (!antipatternBreakdown) return 0;
+    const fl = antipatternBreakdown.flooding?.risk0To100 ?? 0;
+    const rd = antipatternBreakdown.responseDrill?.risk0To100 ?? 0;
+    return Math.max(fl, rd);
+}
+
+/**
+ * Build concise schematic tooltip: risk score, 4 canonical meters (with sub-signals on hover), then files.
  * @param {Object} [antipatternBreakdown] - Result of awarenessEngine.getAntipatternBreakdown()
  */
 function buildSchematicTooltip(scoreData, scoreBreakdown, currentMode, antipatternBreakdown) {
@@ -94,25 +115,28 @@ function buildSchematicTooltip(scoreData, scoreBreakdown, currentMode, antipatte
     const score = Math.max(0, Math.min(100, scoreData.total || 0));
     const c = scoreData.components || {};
 
-    // Antipattern risk 0-100 (higher = worse). Review/adaptation inverted from "good" scores.
     const blindRisk = componentToRisk100(c.blindAcceptance ?? 0, 30, false);
     const debtRisk = componentToRisk100(c.debt ?? 0, 30, false);
-    const reviewRisk = componentToRisk100(c.review ?? 0, 40, true);  // low review = high risk
-    const overDelegationRisk = componentToRisk100(c.adaptation ?? 0, 30, true); // low adaptation = high risk
+    const reviewRisk = componentToRisk100(c.review ?? 0, 40, true);
+    const overDelegationRisk = componentToRisk100(c.adaptation ?? 0, 30, true);
+    const ownershipRisk = ownershipEngagementRisk100(c);
+    const interactionRisk = interactionQualityRisk100(antipatternBreakdown);
+    const contextRisk = antipatternBreakdown?.contextSpread?.risk0To100 ?? 0;
+    const rd = antipatternBreakdown?.responseDrill?.risk0To100 ?? 0;
 
     let lines = [
         `${modeLabel} · Risk: ${score}/100`,
         '',
-        'Antipatterns:',
-        `  Blind Acceptance:  ${blindRisk}%`,
-        `  Silent Drift:      ${debtRisk}%`,
-        `  Review Engagement: ${reviewRisk}%`,
-        `  Over-delegation:  ${overDelegationRisk}%`
+        'Canonical meters:',
+        `  Ownership & Engagement:  ${ownershipRisk}%`,
+        `    Blind acceptance ${blindRisk}% · Review depth ${reviewRisk}% · Adaptation ${overDelegationRisk}%`,
+        `  Silent Drift:            ${debtRisk}%`,
+        `  Interaction Quality:    ${interactionRisk}%`,
+        `    Flooding ${antipatternBreakdown?.flooding?.risk0To100 ?? 0}% · Response drill ${rd}%`,
+        `  Context & Resource:      ${contextRisk}% (spread & duplication risk)`
     ];
-    if (antipatternBreakdown) {
-        lines.push(`  Flooding (approx): ${antipatternBreakdown.flooding?.risk0To100 ?? 0}%`);
-        lines.push(`  Response drill:    ${antipatternBreakdown.responseDrill?.risk0To100 ?? 0}%`);
-        lines.push(`  Context spread:    ${antipatternBreakdown.contextSpread?.risk0To100 ?? 0}%`);
+    if (interactionRisk >= 50) {
+        lines.push('  → High loop risk correlates with churn & duplication (GitClear 2025).');
     }
 
     const { unopened, unreviewedSuggestions } = getUnopenedAndUnreviewed(scoreData);
@@ -141,6 +165,7 @@ function buildSchematicTooltip(scoreData, scoreBreakdown, currentMode, antipatte
 
 /**
  * Build full dashboard markdown for the virtual document tab.
+ * Shows 4 canonical meters; sub-signals in breakdown.
  * @param {Object} [antipatternBreakdown] - Result of awarenessEngine.getAntipatternBreakdown()
  */
 function buildDashboardMarkdown(scoreData, scoreBreakdown, currentMode, antipatternBreakdown) {
@@ -152,6 +177,14 @@ function buildDashboardMarkdown(scoreData, scoreBreakdown, currentMode, antipatt
     const debtRisk = componentToRisk100(c.debt ?? 0, 30, false);
     const reviewRisk = componentToRisk100(c.review ?? 0, 40, true);
     const overDelegationRisk = componentToRisk100(c.adaptation ?? 0, 30, true);
+    const ownershipRisk = ownershipEngagementRisk100(c);
+    const interactionRisk = interactionQualityRisk100(antipatternBreakdown);
+    const contextRisk = antipatternBreakdown?.contextSpread?.risk0To100 ?? 0;
+    const dup = antipatternBreakdown?.duplication;
+    const duplicationRisk = dup?.risk0To100 ?? 0;
+    const contextOrDuplicationRisk = dup ? Math.max(contextRisk, duplicationRisk) : contextRisk;
+    const fl = antipatternBreakdown?.flooding?.risk0To100 ?? 0;
+    const rd = antipatternBreakdown?.responseDrill?.risk0To100 ?? 0;
 
     const meterBar = (pct) => {
         const n = Math.round((pct / 100) * 10);
@@ -166,26 +199,19 @@ function buildDashboardMarkdown(scoreData, scoreBreakdown, currentMode, antipatt
 
 ---
 
-## Antipattern meters
+## Canonical meters
 
-| Antipattern | Risk | Meter |
-|-------------|------|-------|
-| Blind Acceptance | ${blindRisk}% | \`${meterBar(blindRisk)}\` |
-| Silent Drift (Debt) | ${debtRisk}% | \`${meterBar(debtRisk)}\` |
-| Review Engagement | ${reviewRisk}% | \`${meterBar(reviewRisk)}\` |
-| Over-delegation | ${overDelegationRisk}% | \`${meterBar(overDelegationRisk)}\` |`;
-    if (antipatternBreakdown) {
-        const fl = antipatternBreakdown.flooding || {};
-        const rd = antipatternBreakdown.responseDrill || {};
-        const cs = antipatternBreakdown.contextSpread || {};
-        md += `
-| Flooding (approx) | ${fl.risk0To100 ?? 0}% | \`${meterBar(fl.risk0To100 ?? 0)}\` |
-| Response drill | ${rd.risk0To100 ?? 0}% | \`${meterBar(rd.risk0To100 ?? 0)}\` |
-| Context spread | ${cs.risk0To100 ?? 0}% | \`${meterBar(cs.risk0To100 ?? 0)}\` |`;
-    }
-    md += `
+| Meter | Risk | Bar |
+|-------|------|-------|
+| Ownership & Engagement | ${ownershipRisk}% | \`${meterBar(ownershipRisk)}\` |
+| Silent Drift | ${debtRisk}% | \`${meterBar(debtRisk)}\` |
+| Interaction Quality | ${interactionRisk}% | \`${meterBar(interactionRisk)}\` |
+| Context & Resource Discipline | ${contextOrDuplicationRisk}% | \`${meterBar(contextOrDuplicationRisk)}\` |
 
-*Component raw scores: Review ${c.review ?? 0}/40, Blind Accept ${c.blindAcceptance ?? 0}/30, Adaptation ${c.adaptation ?? 0}/30, Debt ${c.debt ?? 0}/30.*
+*Breakdown — Ownership: blind acceptance ${blindRisk}%, review depth ${reviewRisk}%, adaptation ${overDelegationRisk}%. Interaction: flooding ${fl}%, response drill ${rd}%. Context: spread ${contextRisk}%${dup ? `, duplication drift ${duplicationRisk}% (${dup.fileCountWithDuplicates ?? 0} file(s) with 5+ line duplicate blocks)` : ''}.*
+${(reviewRisk >= 50 && rd >= 50) ? '\n*Comprehension debt risk: elevated (low review + high response drill; GitClear 2025).*' : ''}
+
+*Raw scores: Review ${c.review ?? 0}/40, Blind Accept ${c.blindAcceptance ?? 0}/30, Adaptation ${c.adaptation ?? 0}/30, Debt ${c.debt ?? 0}/30.*
 
 ---
 
@@ -227,10 +253,156 @@ function buildDashboardMarkdown(scoreData, scoreBreakdown, currentMode, antipatt
     return md;
 }
 
+/**
+ * Risk (0-100) to hex color for arc/gauge: green -> yellow -> orange -> red.
+ */
+function riskToArcColor(pct) {
+    if (pct >= 80) return '#e53935';
+    if (pct >= 60) return '#ff9800';
+    if (pct >= 40) return '#fdd835';
+    return '#4caf50';
+}
+
+/**
+ * Build HTML for Webview dashboard with 4 canonical meters (circular gauges) and breakdown.
+ * Optional future placeholders for Architecture & Responsibility and AI Mental Model.
+ */
+function buildDashboardWebviewHtml(scoreData, scoreBreakdown, currentMode, antipatternBreakdown) {
+    const modeLabel = (currentMode || 'unknown').toUpperCase();
+    const score = Math.max(0, Math.min(100, scoreData.total || 0));
+    const c = scoreData.components || {};
+
+    const blindRisk = componentToRisk100(c.blindAcceptance ?? 0, 30, false);
+    const debtRisk = componentToRisk100(c.debt ?? 0, 30, false);
+    const reviewRisk = componentToRisk100(c.review ?? 0, 40, true);
+    const overDelegationRisk = componentToRisk100(c.adaptation ?? 0, 30, true);
+    const ownershipRisk = ownershipEngagementRisk100(c);
+    const interactionRisk = interactionQualityRisk100(antipatternBreakdown);
+    const contextRisk = antipatternBreakdown?.contextSpread?.risk0To100 ?? 0;
+    const dup = antipatternBreakdown?.duplication;
+    const duplicationRisk = dup?.risk0To100 ?? 0;
+    const contextOrDuplicationRisk = dup ? Math.max(contextRisk, duplicationRisk) : contextRisk;
+    const fl = antipatternBreakdown?.flooding?.risk0To100 ?? 0;
+    const rd = antipatternBreakdown?.responseDrill?.risk0To100 ?? 0;
+
+    const meters = [
+        { name: 'Ownership & Engagement', risk: ownershipRisk },
+        { name: 'Silent Drift', risk: debtRisk },
+        { name: 'Interaction Quality', risk: interactionRisk },
+        { name: 'Context & Resource Discipline', risk: contextOrDuplicationRisk }
+    ];
+
+    const r = 26;
+    const circumference = 2 * Math.PI * r;
+
+    function svgGauge(pct, label) {
+        const dash = (pct / 100) * circumference;
+        const color = riskToArcColor(pct);
+        return `
+        <div class="gauge-cell">
+          <svg class="gauge-svg" viewBox="0 0 60 60" aria-label="${escapeHtml(label)}: ${pct}%">
+            <circle class="gauge-track" cx="30" cy="30" r="${r}" fill="none" stroke-width="6"/>
+            <circle class="gauge-arc" cx="30" cy="30" r="${r}" fill="none" stroke="${color}" stroke-width="6"
+              stroke-dasharray="${dash} ${circumference}" stroke-dashoffset="0" stroke-linecap="round"
+              transform="rotate(-90 30 30)"/>
+          </svg>
+          <div class="gauge-label">${escapeHtml(label)}</div>
+          <div class="gauge-pct">${pct}%</div>
+        </div>`;
+    }
+
+    const gaugesHtml = meters.map(m => svgGauge(m.risk, m.name)).join('');
+
+    const futureGaugesHtml = [
+        { name: 'Architecture & Responsibility (future)', risk: null },
+        { name: 'AI Mental Model (future)', risk: null }
+    ].map(m => `
+        <div class="gauge-cell gauge-future">
+          <svg class="gauge-svg" viewBox="0 0 60 60" aria-label="${escapeHtml(m.name)}: not yet instrumented">
+            <circle class="gauge-track" cx="30" cy="30" r="${26}" fill="none" stroke-width="6"/>
+          </svg>
+          <div class="gauge-label">${escapeHtml(m.name)}</div>
+          <div class="gauge-pct">—</div>
+        </div>`).join('');
+
+    const comprehensionDebtElevated = reviewRisk >= 50 && rd >= 50;
+    const dupFiles = dup?.fileCountWithDuplicates ?? 0;
+    let breakdownHtml = `<p class="breakdown"><strong>Breakdown</strong> — Ownership: blind acceptance ${blindRisk}%, review depth ${reviewRisk}%, adaptation ${overDelegationRisk}%. Interaction: flooding ${fl}%, response drill ${rd}%. Context: spread ${contextRisk}%${dup ? `, duplication drift ${duplicationRisk}% (${dupFiles} file(s) with 5+ line duplicate blocks)` : ''}.</p>`;
+    if (comprehensionDebtElevated) {
+        breakdownHtml += '<p class="breakdown comprehension-hint">Comprehension debt risk: elevated (low review + high response drill; GitClear 2025).</p>';
+    }
+
+    const { unopened, unreviewedSuggestions } = getUnopenedAndUnreviewed(scoreData);
+    let filesHtml = '<div class="file-lists"><h3>Unopened files (debt): ' + unopened.count + '</h3><ul>';
+    (unopened.files || []).slice(0, 15).forEach(f => {
+        const age = (f.ageMinutes || 0) < 60 ? (f.ageMinutes || 0) + 'm ago' : Math.round((f.ageMinutes || 0) / 60) + 'h ago';
+        filesHtml += '<li><code>' + escapeHtml(f.path || f.fullPath || '') + '</code> (' + age + ')</li>';
+    });
+    filesHtml += '</ul><h3>Unreviewed suggestions: ' + unreviewedSuggestions.count + '</h3><ul>';
+    (unreviewedSuggestions.files || []).slice(0, 15).forEach(f => {
+        const age = (f.ageMinutes || 0) < 60 ? (f.ageMinutes || 0) + 'm ago' : Math.round((f.ageMinutes || 0) / 60) + 'h ago';
+        filesHtml += '<li><code>' + escapeHtml(f.path || f.fullPath || '') + '</code> (' + age + ')</li>';
+    });
+    filesHtml += '</ul></div>';
+
+    const rawScores = `Review ${c.review ?? 0}/40, Blind Accept ${c.blindAcceptance ?? 0}/30, Adaptation ${c.adaptation ?? 0}/30, Debt ${c.debt ?? 0}/30`;
+    const lastActivity = (scoreData.debug && scoreData.debug.lastActivity) || '—';
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); background: var(--vscode-editor-background); padding: 1rem; margin: 0; }
+    h1 { font-size: 1.25rem; margin: 0 0 0.5rem 0; }
+    .header { margin-bottom: 1rem; }
+    .header p { margin: 0.25rem 0; opacity: 0.9; }
+    .gauges { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 1rem; margin: 1.5rem 0; }
+    .gauge-cell { text-align: center; }
+    .gauge-svg { width: 64px; height: 64px; display: block; margin: 0 auto; }
+    .gauge-track { stroke: var(--vscode-widget-border); }
+    .gauge-label { font-size: 0.7rem; margin-top: 0.25rem; max-width: 100px; word-break: break-word; }
+    .gauge-pct { font-size: 0.75rem; font-weight: 600; margin-top: 0.15rem; }
+    .file-lists { margin-top: 1.5rem; }
+    .file-lists h3 { font-size: 0.9rem; margin: 1rem 0 0.5rem 0; }
+    .file-lists ul { margin: 0; padding-left: 1.25rem; }
+    .file-lists li { margin: 0.2rem 0; }
+    .raw-scores { font-size: 0.85rem; opacity: 0.85; margin-top: 1rem; }
+    .docs-note { font-size: 0.8rem; opacity: 0.8; margin-top: 0.5rem; }
+    .breakdown { font-size: 0.85rem; opacity: 0.9; margin: 0.5rem 0 0 0; }
+    .comprehension-hint { font-size: 0.8rem; opacity: 0.9; margin: 0.25rem 0 0 0; font-style: italic; }
+    .gauge-future { opacity: 0.5; }
+    .gauge-future .gauge-label { font-style: italic; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>VibeSwitch Dashboard</h1>
+    <p><strong>Mode:</strong> ${escapeHtml(modeLabel)} &nbsp; <strong>Total risk:</strong> ${score}/100 &nbsp; <strong>Last activity:</strong> ${escapeHtml(lastActivity)}</p>
+  </div>
+  <h2>Canonical meters</h2>
+  <div class="gauges">${gaugesHtml}${futureGaugesHtml}</div>
+  ${breakdownHtml}
+  <p class="raw-scores"><em>Raw scores: ${escapeHtml(rawScores)}</em></p>
+  <p class="docs-note">Meters align with GitClear 2025 &amp; DORA 2024: churn, duplication, defect rate. See <code>docs/ANTIPATTERN-METERS-REVIEW.md</code> for applying research to the dashboard.</p>
+  ${filesHtml}
+</body>
+</html>`;
+}
+
+function escapeHtml(s) {
+    if (s == null) return '';
+    const str = String(s);
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 module.exports = {
     getCircleState,
     buildSchematicTooltip,
     buildDashboardMarkdown,
+    buildDashboardWebviewHtml,
+    riskToArcColor,
     RISK_TO_BG,
     componentToRisk100
 };

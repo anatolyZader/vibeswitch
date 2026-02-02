@@ -129,7 +129,7 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
 
         'vibeswitch.openDashboard': async () => {
             const mode = state.getMode ? state.getMode() : state.currentMode;
-            await dashboardDisplay.openDashboard(state.awarenessEngine, mode, state.dashboardContentProvider);
+            await dashboardDisplay.openDashboard(state.awarenessEngine, mode, state.dashboardContentProvider, state);
         },
 
         'vibeswitch.showAwarenessState': () => {

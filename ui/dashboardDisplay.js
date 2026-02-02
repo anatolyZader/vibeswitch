@@ -1,21 +1,22 @@
 /**
- * VibeSwitch Dashboard: opens a virtual markdown document with antipattern meters and file lists.
- * Uses a DocumentContentProvider so the same URI is reused and clicking again focuses the tab and refreshes content.
+ * VibeSwitch Dashboard: opens a Webview with circular (clock-style) gauges per antipattern,
+ * or falls back to virtual markdown document. Reuses the same Webview tab when opening again.
  */
 
 const vscode = require('vscode');
-const { buildDashboardMarkdown } = require('./dashboardContent');
+const { buildDashboardMarkdown, buildDashboardWebviewHtml } = require('./dashboardContent');
 
 const DASHBOARD_URI_SCHEME = 'vibeswitch-dashboard';
 const DASHBOARD_URI_AUTHORITY = 'awareness';
 const DASHBOARD_URI_PATH = '/dashboard.md';
+const WEBVIEW_VIEWTYPE = 'vibeswitch.dashboard';
 
 function getDashboardUri() {
     return vscode.Uri.parse(`${DASHBOARD_URI_SCHEME}://${DASHBOARD_URI_AUTHORITY}${DASHBOARD_URI_PATH}`);
 }
 
 /**
- * TextDocumentContentProvider for the dashboard so the same tab is reused and content can be refreshed.
+ * TextDocumentContentProvider for markdown fallback (same tab reuse).
  */
 class DashboardContentProvider {
     constructor() {
@@ -38,13 +39,14 @@ class DashboardContentProvider {
 }
 
 /**
- * Open the VibeSwitch dashboard in an editor tab (virtual document).
- * If a contentProvider is given (from extension state), uses a fixed URI so reopening focuses the same tab and refreshes content.
+ * Open the VibeSwitch dashboard: Webview with circular gauges (clock-style).
+ * Reuses the same panel when opening again and refreshes content.
  * @param {Object} awarenessEngine - Awareness engine (getScore, getScoreBreakdown, getAntipatternBreakdown)
  * @param {string|null} currentMode - 'dev', 'vibe', or null
- * @param {DashboardContentProvider|null} contentProvider - Optional; when set, dashboard uses fixed URI and reuses tab
+ * @param {DashboardContentProvider|null} contentProvider - Unused when using Webview; kept for API compat
+ * @param {Object} [state] - Extension state; if provided and state.dashboardPanel is set, reuses panel
  */
-async function openDashboard(awarenessEngine, currentMode, contentProvider) {
+async function openDashboard(awarenessEngine, currentMode, contentProvider, state) {
     if (!awarenessEngine) {
         vscode.window.showWarningMessage('VibeSwitch: Awareness engine not initialized.');
         return;
@@ -58,7 +60,9 @@ async function openDashboard(awarenessEngine, currentMode, contentProvider) {
         if (typeof awarenessEngine.getScoreBreakdown === 'function') {
             scoreBreakdown = awarenessEngine.getScoreBreakdown();
         }
-        if (typeof awarenessEngine.getAntipatternBreakdown === 'function') {
+        if (typeof awarenessEngine.getAntipatternBreakdownAsync === 'function') {
+            antipatternBreakdown = await awarenessEngine.getAntipatternBreakdownAsync();
+        } else if (typeof awarenessEngine.getAntipatternBreakdown === 'function') {
             antipatternBreakdown = awarenessEngine.getAntipatternBreakdown();
         }
     } catch (err) {
@@ -66,26 +70,33 @@ async function openDashboard(awarenessEngine, currentMode, contentProvider) {
         return;
     }
 
-    const content = buildDashboardMarkdown(scoreData, scoreBreakdown, currentMode, antipatternBreakdown);
+    const html = buildDashboardWebviewHtml(scoreData, scoreBreakdown, currentMode, antipatternBreakdown);
 
-    if (contentProvider) {
-        contentProvider.updateContent(content);
-        const uri = getDashboardUri();
-        const doc = await vscode.workspace.openTextDocument(uri);
-        await vscode.window.showTextDocument(doc, {
-            preview: false,
-            viewColumn: vscode.ViewColumn.Beside
-        });
-        return;
+    const existingPanel = state && state.dashboardPanel;
+    if (existingPanel) {
+        try {
+            existingPanel.webview.html = html;
+            existingPanel.reveal(vscode.ViewColumn.Beside);
+            return;
+        } catch (_) {
+            state.dashboardPanel = undefined;
+        }
     }
 
-    const doc = await vscode.workspace.openTextDocument({
-        content,
-        language: 'markdown'
-    });
-    await vscode.window.showTextDocument(doc, {
-        preview: false,
-        viewColumn: vscode.ViewColumn.Beside
+    const panel = vscode.window.createWebviewPanel(
+        WEBVIEW_VIEWTYPE,
+        'VibeSwitch Dashboard',
+        vscode.ViewColumn.Beside,
+        { enableScripts: false, retainContextWhenHidden: true }
+    );
+    panel.webview.html = html;
+    if (state) {
+        state.dashboardPanel = panel;
+    }
+    panel.onDidDispose(() => {
+        if (state) {
+            state.dashboardPanel = undefined;
+        }
     });
 }
 

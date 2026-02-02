@@ -57,7 +57,7 @@ describe('updateAwarenessMeter mocked', () => {
             getAntipatternBreakdown: jest.fn(() => ({}))
         };
         updateAwarenessMeter(barItem, mockEngine, 'dev');
-        expect(barItem.text).toBe('$(record)');
+        expect(barItem.text).toBe('$(record) REPORT');
         expect(barItem.tooltip).toMatch(/Risk: 25\/100/);
     });
     test('tooltip contains mode and score', () => {

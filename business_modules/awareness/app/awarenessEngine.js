@@ -23,6 +23,8 @@ const SuggestionAggregate = require('../domain/aggregates/suggestionAggregate');
 
 const { isPositionInRange: checkPositionInRange, getRelativePath } = require('./utilities/vscodeDocUtilities');
 const { buildDiffBullets } = require('./utilities/diffBulletService');
+const { aggregateDuplicateRisk } = require('./utilities/duplicateBlockDetector');
+const path = require('path');
 
 // Domain events removed - using callbacks instead for engine-based design
 
@@ -634,6 +636,45 @@ class AwarenessEngine {
             responseDrill: { count: responseDrillCount, risk0To100: responseDrillRisk },
             contextSpread: { maxBatchSize, distinctFiles, risk0To100: contextSpreadRisk }
         };
+    }
+
+    /**
+     * Get antipattern breakdown including Duplication Drift (GitClear-style duplicate blocks in AI-touched files).
+     * Async because it reads file contents. Use this for dashboard when available; fall back to getAntipatternBreakdown() for sync callers.
+     * @returns {Promise<Object>} Same shape as getAntipatternBreakdown() plus duplication: { fileCountWithDuplicates, totalDuplicateBlocks, risk0To100 }
+     */
+    async getAntipatternBreakdownAsync() {
+        const sync = this.getAntipatternBreakdown();
+        const emptyDuplication = { fileCountWithDuplicates: 0, totalDuplicateBlocks: 0, risk0To100: 0 };
+        if (!this.suggestionAggregate || !this.vscodeAdapter) {
+            return { ...sync, duplication: emptyDuplication };
+        }
+        const SPREAD_WINDOW_MS = 10 * 60 * 1000;
+        const now = Date.now();
+        const batches = this.suggestionAggregate.getBatches();
+        const recentForSpread = batches.filter(b => (now - (b.timestamp || 0)) <= SPREAD_WINDOW_MS);
+        const filesSet = new Set();
+        recentForSpread.forEach(b => { if (b.filePath) filesSet.add(b.filePath); });
+        if (filesSet.size === 0) {
+            return { ...sync, duplication: emptyDuplication };
+        }
+        const Uri = this.vscodeAdapter.Uri;
+        const workspaceFolders = this.vscodeAdapter.workspaceFolders || [];
+        const root = workspaceFolders[0] ? workspaceFolders[0].uri.fsPath : '';
+        const filesWithContent = [];
+        for (const filePath of filesSet) {
+            try {
+                const abs = path.isAbsolute(filePath) ? filePath : path.join(root, filePath);
+                const uri = Uri.file(abs);
+                const doc = await this.vscodeAdapter.openTextDocument(uri);
+                const content = doc && typeof doc.getText === 'function' ? doc.getText() : '';
+                filesWithContent.push({ filePath, content });
+            } catch (_) {
+                // File not in workspace, deleted, or unreadable — skip
+            }
+        }
+        const duplication = aggregateDuplicateRisk(filesWithContent);
+        return { ...sync, duplication };
     }
 
     /**
