@@ -51,7 +51,7 @@ function componentToRisk100(value, max, invert = false) {
  */
 function getCircleState(scoreData, scoreBreakdown, currentMode, antipatternBreakdown) {
     const noData = {
-        text: '$(record) REPORT',
+        text: 'REPORT',
         backgroundColor: undefined,
         tooltip: 'VibeSwitch: No data. Click to open dashboard.'
     };
@@ -79,7 +79,7 @@ function getCircleState(scoreData, scoreBreakdown, currentMode, antipatternBreak
     const tooltip = buildSchematicTooltip(scoreData, scoreBreakdown, currentMode, antipatternBreakdown);
 
     return {
-        text: '$(record) REPORT',
+        text: 'REPORT',
         backgroundColor,
         tooltip
     };

@@ -214,7 +214,7 @@ function updateAwarenessMeter(awarenessBarItem, awarenessEngine, currentMode, ou
             if (outputChannel) {
                 outputChannel.appendLine(`ERROR getting score from awareness monitor: ${error.message}`);
             }
-            awarenessBarItem.text = '$(record) REPORT';
+            awarenessBarItem.text = 'REPORT';
             awarenessBarItem.tooltip = `Awareness error: ${error.message}. Click to open dashboard.`;
             awarenessBarItem.backgroundColor = undefined;
             awarenessBarItem.show();
@@ -222,7 +222,7 @@ function updateAwarenessMeter(awarenessBarItem, awarenessEngine, currentMode, ou
         }
 
         if (!scoreData) {
-            awarenessBarItem.text = '$(record) REPORT';
+            awarenessBarItem.text = 'REPORT';
             awarenessBarItem.tooltip = 'No data. Click to open dashboard.';
             awarenessBarItem.backgroundColor = undefined;
             awarenessBarItem.show();
@@ -243,7 +243,7 @@ function updateAwarenessMeter(awarenessBarItem, awarenessEngine, currentMode, ou
             awarenessBarItem.backgroundColor = circle.backgroundColor;
         }
     } else {
-        awarenessBarItem.text = '$(record) REPORT';
+        awarenessBarItem.text = 'REPORT';
         awarenessBarItem.tooltip = 'Mode not set';
         awarenessBarItem.backgroundColor = undefined;
     }
