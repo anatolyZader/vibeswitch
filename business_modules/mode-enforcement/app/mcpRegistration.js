@@ -23,19 +23,16 @@ function registerMcpServer(extensionPath) {
     }
 
     // VSIX-safe: extensionPath is the installed extension root (repo-relative paths not used)
-    // Subdirs under mcp-servers/ are named by functionality (mode-enforcement, etc.), not by extension name
-    let serverPath = path.join(extensionPath, 'mcp-servers', 'mode-enforcement', 'index.js');
+    // Subdirs under mcp/ are named by functionality (mode-enforcement, etc.), not by extension name
+    let serverPath = path.join(extensionPath, 'mcp', 'mode-enforcement', 'index.js');
     if (!fs.existsSync(serverPath)) {
-        serverPath = path.join(extensionPath, 'mcp-servers', 'capability-enforcement', 'index.js');
+        serverPath = path.join(extensionPath, 'mcp', 'capability-enforcement', 'index.js');
     }
     if (!fs.existsSync(serverPath)) {
-        serverPath = path.join(extensionPath, 'mcp-servers', 'vibeswitch', 'index.js');
+        serverPath = path.join(extensionPath, 'mcp', 'vibeswitch', 'index.js');
     }
     if (!fs.existsSync(serverPath)) {
-        serverPath = path.join(extensionPath, 'business_modules', 'mcp-server', 'index.js');
-    }
-    if (!fs.existsSync(serverPath)) {
-        return { success: false, error: `MCP server not found. Tried: mcp-servers/mode-enforcement/index.js, mcp-servers/capability-enforcement/index.js, mcp-servers/vibeswitch/index.js, business_modules/mcp-server/index.js under ${extensionPath}` };
+        return { success: false, error: `MCP server not found. Tried: mcp/mode-enforcement/index.js, mcp/capability-enforcement/index.js, mcp/vibeswitch/index.js under ${extensionPath}` };
     }
 
     try {

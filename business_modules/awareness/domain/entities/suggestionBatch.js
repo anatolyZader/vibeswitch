@@ -23,11 +23,15 @@ class SuggestionBatch {
         this.filePath = filePath;
         this.timestamp = timestamp;
         this.suggestionIds = []; // Array of string IDs
-        this.totalSize = 0;
+        this.totalSize = 0;      // chars (locDelta in event-signal-weight spec)
         this.status = 'pending'; // 'pending' | 'partially_accepted' | 'fully_accepted' | 'rejected'
         this.acceptedCount = 0;
         this.rejectedCount = 0;
         this.modifiedCount = 0;
+        // Optional metadata for future meters (event-signal-weight spec)
+        this.filesTouched = 1;   // this batch = 1 file; window-level distinctFiles used for spread
+        this.archViolations = []; // { severity, ruleId, file } when ARCH_RULE_VIOLATION_DETECTED
+        this.obsSignals = {};    // { entryPointsTouched, telemetryTouched } when detection exists
     }
 
     /**

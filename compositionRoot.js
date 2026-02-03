@@ -65,7 +65,7 @@ function buildAwarenessEngine(adapters, domainServices) {
  * @returns {Object} UsageStatsService instance
  */
 function buildUsageStatsService(context) {
-    const UsageStatsService = require('./business_modules/usage-stats/app/usageStatsService');
+    const UsageStatsService = require('./business_modules/user-stats/app/usageStatsService');
     return new UsageStatsService(context);
 }
 

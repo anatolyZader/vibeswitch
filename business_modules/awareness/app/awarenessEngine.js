@@ -589,23 +589,31 @@ class AwarenessEngine {
     }
 
     /**
-     * Get antipattern breakdown for dashboard: Flooding, Response drill, Context spread.
+     * Get antipattern breakdown for dashboard: Flooding, Response drill, Context spread,
+     * Comprehension debt (research-backed composite), Verification debt (accept without verify).
      * Does not change existing score formula; additive for UI only.
-     * @returns {Object} { flooding: { count, risk0To100 }, responseDrill: { count, risk0To100 }, contextSpread: { maxBatchSize, distinctFiles, risk0To100 } }
+     * @returns {Object} { flooding, responseDrill, contextSpread, comprehensionDebt?, verificationDebt? }
      */
     getAntipatternBreakdown() {
         const empty = {
             flooding: { count: 0, risk0To100: 0 },
             responseDrill: { count: 0, risk0To100: 0 },
-            contextSpread: { maxBatchSize: 0, distinctFiles: 0, risk0To100: 0 }
+            contextSpread: { maxBatchSize: 0, distinctFiles: 0, risk0To100: 0 },
+            diffFlooding: { maxBurstInWindow: 0, risk0To100: 0 },
+            comprehensionDebt: { risk0To100: 0 },
+            verificationDebt: { acceptedWithoutVerification: 0, acceptedTotal: 0, risk0To100: 0 },
+            boundaryViolations: { risk0To100: 0 },
+            observabilityNeglect: { risk0To100: 0 }
         };
         if (!this.suggestionAggregate) return empty;
 
         const batches = this.suggestionAggregate.getBatches();
+        const suggestions = this.suggestionAggregate.getSuggestions();
         const now = Date.now();
         const FLOODING_WINDOW_MS = 5 * 60 * 1000;   // 5 min
         const DRILL_WINDOW_MS = 5 * 60 * 1000;    // 5 min
         const SPREAD_WINDOW_MS = 10 * 60 * 1000;  // 10 min
+        const COMPOSITE_WINDOW_MS = 15 * 60 * 1000; // 15 min for comprehension/verification
 
         const recentForFlooding = batches.filter(b => (now - (b.timestamp || 0)) <= FLOODING_WINDOW_MS);
         const floodingCount = recentForFlooding.length;
@@ -631,10 +639,49 @@ class AwarenessEngine {
         const spreadRiskFromFiles = Math.min(100, distinctFiles * 15);        // 7+ files = 105 -> 100
         const contextSpreadRisk = Math.min(100, Math.round(spreadRiskFromSize + spreadRiskFromFiles * 0.5));
 
+        // Diff Flooding (event-signal-weight spec: large bursts exceed review bandwidth)
+        const FLOOD_BURST_WINDOW_MS = 10 * 60 * 1000; // 10 min
+        const recentForBurst = batches.filter(b => (now - (b.timestamp || 0)) <= FLOOD_BURST_WINDOW_MS);
+        let maxBurstInWindow = 0;
+        recentForBurst.forEach(b => {
+            let burst = 0;
+            const n = (b.suggestionIds && b.suggestionIds.length) || 0;
+            const locDelta = b.totalSize || 0;
+            if (n >= 10) burst += 35;
+            if (locDelta >= 300) burst += 40;
+            if (b.isKeepAllPattern && b.isKeepAllPattern()) burst += 30;
+            if (burst > maxBurstInWindow) maxBurstInWindow = burst;
+        });
+        const multiFileTerm = distinctFiles >= 4 ? 25 : 0;
+        const diffFloodingRisk = Math.min(100, maxBurstInWindow + multiFileTerm);
+
+        // Comprehension debt (research: low review + high response drill = comprehension debt risk)
+        const completed = suggestions.filter(s => s && s.status !== 'pending');
+        const recentCompleted = completed.filter(s => (now - (s.timestamp || 0)) <= COMPOSITE_WINDOW_MS);
+        const reviewedCount = recentCompleted.filter(s => s.reviewed && (s.reviewTime || 0) >= 5000).length;
+        const reviewRate = recentCompleted.length > 0 ? reviewedCount / recentCompleted.length : 1;
+        const comprehensionDebtRisk = (responseDrillRisk >= 30 && reviewRate < 0.6)
+            ? Math.min(100, Math.round(responseDrillRisk * 0.6 + (1 - reviewRate) * 50))
+            : 0;
+
+        // Verification debt (research: AI-touched accepted with no tests/review/save/debug signal)
+        const accepted = completed.filter(s => s.status === 'fully_accepted' || s.status === 'partially_accepted');
+        const recentAccepted = accepted.filter(s => (now - (s.timestamp || 0)) <= COMPOSITE_WINDOW_MS);
+        const withoutVerification = recentAccepted.filter(s => !(s.hasVerificationSignal && s.hasVerificationSignal()));
+        const acceptedTotal = recentAccepted.length;
+        const verificationDebtRisk = acceptedTotal > 0
+            ? Math.min(100, Math.round((withoutVerification.length / acceptedTotal) * 100))
+            : 0;
+
         return {
             flooding: { count: floodingCount, risk0To100: floodingRisk },
             responseDrill: { count: responseDrillCount, risk0To100: responseDrillRisk },
-            contextSpread: { maxBatchSize, distinctFiles, risk0To100: contextSpreadRisk }
+            contextSpread: { maxBatchSize, distinctFiles, risk0To100: contextSpreadRisk },
+            diffFlooding: { maxBurstInWindow, risk0To100: diffFloodingRisk },
+            comprehensionDebt: { risk0To100: comprehensionDebtRisk },
+            verificationDebt: { acceptedWithoutVerification: withoutVerification.length, acceptedTotal, risk0To100: verificationDebtRisk },
+            boundaryViolations: { risk0To100: 0 },
+            observabilityNeglect: { risk0To100: 0 }
         };
     }
 

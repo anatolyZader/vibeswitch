@@ -18,7 +18,7 @@ Run these steps before releasing a new version of the VibeSwitch extension.
 - Verify the following are present:
   - `hooks/` with all four scripts: `gate-shell.sh`, `gate-mcp.sh`, `inject-context.sh`, `detect-edit.sh`
   - `lib/canonical.js`
-  - `mcp-servers/mode-enforcement/` (entry point and dependencies)
+  - `mcp/mode-enforcement/` (entry point and dependencies)
 
 ## 3. Install
 
@@ -32,8 +32,8 @@ Run these steps before releasing a new version of the VibeSwitch extension.
 
 ## 5. MCP path
 
-- Confirm the MCP server runs when Cursor invokes it. Path should be `<extensionPath>/mcp-servers/mode-enforcement/index.js`, where `<extensionPath>` is the installed extension directory (e.g. under Cursor’s `extensions` folder).
-- The `@modelcontextprotocol/sdk` dependency must resolve from the extension’s `node_modules` when Cursor runs `node .../mcp-servers/mode-enforcement/index.js`.
+- Confirm the MCP server runs when Cursor invokes it. Path should be `<extensionPath>/mcp/mode-enforcement/index.js`, where `<extensionPath>` is the installed extension directory (e.g. under Cursor’s `extensions` folder).
+- The `@modelcontextprotocol/sdk` dependency must resolve from the extension’s `node_modules` when Cursor runs `node .../mcp/mode-enforcement/index.js`.
 - **Node on PATH:** Cursor invokes the MCP server with `node`; `node` must be on the system PATH. On Windows, depending on install, `node` may not be on PATH—document or fix for your environment. Post-MVP: consider using `process.execPath` or a bundled Node.
 
 ## 6. Manual E2E

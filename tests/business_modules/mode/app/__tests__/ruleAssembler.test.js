@@ -6,7 +6,7 @@
 const fs = require('fs').promises;
 const path = require('path');
 const os = require('os');
-const ruleAssembler = require('../../app/ruleAssembler');
+const ruleAssembler = require('../../../../../business_modules/mode/app/ruleAssembler');
 
 describe('ruleAssembler', () => {
     let cursorDir;

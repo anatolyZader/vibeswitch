@@ -16,7 +16,7 @@ class DIContainer {
     
     /**
      * Get an adapter instance for a module (returns cached instance if available)
-     * @param {string} moduleName - Name of the business module (e.g., 'awareness', 'usage-stats')
+     * @param {string} moduleName - Name of the business module (e.g., 'awareness', 'user-stats')
      * @param {string} adapterType - Type of adapter (e.g., 'vscodeAdapter', 'persistenceAdapter')
      * @returns {Object|null} Cached adapter instance or null if not set
      */

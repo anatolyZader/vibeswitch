@@ -20,7 +20,7 @@
 - **Status**: ✅ Already follows pattern
 
 ### UsageStatsManager
-- **Location**: `business_modules/usage-stats/app/usageStatsService.js`
+- **Location**: `business_modules/user-stats/app/usageStatsService.js`
 - **Pattern**: Takes `context` directly (simple case)
 - **Constructor**: `constructor(context)`
 - **Status**: ✅ Acceptable - not a controller/service in hexagonal architecture sense, more of a utility manager

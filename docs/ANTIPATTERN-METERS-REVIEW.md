@@ -2,6 +2,8 @@
 
 This document describes the **6 canonical meters** that VibeSwitch exposes: what each means conceptually, which Cursor (implementation) sub-signals feed it, how it is measured, and the conceptual vs empirical basis. The goal is a **stable mental model** (6 canonical meters) with **honest implementation** (7–8 empirical sub-signals); the UI shows canonical dials with breakdown on hover/expand.
 
+**Research taxonomy:** A research-backed map of **10 AI-agent behavioral anti-patterns** (blind acceptance, verification debt, silent drift, context dilution, over-delegation, prompt thrash, test theater, security-by-omission, observability neglect, diff flooding) with classic SE mappings and practical meters is in **[2026-02-03_17-41-ai-agent-antipatterns-research-taxonomy.md](2026-02-03_17-41-ai-agent-antipatterns-research-taxonomy.md)**. That doc maps each of the 10 to the canonical meters below and to implementation status.
+
 ---
 
 ## Reconciled map (summary)
@@ -95,11 +97,12 @@ Both are **loop mechanics**; one canonical dial with two approx sub-signals.
 - **Aggregate:** Canonical risk 0–100 = max(floodingRisk, responseDrillRisk). UI-only (not in main score).
 - **Flooding:** [awarenessEngine.js](business_modules/awareness/app/awarenessEngine.js) — `getAntipatternBreakdown()`. Batches from [suggestionAggregate.getBatches()](business_modules/awareness/domain/aggregates/suggestionAggregate.js). `floodingRisk = min(100, count * 33)` in 5 min window.
 - **Response drill:** Same; [suggestionBatch.js](business_modules/awareness/domain/entities/suggestionBatch.js) — `isKeepAllPattern()`: `status === 'fully_accepted'`, `suggestionIds.length >= 3`, `modifiedCount === 0`. `responseDrillRisk = min(100, count * 50)`.
+- **Diff flooding:** [getAntipatternBreakdown()](business_modules/awareness/app/awarenessEngine.js) — per batch in 10 min window: burst = 0; if `suggestionCount >= 10` then burst += 35; if `totalSize >= 300` then burst += 40; if keep-all pattern then burst += 30. `risk = min(100, maxBurstInWindow + (distinctFiles >= 4 ? 25 : 0))`. Feeds same Interaction Quality gauge. See [event-signal-weight spec](2026-02-03_17-59-event-signal-weight-meters-spec.md).
 
 ### Conceptual vs empirical basis
 
-- **Conceptual:** Loop risk = excessive initiation + mechanical resolution.
-- **Empirical:** No prompt text; batch count and keep-all pattern are proxies; windows and factors are heuristic.
+- **Conceptual:** Loop risk = excessive initiation + mechanical resolution; large bursts exceed review bandwidth (diff flooding).
+- **Empirical:** No prompt text; batch count, keep-all pattern, and burst formula are proxies; windows and factors are heuristic.
 
 ---
 
@@ -168,12 +171,21 @@ Cursor **correctly did not implement this yet**: no prompt text, no dialogic int
 | ----------------- | -------------------- | ----------- |
 | Ownership & Engagement | Yes (Blind + Review + Adaptation) | Suggestions, review flags, review time, adaptation |
 | Silent Drift | Yes | File debt + pending suggestions |
-| Interaction Quality | No (UI only) | Flooding + Response drill (batch count, keep-all) |
+| Interaction Quality | No (UI only) | Flooding + Response drill + Diff flooding (burst: size/files/loc/keep-all) |
 | Context & Resource Discipline | No (UI only) | Batch size + file count |
 | Architecture & Responsibility | — | Future |
 | AI Mental Model | — | Future |
 
-The four **core** sub-signals (blind acceptance, review, adaptation, debt) feed the main awareness score in [scoreService.js](business_modules/awareness/app/scoring/scoreService.js) and [scoreCalculations.js](business_modules/awareness/app/scoring/scoreCalculations.js). The **approximate** sub-signals (flooding, response drill, context spread) are computed only in [getAntipatternBreakdown()](business_modules/awareness/app/awarenessEngine.js) for dashboard and tooltip.
+The four **core** sub-signals (blind acceptance, review, adaptation, debt) feed the main awareness score in [scoreService.js](business_modules/awareness/app/scoring/scoreService.js) and [scoreCalculations.js](business_modules/awareness/app/scoring/scoreCalculations.js). The **approximate** sub-signals (flooding, response drill, context spread) and **research-backed composites** (comprehension debt, verification debt) are computed in [getAntipatternBreakdown()](business_modules/awareness/app/awarenessEngine.js) for dashboard and tooltip. Comprehension debt = low review rate + high response drill (15 min window). Verification debt = share of recently accepted suggestions with no verification signal (test file modified, save, or navigate within 5 min).
+
+### Research implementation (composites)
+
+| Composite | Formula / signal | Where shown |
+| --------- | ----------------- | ----------- |
+| **Comprehension debt** | When response-drill risk ≥ 30% and review rate &lt; 60% (15 min window): `risk = min(100, responseDrillRisk×0.6 + (1 − reviewRate)×50)`. Aligns to research: “shipping faster than understanding grows.” | getAntipatternBreakdown; dashboard breakdown & tooltip when &gt; 0. |
+| **Verification debt** | Recent (15 min) accepted suggestions; count those with no `hasVerificationSignal()` (test file modified, save, or navigate within 5 min). `risk = (acceptedWithoutVerification / acceptedTotal)×100`. Aligns to “verification debt index” (AI-touched with no tests/review/run). | getAntipatternBreakdown; dashboard breakdown & tooltip when &gt; 0. |
+
+Dashboard webview footnote links to the [10-pattern research taxonomy](2026-02-03_17-41-ai-agent-antipatterns-research-taxonomy.md) and GitClear/DORA. Tooltip adds one line per composite when risk &gt; 0.
 
 ---
 
@@ -186,6 +198,8 @@ Additional antipatterns identified from research on AI-assisted coding failure m
 **Best next 3 to implement (highest ROI):** (1) **Churn Spike Risk** (editor + git/diff history), (2) **Dependency Integrity Risk** (lockfile + allowlist/registry), (3) **Context Hijack Risk** (ingestion surfaces + tool allowlisting). See the research doc for measurable signals and sources.
 
 **External research corroboration:** GitClear AI Code Quality Research v2025.2.5 (211M lines, 2020–2024) reports copy/paste exceeding “moved” (refactoring) in 2024, an 8× rise in commits with duplicate blocks (5+ lines), and increased churn (code revised within 2 weeks). Google DORA 2024 links higher AI adoption to lower delivery stability (~7.2% per 25% AI increase). These support our Churn Spike and Duplication Drift antipatterns and the “comprehension debt” / defect-rate framing. See [ANTIPATTERN-RESEARCH-FUTURE.md](ANTIPATTERN-RESEARCH-FUTURE.md#gitclear-ai-code-quality-research-202525) for the full GitClear integration.
+
+**Ten-pattern research taxonomy:** The taxonomy in [2026-02-03_17-41-ai-agent-antipatterns-research-taxonomy.md](2026-02-03_17-41-ai-agent-antipatterns-research-taxonomy.md) adds: *why AI intensifies* each pattern (cost structure, trust dynamics, provenance opacity, volume/velocity), classic SE analogs, mitigations, and **practical meters** (acceptance without scrutiny, verification debt index, drift indicators, trust calibration gaps). All 10 patterns are mapped there to the canonical dials and to current implementation status.
 
 ---
 
@@ -200,6 +214,7 @@ How the **current VibeSwitch dashboard** (4 canonical dials + 2 future placehold
 | Resolved suggestions (accept/reject/adapt, review flags, review time, edit count) | ✅ Yes | ScoreService, scoreCalculations (core) |
 | Pending suggestions + file-level debt (unreviewed files, age) | ✅ Yes | DebtService, debt score |
 | AI batch list (timestamp, size, file, keep-all, suggestion ids) | ✅ Yes | getAntipatternBreakdown (approx) |
+| Verification signals (test file modified, save, navigate after insert) | ✅ Yes | Suggestion.verificationSignals; verification debt composite |
 | Git/diff history (line lifetime, revert, churn) | ❌ No | — |
 | Lockfile / package.json diff (new deps after AI batch) | ❌ No | — |
 | File-open/edit on ingestion paths (README, AGENTS.MD, docs) | ❌ No | — |
@@ -218,7 +233,8 @@ How the **current VibeSwitch dashboard** (4 canonical dials + 2 future placehold
 | Flooding | Interaction Quality | ✅ **Implemented** (approx sub-signal) | — |
 | Response drill | Interaction Quality | ✅ **Implemented** (approx sub-signal) | — |
 | Context spread | Context & Resource Discipline | ✅ **Implemented** (approx) | — |
-| **Comprehension debt** | Ownership & Engagement | ⚠️ **Partial** | Composite of review + keep-all + (future) churn/duplication |
+| **Comprehension debt** | Ownership & Engagement | ✅ **Implemented** (composite) | getAntipatternBreakdown: low review rate + high response drill → risk0To100; shown in breakdown & tooltip |
+| **Verification debt** (accept without verify) | Ownership & Engagement | ✅ **Implemented** (proxy) | getAntipatternBreakdown: recent accepted with no test/save/navigate signal → risk0To100; uses Suggestion.verificationSignals |
 | **Verification gap (test skipping)** | Ownership & Engagement | 🕒 **Planned** | Test-file edits + test-run events after AI batch |
 | **Churn spike** | Silent Drift / Interaction Quality | 🕒 **Planned** | Git/diff history; AI-attributed line lifetime, accept→delete |
 | **Duplication drift** | Silent Drift / Context & Resource | 🕒 **Planned** | Clone/near-duplicate detection on AI-touched files |

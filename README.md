@@ -39,7 +39,7 @@ In DEV mode, the agent cannot use built-in Write/StrReplace/Edit; it must use th
    - **Option A:** Run **VibeSwitch: Register MCP Server** from the Command Palette. This writes the VibeSwitch MCP server into Cursor’s global MCP config (`~/.cursor/mcp.json`). Restart Cursor or reload the window if needed.
    - **Option B:** Add the MCP server manually in Cursor MCP / settings:
      - **Command:** `node`
-     - **Args:** path to the MCP server entry point, e.g. `<extensionPath>/mcp-servers/mode-enforcement/index.js`  
+     - **Args:** path to the MCP server entry point, e.g. `<extensionPath>/mcp/mode-enforcement/index.js`  
        (Replace `<extensionPath>` with your VibeSwitch extension install path, e.g. under `.vscode/extensions/` or Cursor’s extensions directory.)
      - **Server name:** use a fixed name, e.g. `vibeswitch`.
 

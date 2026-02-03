@@ -402,7 +402,7 @@ const changeClassificationServiceD = new ChangeClassificationServiceD();
 #### Step 6: Create Usage Stats Service (Lines 232-236)
 
 ```javascript
-const UsageStatsService = require('./business_modules/usage-stats/app/usageStatsService');
+const UsageStatsService = require('./business_modules/user-stats/app/usageStatsService');
 const usageStatsService = new UsageStatsService(context);
 state.usageStats = usageStatsService;
 context.subscriptions.push(state.usageStats);

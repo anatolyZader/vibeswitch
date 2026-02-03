@@ -97,13 +97,14 @@ function ownershipEngagementRisk100(c) {
 }
 
 /**
- * Canonical "Interaction Quality" risk (0-100): max of flooding and response-drill (loop risk).
+ * Canonical "Interaction Quality" risk (0-100): max of flooding, response-drill, and diff flooding (burst).
  */
 function interactionQualityRisk100(antipatternBreakdown) {
     if (!antipatternBreakdown) return 0;
     const fl = antipatternBreakdown.flooding?.risk0To100 ?? 0;
     const rd = antipatternBreakdown.responseDrill?.risk0To100 ?? 0;
-    return Math.max(fl, rd);
+    const df = antipatternBreakdown.diffFlooding?.risk0To100 ?? 0;
+    return Math.max(fl, rd, df);
 }
 
 /**
@@ -132,12 +133,18 @@ function buildSchematicTooltip(scoreData, scoreBreakdown, currentMode, antipatte
         `    Blind acceptance ${blindRisk}% · Review depth ${reviewRisk}% · Adaptation ${overDelegationRisk}%`,
         `  Silent Drift:            ${debtRisk}%`,
         `  Interaction Quality:    ${interactionRisk}%`,
-        `    Flooding ${antipatternBreakdown?.flooding?.risk0To100 ?? 0}% · Response drill ${rd}%`,
+        `    Flooding ${antipatternBreakdown?.flooding?.risk0To100 ?? 0}% · Response drill ${rd}% · Diff flood ${antipatternBreakdown?.diffFlooding?.risk0To100 ?? 0}%`,
         `  Context & Resource:      ${contextRisk}% (spread & duplication risk)`
     ];
     if (interactionRisk >= 50) {
         lines.push('  → High loop risk correlates with churn & duplication (GitClear 2025).');
     }
+    const compRisk = antipatternBreakdown?.comprehensionDebt?.risk0To100 ?? 0;
+    const verRisk = antipatternBreakdown?.verificationDebt?.risk0To100 ?? 0;
+    const diffFloodRisk = antipatternBreakdown?.diffFlooding?.risk0To100 ?? 0;
+    if (compRisk > 0) lines.push(`  Comprehension debt: ${compRisk}% (research-backed).`);
+    if (verRisk > 0) lines.push(`  Verification debt: ${verRisk}% (accepted without test/save/navigate).`);
+    if (diffFloodRisk > 0) lines.push(`  Diff flooding: ${diffFloodRisk}% (large-burst risk).`);
 
     const { unopened, unreviewedSuggestions } = getUnopenedAndUnreviewed(scoreData);
     lines.push('');
@@ -208,8 +215,9 @@ function buildDashboardMarkdown(scoreData, scoreBreakdown, currentMode, antipatt
 | Interaction Quality | ${interactionRisk}% | \`${meterBar(interactionRisk)}\` |
 | Context & Resource Discipline | ${contextOrDuplicationRisk}% | \`${meterBar(contextOrDuplicationRisk)}\` |
 
-*Breakdown — Ownership: blind acceptance ${blindRisk}%, review depth ${reviewRisk}%, adaptation ${overDelegationRisk}%. Interaction: flooding ${fl}%, response drill ${rd}%. Context: spread ${contextRisk}%${dup ? `, duplication drift ${duplicationRisk}% (${dup.fileCountWithDuplicates ?? 0} file(s) with 5+ line duplicate blocks)` : ''}.*
-${(reviewRisk >= 50 && rd >= 50) ? '\n*Comprehension debt risk: elevated (low review + high response drill; GitClear 2025).*' : ''}
+*Breakdown — Ownership: blind acceptance ${blindRisk}%, review depth ${reviewRisk}%, adaptation ${overDelegationRisk}%. Interaction: flooding ${fl}%, response drill ${rd}%, diff flood ${antipatternBreakdown?.diffFlooding?.risk0To100 ?? 0}%. Context: spread ${contextRisk}%${dup ? `, duplication drift ${duplicationRisk}% (${dup.fileCountWithDuplicates ?? 0} file(s) with 5+ line duplicate blocks)` : ''}.*
+${(antipatternBreakdown?.comprehensionDebt?.risk0To100 ?? 0) > 0 ? `\n*Comprehension debt risk: ${antipatternBreakdown.comprehensionDebt.risk0To100}% (low review + high response drill; research-backed).*` : ''}
+${(antipatternBreakdown?.verificationDebt?.risk0To100 ?? 0) > 0 ? `\n*Verification debt risk: ${antipatternBreakdown.verificationDebt.risk0To100}% (${antipatternBreakdown.verificationDebt.acceptedWithoutVerification ?? 0}/${antipatternBreakdown.verificationDebt.acceptedTotal ?? 0} accepted without test/save/navigate signal).*` : ''}
 
 *Raw scores: Review ${c.review ?? 0}/40, Blind Accept ${c.blindAcceptance ?? 0}/30, Adaptation ${c.adaptation ?? 0}/30, Debt ${c.debt ?? 0}/30.*
 
@@ -325,11 +333,18 @@ function buildDashboardWebviewHtml(scoreData, scoreBreakdown, currentMode, antip
           <div class="gauge-pct">—</div>
         </div>`).join('');
 
-    const comprehensionDebtElevated = reviewRisk >= 50 && rd >= 50;
+    const comprehensionRisk = antipatternBreakdown?.comprehensionDebt?.risk0To100 ?? 0;
+    const verificationRisk = antipatternBreakdown?.verificationDebt?.risk0To100 ?? 0;
+    const verificationCount = antipatternBreakdown?.verificationDebt?.acceptedWithoutVerification ?? 0;
+    const verificationTotal = antipatternBreakdown?.verificationDebt?.acceptedTotal ?? 0;
     const dupFiles = dup?.fileCountWithDuplicates ?? 0;
-    let breakdownHtml = `<p class="breakdown"><strong>Breakdown</strong> — Ownership: blind acceptance ${blindRisk}%, review depth ${reviewRisk}%, adaptation ${overDelegationRisk}%. Interaction: flooding ${fl}%, response drill ${rd}%. Context: spread ${contextRisk}%${dup ? `, duplication drift ${duplicationRisk}% (${dupFiles} file(s) with 5+ line duplicate blocks)` : ''}.</p>`;
-    if (comprehensionDebtElevated) {
-        breakdownHtml += '<p class="breakdown comprehension-hint">Comprehension debt risk: elevated (low review + high response drill; GitClear 2025).</p>';
+    const diffFloodRisk = antipatternBreakdown?.diffFlooding?.risk0To100 ?? 0;
+    let breakdownHtml = `<p class="breakdown"><strong>Breakdown</strong> — Ownership: blind acceptance ${blindRisk}%, review depth ${reviewRisk}%, adaptation ${overDelegationRisk}%. Interaction: flooding ${fl}%, response drill ${rd}%, diff flood ${diffFloodRisk}%. Context: spread ${contextRisk}%${dup ? `, duplication drift ${duplicationRisk}% (${dupFiles} file(s) with 5+ line duplicate blocks)` : ''}.</p>`;
+    if (comprehensionRisk > 0) {
+        breakdownHtml += `<p class="breakdown comprehension-hint">Comprehension debt risk: ${comprehensionRisk}% (low review + high response drill; research-backed).</p>`;
+    }
+    if (verificationRisk > 0) {
+        breakdownHtml += `<p class="breakdown verification-hint">Verification debt risk: ${verificationRisk}% (${verificationCount}/${verificationTotal} accepted without test/save/navigate signal).</p>`;
     }
 
     const { unopened, unreviewedSuggestions } = getUnopenedAndUnreviewed(scoreData);
@@ -372,6 +387,7 @@ function buildDashboardWebviewHtml(scoreData, scoreBreakdown, currentMode, antip
     .docs-note { font-size: 0.8rem; opacity: 0.8; margin-top: 0.5rem; }
     .breakdown { font-size: 0.85rem; opacity: 0.9; margin: 0.5rem 0 0 0; }
     .comprehension-hint { font-size: 0.8rem; opacity: 0.9; margin: 0.25rem 0 0 0; font-style: italic; }
+    .verification-hint { font-size: 0.8rem; opacity: 0.9; margin: 0.25rem 0 0 0; font-style: italic; }
     .gauge-future { opacity: 0.5; }
     .gauge-future .gauge-label { font-style: italic; }
   </style>
@@ -385,7 +401,7 @@ function buildDashboardWebviewHtml(scoreData, scoreBreakdown, currentMode, antip
   <div class="gauges">${gaugesHtml}${futureGaugesHtml}</div>
   ${breakdownHtml}
   <p class="raw-scores"><em>Raw scores: ${escapeHtml(rawScores)}</em></p>
-  <p class="docs-note">Meters align with GitClear 2025 &amp; DORA 2024: churn, duplication, defect rate. See <code>docs/ANTIPATTERN-METERS-REVIEW.md</code> for applying research to the dashboard.</p>
+  <p class="docs-note">Meters align with research-backed antipatterns: blind acceptance, verification debt, silent drift, context dilution, over-delegation, prompt thrash, test theater, diff flooding (see <code>docs/2026-02-03_17-41-ai-agent-antipatterns-research-taxonomy.md</code>). GitClear 2025 &amp; DORA 2024: churn, duplication, defect rate. Details: <code>docs/ANTIPATTERN-METERS-REVIEW.md</code>.</p>
   ${filesHtml}
 </body>
 </html>`;

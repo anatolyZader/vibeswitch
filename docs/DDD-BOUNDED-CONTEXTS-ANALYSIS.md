@@ -33,7 +33,7 @@ This document provides an extensive Domain-Driven Design (DDD) analysis of the V
    - Manages switching between 'vibe' and 'dev' modes
    - **Integration**: Provides mode configuration to Awareness context
 
-2. **Usage Stats Context** (`business_modules/usage-stats/`)
+2. **Usage Stats Context** (`business_modules/user-stats/`)
    - Tracks usage statistics and analytics
    - **Integration**: Consumes events from Awareness context (KeepAllEvent, etc.)
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document explains the refactoring that extracted adapter and service instantiation from `extension.js` into a dedicated composition module (`diCompositionRoot.js`). The composition module is generic and supports all extension modules (awareness, usage-stats, mode, etc.).
+This document explains the refactoring that extracted adapter and service instantiation from `extension.js` into a dedicated composition module (`diCompositionRoot.js`). The composition module is generic and supports all extension modules (awareness, user-stats, mode, etc.).
 
 ## Problem
 
@@ -20,7 +20,7 @@ Created `diCompositionRoot.js` - a generic composition root module that:
 - Centralizes all domain service creation for all modules
 - Handles DI container storage
 - Returns configured adapters and services ready for injection
-- Supports multiple modules (awareness, usage-stats, mode, etc.)
+- Supports multiple modules (awareness, user-stats, mode, etc.)
 
 ## Architecture
 

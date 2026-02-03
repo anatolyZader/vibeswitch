@@ -1207,7 +1207,7 @@ Before shipping, verify:
 - `KeypairManager` - Ed25519 keypair management
 - `ApprovalManager` - Patch approval workflow
 
-**MCP Server** (`mcp-servers/mode-enforcement/`):
+**MCP Server** (`mcp/mode-enforcement/`):
 - `index.js` - MCP server with `submit_patch` and `apply_patch` tools
 - `package.json` - Dependencies
 
