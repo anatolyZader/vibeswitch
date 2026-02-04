@@ -26,6 +26,36 @@ const { buildDiffBullets } = require('./utilities/diffBulletService');
 const { aggregateDuplicateRisk } = require('./utilities/duplicateBlockDetector');
 const path = require('path');
 
+/** True if path looks like a test file (e.g. *.test.js, *.spec.js, __tests__/, test/). */
+function isTestFilePath(filePath) {
+    const p = (filePath || '').replace(/\\/g, '/');
+    return /\.(test|spec)\.(js|ts|jsx|tsx|mjs|cjs)$/i.test(p) || /\/__tests__\//.test(p) || /\/test\//.test(p) || /\/tests\//.test(p);
+}
+
+/**
+ * Compute Test Theater risk from test file contents (snapshot + trivial assertion ratios).
+ * UI-only MVP: risk = min(100, snapshotRatio*30 + trivialAssertRatio*30). bugfixWithoutTest/ritualTestAdds stay 0.
+ * @param {Array<{ filePath: string, content: string }>} filesWithContent
+ * @returns {{ snapshotRatio: number, trivialAssertRatio: number, risk0To100: number }}
+ */
+function computeTestTheaterFromFiles(filesWithContent) {
+    const testFiles = (filesWithContent || []).filter(f => isTestFilePath(f.filePath));
+    let totalAssertions = 0;
+    let snapshotCount = 0;
+    let trivialCount = 0;
+    for (const { content } of testFiles) {
+        const text = typeof content === 'string' ? content : '';
+        const expectOrAssert = (text.match(/\bexpect\s*\(/g) || []).length + (text.match(/\bassert\./g) || []).length;
+        totalAssertions += expectOrAssert;
+        snapshotCount += (text.match(/\.toMatchSnapshot\s*\(/g) || []).length + (text.match(/\.toMatchInlineSnapshot\s*\(/g) || []).length;
+        trivialCount += (text.match(/\.toBeTruthy\s*\(/g) || []).length + (text.match(/\.toBeDefined\s*\(/g) || []).length + (text.match(/\.toBeFalsy\s*\(/g) || []).length;
+    }
+    const snapshotRatio = totalAssertions > 0 ? Math.min(1, snapshotCount / totalAssertions) : 0;
+    const trivialAssertRatio = totalAssertions > 0 ? Math.min(1, trivialCount / totalAssertions) : 0;
+    const risk0To100 = Math.min(100, Math.round(snapshotRatio * 30 + trivialAssertRatio * 30));
+    return { snapshotRatio, trivialAssertRatio, risk0To100 };
+}
+
 // Domain events removed - using callbacks instead for engine-based design
 
 // Import utilities
@@ -602,6 +632,7 @@ class AwarenessEngine {
             diffFlooding: { maxBurstInWindow: 0, risk0To100: 0 },
             comprehensionDebt: { risk0To100: 0 },
             verificationDebt: { acceptedWithoutVerification: 0, acceptedTotal: 0, risk0To100: 0 },
+            testTheater: { risk0To100: 0 },
             boundaryViolations: { risk0To100: 0 },
             observabilityNeglect: { risk0To100: 0 }
         };
@@ -680,6 +711,7 @@ class AwarenessEngine {
             diffFlooding: { maxBurstInWindow, risk0To100: diffFloodingRisk },
             comprehensionDebt: { risk0To100: comprehensionDebtRisk },
             verificationDebt: { acceptedWithoutVerification: withoutVerification.length, acceptedTotal, risk0To100: verificationDebtRisk },
+            testTheater: { risk0To100: 0 },
             boundaryViolations: { risk0To100: 0 },
             observabilityNeglect: { risk0To100: 0 }
         };
@@ -721,7 +753,8 @@ class AwarenessEngine {
             }
         }
         const duplication = aggregateDuplicateRisk(filesWithContent);
-        return { ...sync, duplication };
+        const testTheater = computeTestTheaterFromFiles(filesWithContent);
+        return { ...sync, duplication, testTheater: { snapshotRatio: testTheater.snapshotRatio, trivialAssertRatio: testTheater.trivialAssertRatio, risk0To100: testTheater.risk0To100 } };
     }
 
     /**

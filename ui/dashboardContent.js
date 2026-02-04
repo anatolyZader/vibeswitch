@@ -142,9 +142,11 @@ function buildSchematicTooltip(scoreData, scoreBreakdown, currentMode, antipatte
     const compRisk = antipatternBreakdown?.comprehensionDebt?.risk0To100 ?? 0;
     const verRisk = antipatternBreakdown?.verificationDebt?.risk0To100 ?? 0;
     const diffFloodRisk = antipatternBreakdown?.diffFlooding?.risk0To100 ?? 0;
+    const testTheaterRisk = antipatternBreakdown?.testTheater?.risk0To100 ?? 0;
     if (compRisk > 0) lines.push(`  Comprehension debt: ${compRisk}% (research-backed).`);
     if (verRisk > 0) lines.push(`  Verification debt: ${verRisk}% (accepted without test/save/navigate).`);
     if (diffFloodRisk > 0) lines.push(`  Diff flooding: ${diffFloodRisk}% (large-burst risk).`);
+    if (testTheaterRisk > 0) lines.push(`  Test theater: ${testTheaterRisk}% (shallow/snapshot-heavy tests as merge token; experimental).`);
 
     const { unopened, unreviewedSuggestions } = getUnopenedAndUnreviewed(scoreData);
     lines.push('');
@@ -215,9 +217,10 @@ function buildDashboardMarkdown(scoreData, scoreBreakdown, currentMode, antipatt
 | Interaction Quality | ${interactionRisk}% | \`${meterBar(interactionRisk)}\` |
 | Context & Resource Discipline | ${contextOrDuplicationRisk}% | \`${meterBar(contextOrDuplicationRisk)}\` |
 
-*Breakdown — Ownership: blind acceptance ${blindRisk}%, review depth ${reviewRisk}%, adaptation ${overDelegationRisk}%. Interaction: flooding ${fl}%, response drill ${rd}%, diff flood ${antipatternBreakdown?.diffFlooding?.risk0To100 ?? 0}%. Context: spread ${contextRisk}%${dup ? `, duplication drift ${duplicationRisk}% (${dup.fileCountWithDuplicates ?? 0} file(s) with 5+ line duplicate blocks)` : ''}.*
+*Breakdown — Ownership: blind acceptance ${blindRisk}%, review depth ${reviewRisk}%, adaptation ${overDelegationRisk}%. Interaction: flooding ${fl}%, response drill ${rd}%, diff flood ${antipatternBreakdown?.diffFlooding?.risk0To100 ?? 0}%. Context: spread ${contextRisk}%${dup ? `, duplication drift ${duplicationRisk}% (${dup.fileCountWithDuplicates ?? 0} file(s) with 5+ line duplicate blocks)` : ''}${(antipatternBreakdown?.testTheater?.risk0To100 ?? 0) > 0 ? `, test theater ${antipatternBreakdown.testTheater.risk0To100}%` : ''}.*
 ${(antipatternBreakdown?.comprehensionDebt?.risk0To100 ?? 0) > 0 ? `\n*Comprehension debt risk: ${antipatternBreakdown.comprehensionDebt.risk0To100}% (low review + high response drill; research-backed).*` : ''}
 ${(antipatternBreakdown?.verificationDebt?.risk0To100 ?? 0) > 0 ? `\n*Verification debt risk: ${antipatternBreakdown.verificationDebt.risk0To100}% (${antipatternBreakdown.verificationDebt.acceptedWithoutVerification ?? 0}/${antipatternBreakdown.verificationDebt.acceptedTotal ?? 0} accepted without test/save/navigate signal).*` : ''}
+${(antipatternBreakdown?.testTheater?.risk0To100 ?? 0) > 0 ? `\n*Test theater risk: ${antipatternBreakdown.testTheater.risk0To100}% (shallow/snapshot-heavy tests as merge token; research-backed, experimental).*` : ''}
 
 *Raw scores: Review ${c.review ?? 0}/40, Blind Accept ${c.blindAcceptance ?? 0}/30, Adaptation ${c.adaptation ?? 0}/30, Debt ${c.debt ?? 0}/30.*
 
@@ -339,12 +342,16 @@ function buildDashboardWebviewHtml(scoreData, scoreBreakdown, currentMode, antip
     const verificationTotal = antipatternBreakdown?.verificationDebt?.acceptedTotal ?? 0;
     const dupFiles = dup?.fileCountWithDuplicates ?? 0;
     const diffFloodRisk = antipatternBreakdown?.diffFlooding?.risk0To100 ?? 0;
-    let breakdownHtml = `<p class="breakdown"><strong>Breakdown</strong> — Ownership: blind acceptance ${blindRisk}%, review depth ${reviewRisk}%, adaptation ${overDelegationRisk}%. Interaction: flooding ${fl}%, response drill ${rd}%, diff flood ${diffFloodRisk}%. Context: spread ${contextRisk}%${dup ? `, duplication drift ${duplicationRisk}% (${dupFiles} file(s) with 5+ line duplicate blocks)` : ''}.</p>`;
+    const testTheaterRisk = antipatternBreakdown?.testTheater?.risk0To100 ?? 0;
+    let breakdownHtml = `<p class="breakdown"><strong>Breakdown</strong> — Ownership: blind acceptance ${blindRisk}%, review depth ${reviewRisk}%, adaptation ${overDelegationRisk}%. Interaction: flooding ${fl}%, response drill ${rd}%, diff flood ${diffFloodRisk}%. Context: spread ${contextRisk}%${dup ? `, duplication drift ${duplicationRisk}% (${dupFiles} file(s) with 5+ line duplicate blocks)` : ''}${testTheaterRisk > 0 ? `, test theater ${testTheaterRisk}%` : ''}.</p>`;
     if (comprehensionRisk > 0) {
         breakdownHtml += `<p class="breakdown comprehension-hint">Comprehension debt risk: ${comprehensionRisk}% (low review + high response drill; research-backed).</p>`;
     }
     if (verificationRisk > 0) {
         breakdownHtml += `<p class="breakdown verification-hint">Verification debt risk: ${verificationRisk}% (${verificationCount}/${verificationTotal} accepted without test/save/navigate signal).</p>`;
+    }
+    if (testTheaterRisk > 0) {
+        breakdownHtml += `<p class="breakdown test-theater-hint">Test theater risk: ${testTheaterRisk}% (shallow/snapshot-heavy tests as merge token; research-backed, experimental).</p>`;
     }
 
     const { unopened, unreviewedSuggestions } = getUnopenedAndUnreviewed(scoreData);
@@ -388,6 +395,7 @@ function buildDashboardWebviewHtml(scoreData, scoreBreakdown, currentMode, antip
     .breakdown { font-size: 0.85rem; opacity: 0.9; margin: 0.5rem 0 0 0; }
     .comprehension-hint { font-size: 0.8rem; opacity: 0.9; margin: 0.25rem 0 0 0; font-style: italic; }
     .verification-hint { font-size: 0.8rem; opacity: 0.9; margin: 0.25rem 0 0 0; font-style: italic; }
+    .test-theater-hint { font-size: 0.8rem; opacity: 0.9; margin: 0.25rem 0 0 0; font-style: italic; }
     .gauge-future { opacity: 0.5; }
     .gauge-future .gauge-label { font-style: italic; }
   </style>

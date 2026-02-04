@@ -18,6 +18,7 @@ The extension dashboard today shows **4 canonical meters** built from **7 sub-si
 | ✅ **Implemented** | Context spread | Context & Resource Discipline dial |
 | ✅ **Implemented** | Comprehension debt | getAntipatternBreakdown: composite of low review rate + high response drill; shown in dashboard & tooltip |
 | ✅ **Implemented** | Verification debt (proxy) | getAntipatternBreakdown: accepted without verification signal (test/save/navigate); shown in dashboard & tooltip |
+| ✅ **Implemented** | Test theater (Verification Quality) | getAntipatternBreakdownAsync: snapshot/trivial-assert ratios from test-file parsing; UI-only, experimental. See [event-signal-weight spec §5](2026-02-03_17-59-event-signal-weight-meters-spec.md#5-test-theater-meter), [ANTIPATTERN-METERS-REVIEW](ANTIPATTERN-METERS-REVIEW.md). |
 | 🕒 **Planned** | Churn spike, Duplication drift, Dependency integrity, Context hijack, Verification gap, Security hygiene | Require new signals (git, lockfile, ingestion paths, rules); will feed existing canonical dials |
 | 🕒 **Future** | Architecture & Responsibility, AI Mental Model | Conceptual placeholders in UI; need role/dialogic signals |
 
@@ -29,7 +30,7 @@ Full reconciliation (capabilities, mapping, what would enable each) is in [ANTIP
 
 | Canonical dial | Research-backed future sub-signals |
 | ----------------- | ------------------------------------ |
-| **Ownership & Engagement** | Comprehension Debt ✅, Verification Debt (proxy) ✅, Test Skipping (verification gap) 🕒 |
+| **Ownership & Engagement** | Comprehension Debt ✅, Verification Debt (proxy) ✅, Test Theater (Verification Quality) ✅ (UI-only, experimental), Test Skipping (verification gap) 🕒 |
 | **Silent Drift (Debt)** | Churn Spike, Duplication Drift |
 | **Interaction Quality / Progress** | Churn Spike (loop outcome), repeated delete/rewrite cycles |
 | **Context & Resource Discipline** | Duplicate Logic Injection (multi-file copy), dependency sprawl |

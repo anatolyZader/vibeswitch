@@ -102,10 +102,36 @@ Spec for plugging four new/refined meters into the existing architecture. All **
 
 ---
 
+## 5) Test Theater Meter
+
+**Definition:** Shallow tests (snapshot-heavy, trivial assertions) used as merge tokens rather than assurance; epistemic debt.
+
+**Canonical home:** Unreviewed Drift (Verification Quality sub-signal). Primary: Verification Debt cluster; secondary: Change Ownership (Ownership & Engagement).
+
+### Events → Signals → Weights
+
+| Event | Signal | Weight |
+|-------|--------|--------|
+| `TEST_FILE_TOUCHED` + snapshot, prod changed | Cosmetic validation | −3 |
+| Only trivial assertions | Shallow | −4 |
+| Test added after prod | Ritual | −2 |
+| Bugfix without test update | Failed coverage | −5 |
+| Property/invariant added | Real assurance | +5 |
+| `TEST_FAILURE_DETECTED` before fix | Healthy | +3 |
+
+**Events (when detectable):** `TEST_FILE_TOUCHED`, `PROD_CODE_TOUCHED`, `ASSERTION_PARSED`, `SNAPSHOT_ADDED`, `BUGFIX_COMMIT`, `TEST_FAILURE_DETECTED` (optional).
+
+**UI-only MVP formula:** `theaterScore = snapshotRatio*30 + trivialAssertRatio*30 + bugfixWithoutTest*25 + ritualTestAdds*15` → `risk = min(100, theaterScore)`.  
+Note: `snapshotRatio` / `trivialAssertRatio` require parsing test files; `bugfixWithoutTest` / `ritualTestAdds` require bugfix/accept→edit signals (document as future if not yet available).
+
+**False-positive risks:** Heavy use of snapshots in an approved testing style; TDD “test first” can look like “ritual” (test before prod). Mitigation: document as experimental; optional per-workspace disable.
+
+---
+
 ## Where they live
 
-- **UI-only (current):** `getAntipatternBreakdown()` — flooding, response drill, context spread, comprehension debt, verification debt, **diff flooding (burst)**. Placeholders: boundary violations, observability neglect (0 until signals exist).
-- **Core (later):** Verification Debt and Boundary Violations when signals are stable; Diff Flooding and Observability stay UI-only unless conventions are strict.
+- **UI-only (current):** `getAntipatternBreakdown()` — flooding, response drill, context spread, comprehension debt, verification debt, **diff flooding (burst)**, **test theater** (async when test-file parsing available). Placeholders: boundary violations, observability neglect (0 until signals exist).
+- **Core (later):** Verification Debt and Boundary Violations when signals are stable; Diff Flooding, Test Theater, and Observability stay UI-only unless conventions are strict.
 
 ---
 

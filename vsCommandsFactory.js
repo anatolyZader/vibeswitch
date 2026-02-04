@@ -199,6 +199,157 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
             }
         },
 
+        'vibeswitch.showStatsToOutput': () => {
+            if (!state.usageStats) {
+                showWarningMessage('Usage statistics not initialized.');
+                return;
+            }
+            const ch = state.outputChannel;
+            if (!ch) {
+                showWarningMessage('Output channel not available.');
+                return;
+            }
+            try {
+                const report = state.usageStats.generateReport();
+                let out = '=== VibeSwitch Usage Statistics ===\n\n';
+                out += '--- Summary ---\n';
+                out += `Total Switches: ${report.summary.totalSwitches}\n`;
+                out += `Total Active Time: ${report.summary.totalActiveTime}\n`;
+                out += `Most Used Mode: ${report.summary.mostUsedMode}\n\n`;
+                out += '--- VIBE Mode ---\n';
+                out += `Usage: ${report.vibeMode.usage} (${report.vibeMode.percentage}%)\n`;
+                out += `Sessions: ${report.vibeMode.sessions}\n`;
+                out += `Files Modified: ${report.vibeMode.filesModified}\n\n`;
+                out += '--- DEV Mode ---\n';
+                out += `Usage: ${report.devMode.usage} (${report.devMode.percentage}%)\n`;
+                out += `Sessions: ${report.devMode.sessions}\n`;
+                out += `Files Modified: ${report.devMode.filesModified}\n`;
+                out += `Awareness Score: ${report.devMode.awarenessScore}/100\n\n`;
+                out += '--- Recommendations ---\n';
+                if (report.recommendations.length > 0) {
+                    report.recommendations.forEach(r => {
+                        out += `- ${r.mode ? `[${r.mode.toUpperCase()}] ` : ''}${r.message}\n`;
+                    });
+                } else {
+                    out += 'Keep using the extension to get personalized recommendations.\n';
+                }
+                out += `\nFirst used: ${new Date(report.summary.firstUsed).toLocaleDateString()}\n`;
+                out += `Last updated: ${new Date(report.summary.lastUpdated).toLocaleString()}\n`;
+                ch.clear();
+                ch.append(out);
+                ch.show(true);
+                showInformationMessage('Statistics written to Output (VibeSwitch).');
+            } catch (error) {
+                log(`VibeSwitch: Error showing stats to output: ${error.message}`, true, true);
+                if (ch) {
+                    ch.appendLine(`ERROR: ${error.message}`);
+                    ch.show(true);
+                }
+                showErrorMessage(`Failed to show stats: ${error.message}`);
+            }
+        },
+
+        'vibeswitch.refreshAwarenessMeter': () => {
+            if (!state.awarenessEngine) {
+                showWarningMessage('Awareness engine not initialized.');
+                return;
+            }
+            const ch = state.outputChannel;
+            if (!ch) {
+                showWarningMessage('Output channel not available.');
+                return;
+            }
+            try {
+                if (typeof state.updateAwarenessMeter === 'function') {
+                    state.updateAwarenessMeter();
+                }
+                if (state.fileDecorationProvider && typeof state.fileDecorationProvider.refresh === 'function') {
+                    state.fileDecorationProvider.refresh();
+                }
+                const line = `Awareness meter refreshed at ${new Date().toISOString()}`;
+                ch.clear();
+                ch.appendLine(line);
+                ch.show(true);
+                showInformationMessage('Awareness meter refreshed. See Output (VibeSwitch).');
+            } catch (error) {
+                log(`VibeSwitch: Error refreshing awareness meter: ${error.message}`, true, true);
+                if (ch) {
+                    ch.appendLine(`ERROR: ${error.message}`);
+                    ch.show(true);
+                }
+                showErrorMessage(`Failed to refresh meter: ${error.message}`);
+            }
+        },
+
+        'vibeswitch.verbalReview': () => {
+            if (!state.awarenessEngine) {
+                showWarningMessage('Awareness engine not initialized.');
+                return;
+            }
+            const ch = state.outputChannel;
+            if (!ch) {
+                showWarningMessage('Output channel not available.');
+                return;
+            }
+            try {
+                const scoreData = state.awarenessEngine.getScore();
+                const mode = state.getMode ? state.getMode() : state.currentMode;
+                const total = scoreData.total ?? 0;
+                const debtCount = scoreData.debt?.unreviewedFiles ?? (scoreData.debt?.files?.length ?? 0);
+                const pendingCount = scoreData.suggestions?.pending ?? 0;
+                const unopenedCount = scoreData.unopenedFiles?.count ?? 0;
+                let breakdown = null;
+                let antipattern = null;
+                try {
+                    breakdown = state.awarenessEngine.getScoreBreakdown();
+                } catch (_) { /* ignore */ }
+                try {
+                    antipattern = state.awarenessEngine.getAntipatternBreakdown();
+                } catch (_) { /* ignore */ }
+                const parts = [];
+                parts.push(`You are in ${(mode || 'unknown').toUpperCase()} mode.`);
+                parts.push(`Your awareness (risk) score is ${total}/100 (higher = worse).`);
+                if (debtCount > 0 || pendingCount > 0 || unopenedCount > 0) {
+                    const items = [];
+                    if (debtCount > 0) items.push(`${debtCount} file(s) with review debt`);
+                    if (pendingCount > 0) items.push(`${pendingCount} pending suggestion(s)`);
+                    if (unopenedCount > 0) items.push(`${unopenedCount} unopened file(s) with changes`);
+                    parts.push(`You have ${items.join(', ')}.`);
+                } else {
+                    parts.push('You have no unreviewed files or pending suggestions.');
+                }
+                if (antipattern && (antipattern.flooding?.risk0To100 > 0 || antipattern.responseDrill?.risk0To100 > 0 || antipattern.verificationDebt?.risk0To100 > 0 || antipattern.testTheater?.risk0To100 > 0)) {
+                    const risks = [];
+                    if (antipattern.flooding?.risk0To100 > 0) risks.push('suggestion flooding');
+                    if (antipattern.responseDrill?.risk0To100 > 0) risks.push('response drill');
+                    if (antipattern.verificationDebt?.risk0To100 > 0) risks.push('verification debt');
+                    if (antipattern.testTheater?.risk0To100 > 0) risks.push('test theater');
+                    if (risks.length > 0) {
+                        parts.push(`Antipattern highlights: ${risks.join(', ')}.`);
+                    }
+                }
+                if (total >= 60 && mode === 'dev') {
+                    parts.push('Consider reviewing pending changes and clearing debt to lower your risk score.');
+                } else if (total < 40 && mode === 'dev') {
+                    parts.push('Your awareness engagement looks good; keep reviewing as you go.');
+                }
+                const prose = parts.join(' ');
+                ch.clear();
+                ch.append('=== VibeSwitch Verbal Review ===\n\n');
+                ch.append(prose);
+                ch.append('\n');
+                ch.show(true);
+                showInformationMessage('Verbal review written to Output (VibeSwitch).');
+            } catch (error) {
+                log(`VibeSwitch: Error in verbal review: ${error.message}`, true, true);
+                if (ch) {
+                    ch.appendLine(`ERROR: ${error.message}`);
+                    ch.show(true);
+                }
+                showErrorMessage(`Failed to show verbal review: ${error.message}`);
+            }
+        },
+
         'vibeswitch.diagnoseDecorations': () => {
             if (!state.fileDecorationProvider) {
                 showWarningMessage('File Decoration Provider: Not initialized');

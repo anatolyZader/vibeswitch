@@ -60,7 +60,9 @@ These three are **facets of ownership**, not separate dimensions. They differ by
 ### Feeds from Cursor meters
 
 - **Silent Drift (Debt)** ✅ (core)
+- **Verification Quality / Test Theater** ✅ (UI-only, experimental)
 
+Conceptually: **Drift = Unreviewed + Unverified + Shallow-Verified.** Test Theater is the first measurable sub-signal under Verification Quality (shallow/snapshot-heavy tests as merge tokens). See [event-signal-weight spec](2026-02-03_17-59-event-signal-weight-meters-spec.md#5-test-theater-meter). Research justification: Sabouri et al. (2025) overconfidence in AI suggestions; Moradi et al. (2023) Copilot as liability when filtering is weak; Thoughtworks — “passing tests ≠ correctness.”
 Already aligned: footprint (files), backlog (pending suggestions), staleness (age).
 
 ### Measurement in the extension
@@ -235,6 +237,7 @@ How the **current VibeSwitch dashboard** (4 canonical dials + 2 future placehold
 | Context spread | Context & Resource Discipline | ✅ **Implemented** (approx) | — |
 | **Comprehension debt** | Ownership & Engagement | ✅ **Implemented** (composite) | getAntipatternBreakdown: low review rate + high response drill → risk0To100; shown in breakdown & tooltip |
 | **Verification debt** (accept without verify) | Ownership & Engagement | ✅ **Implemented** (proxy) | getAntipatternBreakdown: recent accepted with no test/save/navigate signal → risk0To100; uses Suggestion.verificationSignals |
+| **Test theater** (Verification Quality) | Ownership & Engagement / Unreviewed Drift | ✅ **Implemented** (UI-only, experimental) | getAntipatternBreakdown(Async): snapshot/trivial-assert ratios from test-file parsing; see event-signal-weight spec §5 |
 | **Verification gap (test skipping)** | Ownership & Engagement | 🕒 **Planned** | Test-file edits + test-run events after AI batch |
 | **Churn spike** | Silent Drift / Interaction Quality | 🕒 **Planned** | Git/diff history; AI-attributed line lifetime, accept→delete |
 | **Duplication drift** | Silent Drift / Context & Resource | 🕒 **Planned** | Clone/near-duplicate detection on AI-touched files |

@@ -33,6 +33,7 @@ describe('getAntipatternBreakdown', () => {
             diffFlooding: { maxBurstInWindow: 0, risk0To100: 0 },
             comprehensionDebt: { risk0To100: 0 },
             verificationDebt: { acceptedWithoutVerification: 0, acceptedTotal: 0, risk0To100: 0 },
+            testTheater: { risk0To100: 0 },
             boundaryViolations: { risk0To100: 0 },
             observabilityNeglect: { risk0To100: 0 }
         });
@@ -67,6 +68,7 @@ describe('getAntipatternBreakdown', () => {
         expect(out.verificationDebt).toHaveProperty('acceptedWithoutVerification');
         expect(out.verificationDebt).toHaveProperty('acceptedTotal');
         expect(out.verificationDebt).toHaveProperty('risk0To100');
+        expect(out.testTheater).toHaveProperty('risk0To100');
         expect(out.boundaryViolations).toEqual({ risk0To100: 0 });
         expect(out.observabilityNeglect).toEqual({ risk0To100: 0 });
 
@@ -91,5 +93,54 @@ describe('getAntipatternBreakdown', () => {
         const out = engine.getAntipatternBreakdown();
         expect(out.diffFlooding.risk0To100).toBe(0);
         expect(out.diffFlooding.maxBurstInWindow).toBe(0);
+    });
+});
+
+describe('getAntipatternBreakdownAsync', () => {
+    let engine;
+
+    beforeEach(() => {
+        engine = new AwarenessEngine({
+            vscodeAdapter: {
+                Uri: { file: (p) => ({ fsPath: p }) },
+                workspaceFolders: [{ uri: { fsPath: '/root' } }],
+                openTextDocument: jest.fn()
+            },
+            persistenceAdapter: { loadSync: jest.fn(() => new Map()), save: jest.fn(() => Promise.resolve()) },
+            loggerAdapter: { log: () => {}, debug: () => {}, error: () => {} },
+            idGeneratorAdapter: { generateId: jest.fn(() => 'id'), generateUUID: jest.fn(() => 'uuid') },
+            hashGeneratorAdapter: { hash: jest.fn(() => 'h') },
+            rangeOperationServiceD: {},
+            uriPathOperationServiceD: {}
+        });
+    });
+
+    test('return shape includes testTheater and duplication; testTheater risk > 0 when test file has snapshot + trivial asserts', async () => {
+        const now = Date.now();
+        const batch = new SuggestionBatch('b1', 'src/foo.test.js', now - 60 * 1000);
+        batch.addSuggestion('s1', 50);
+        engine.suggestionAggregate = {
+            getBatches: () => [batch],
+            getSuggestions: () => []
+        };
+        const snapshotHeavyContent = `
+            expect(x).toBeTruthy();
+            expect(y).toBeDefined();
+            expect(z).toMatchSnapshot();
+            expect(a).toMatchSnapshot();
+            expect(b).toMatchInlineSnapshot();
+        `;
+        engine.vscodeAdapter.openTextDocument = jest.fn(() => Promise.resolve({
+            getText: () => snapshotHeavyContent
+        }));
+
+        const out = await engine.getAntipatternBreakdownAsync();
+        expect(out).toHaveProperty('testTheater');
+        expect(out.testTheater).toHaveProperty('risk0To100');
+        expect(out.testTheater).toHaveProperty('snapshotRatio');
+        expect(out.testTheater).toHaveProperty('trivialAssertRatio');
+        expect(out).toHaveProperty('duplication');
+        expect(out.duplication).toHaveProperty('risk0To100');
+        expect(out.testTheater.risk0To100).toBeGreaterThan(0);
     });
 });

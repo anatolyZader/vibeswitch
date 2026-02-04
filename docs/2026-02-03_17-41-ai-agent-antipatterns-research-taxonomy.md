@@ -6,12 +6,14 @@ This document is a research-backed map of **behavioral anti-patterns** that appe
 
 ---
 
-## What’s New with AI-Agent Coding (vs Classic Anti-Patterns)
+## Research foundation
 
-AI does not invent entirely new failure modes so much as **amplify known ones** by changing:
+**Thesis:** VibeSwitch measures where human attention fails to scale with AI output.
 
-| Factor | Effect |
-|--------|--------|
+AI does not invent entirely new failure modes so much as **amplify known ones**. The following four structural shifts explain modern vibe-coding failures:
+
+| Shift | Effect in practice |
+|-------|---------------------|
 | **Cost structure** | Code becomes cheaper than understanding. |
 | **Trust dynamics** | Automation bias; confidence-by-fluency. |
 | **Provenance opacity** | Harder to judge why code is “this way.” |
@@ -135,7 +137,7 @@ If instrumenting (e.g. VibeSwitch), these are **high-signal, low-argument** meas
 | 4. Context dilution | Context & Resource Discipline | ⚠️ Approx (context spread) |
 | 5. Over-delegation | Ownership & Engagement | ✅ Implemented (adaptation sub-signal) |
 | 6. Prompt thrash | Interaction Quality (response drill, flooding) | ✅ Implemented (approx) |
-| 7. Test theater | Ownership & Engagement / Verification | 🕒 Planned |
+| 7. Test theater | Ownership & Engagement / Unreviewed Drift (Verification Quality) | ✅ Implemented (UI-only, experimental) |
 | 8. Security-by-omission | (new or Context) | 🕒 Planned |
 | 9. Observability neglect | (future) | 🕒 Conceptual |
 | 10. Diff flooding | Interaction Quality / Context & Resource | ✅ Implemented (flooding, context spread approx) |
@@ -151,7 +153,17 @@ Full implementation details, sub-signals, and reconciliation are in [ANTIPATTERN
 - **Security-focused surveys/reviews on LLM code generation:** SLRs and security reviews.
 - **Classic anti-pattern foundations / smells / debt metaphors:** SE practice and technical-debt literature.
 
-*(Specific citations can be added as URLs or BibTeX when curating the reference set.)*
+### Research citations (placeholder)
+
+| Cluster | Example sources | Notes |
+|---------|-----------------|--------|
+| Trust / overconfidence | Sabouri et al. (2025) Overconfidence in AI-Assisted Software Development | Automation bias, trust calibration. |
+| Copilot behavior / liability | Moradi Dakhel et al. (2023) GitHub Copilot: Asset or Liability? | Novice vs expert filtering. |
+| Code quality / technical debt | Yetiştiren et al. (2023), Chen et al. (2023) Code quality of AI-assisted tools; reviewer sentiment | Smells, duplication in AI PRs. |
+| Industry / practice | Thoughtworks Technology Radar (2024–2025) Complacency with AI-generated code | “Passing tests ≠ correctness.” |
+| Classic anti-patterns | Fowler, technical-debt literature | Refactoring, debt metaphors. |
+
+*(URLs and BibTeX to be added when curating the reference set.)*
 
 ---
 
