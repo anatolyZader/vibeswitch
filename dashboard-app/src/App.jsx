@@ -1,0 +1,61 @@
+const React = require('react');
+const MetersSection = require('./MetersSection').default;
+const OutputSection = require('./OutputSection').default;
+const ChatSection = require('./ChatSection').default;
+
+const defaultPayload = {
+  currentMode: 'dev',
+  scoreData: { total: 0, components: {} },
+  scoreBreakdown: null,
+  antipatternBreakdown: {},
+  events: [],
+  tokenUsage: { totalInput: 0, totalOutput: 0, totalTokens: 0, usageApiAvailable: false },
+  capabilities: { git: false, ast: false, tasksObserved: false, usageApiAvailable: false }
+};
+
+function App({ vscode }) {
+  const [payload, setPayload] = React.useState(defaultPayload);
+
+  React.useEffect(() => {
+    if (!vscode) return;
+    const onMessage = (event) => {
+      const msg = event.data;
+      if (msg && (msg.type === 'init' || msg.type === 'update') && msg.payload) {
+        setPayload((prev) => ({ ...prev, ...msg.payload }));
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [vscode]);
+
+  const sendChat = React.useCallback((id, text) => {
+    if (vscode && id && text && text.trim()) {
+      vscode.postMessage({ command: 'chat', id, text: text.trim() });
+    }
+  }, [vscode]);
+
+  return (
+    <div className="vibeswitch-dashboard">
+      <header className="dashboard-header">
+        <h1>VibeSwitch Dashboard</h1>
+        <p className="dashboard-meta">
+          Mode: {(payload.currentMode || 'unknown').toUpperCase()} &middot; Risk: {Math.max(0, Math.min(100, payload.scoreData?.total ?? 0))}/100
+        </p>
+      </header>
+      <section className="dashboard-meters">
+        <h2>Meters</h2>
+        <MetersSection payload={payload} />
+      </section>
+      <section className="dashboard-output">
+        <h2>Output</h2>
+        <OutputSection payload={payload} />
+      </section>
+      <section className="dashboard-chat">
+        <h2>Chat</h2>
+        <ChatSection payload={payload} sendChat={sendChat} vscode={vscode} />
+      </section>
+    </div>
+  );
+}
+
+module.exports = { default: App };

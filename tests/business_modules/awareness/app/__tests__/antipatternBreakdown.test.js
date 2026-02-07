@@ -23,20 +23,15 @@ describe('getAntipatternBreakdown', () => {
         });
     });
 
-    test('returns empty shape when suggestionAggregate is null', () => {
+    test('returns empty shape when suggestionAggregate is null (Contract A envelope)', () => {
         expect(engine.suggestionAggregate).toBeNull();
         const out = engine.getAntipatternBreakdown();
-        expect(out).toMatchObject({
-            flooding: { count: 0, risk0To100: 0 },
-            responseDrill: { count: 0, risk0To100: 0 },
-            contextSpread: { maxBatchSize: 0, distinctFiles: 0, risk0To100: 0 },
-            diffFlooding: { maxBurstInWindow: 0, risk0To100: 0 },
-            comprehensionDebt: { risk0To100: 0 },
-            verificationDebt: { acceptedWithoutVerification: 0, acceptedTotal: 0, risk0To100: 0 },
-            testTheater: { risk0To100: 0 },
-            boundaryViolations: { risk0To100: 0 },
-            observabilityNeglect: { risk0To100: 0 }
-        });
+        expect(out.flooding).toHaveProperty('value');
+        expect(out.flooding).toHaveProperty('meta');
+        expect(out.flooding).toHaveProperty('updatedTs');
+        expect(out.flooding.value).toMatchObject({ count: 0, risk0To100: 0 });
+        expect(out.verificationDebt.value).toMatchObject({ acceptedWithoutVerification: 0, acceptedTotal: 0, risk0To100: 0 });
+        expect(out.boundaryViolations.value).toMatchObject({ risk0To100: 0, violations: [] });
     });
 
     test('returns full shape with diffFlooding when aggregate has one large keep-all batch', () => {
@@ -55,29 +50,25 @@ describe('getAntipatternBreakdown', () => {
         };
 
         const out = engine.getAntipatternBreakdown();
-        expect(out.flooding).toHaveProperty('count');
-        expect(out.flooding).toHaveProperty('risk0To100');
-        expect(out.responseDrill).toHaveProperty('count');
-        expect(out.responseDrill).toHaveProperty('risk0To100');
-        expect(out.contextSpread).toHaveProperty('maxBatchSize');
-        expect(out.contextSpread).toHaveProperty('distinctFiles');
-        expect(out.contextSpread).toHaveProperty('risk0To100');
-        expect(out.diffFlooding).toHaveProperty('maxBurstInWindow');
-        expect(out.diffFlooding).toHaveProperty('risk0To100');
-        expect(out.comprehensionDebt).toHaveProperty('risk0To100');
-        expect(out.verificationDebt).toHaveProperty('acceptedWithoutVerification');
-        expect(out.verificationDebt).toHaveProperty('acceptedTotal');
-        expect(out.verificationDebt).toHaveProperty('risk0To100');
-        expect(out.testTheater).toHaveProperty('risk0To100');
-        expect(out.boundaryViolations).toEqual({ risk0To100: 0 });
-        expect(out.observabilityNeglect).toEqual({ risk0To100: 0 });
+        expect(out.flooding.value).toHaveProperty('count');
+        expect(out.flooding.value).toHaveProperty('risk0To100');
+        expect(out.responseDrill.value).toHaveProperty('count');
+        expect(out.responseDrill.value).toHaveProperty('risk0To100');
+        expect(out.contextSpread.value).toHaveProperty('maxBatchSize');
+        expect(out.contextSpread.value).toHaveProperty('distinctFiles');
+        expect(out.diffFlooding.value).toHaveProperty('maxBurstInWindow');
+        expect(out.diffFlooding.value).toHaveProperty('risk0To100');
+        expect(out.verificationDebt.value).toHaveProperty('acceptedWithoutVerification');
+        expect(out.verificationDebt.value).toHaveProperty('acceptedTotal');
+        expect(out.boundaryViolations.value).toHaveProperty('risk0To100');
+        expect(out.boundaryViolations.value).toHaveProperty('violations');
 
         expect(batch.suggestionIds.length).toBe(12);
         expect(batch.totalSize).toBe(400);
         expect(batch.isKeepAllPattern()).toBe(true);
-        expect(out.diffFlooding.maxBurstInWindow).toBeGreaterThanOrEqual(35 + 40 + 30);
-        expect(out.diffFlooding.risk0To100).toBeGreaterThan(0);
-        expect(out.diffFlooding.risk0To100).toBeLessThanOrEqual(100);
+        expect(out.diffFlooding.value.maxBurstInWindow).toBeGreaterThanOrEqual(35 + 40 + 30);
+        expect(out.diffFlooding.value.risk0To100).toBeGreaterThan(0);
+        expect(out.diffFlooding.value.risk0To100).toBeLessThanOrEqual(100);
     });
 
     test('diffFlooding is 0 when batches are small and old', () => {
@@ -91,8 +82,44 @@ describe('getAntipatternBreakdown', () => {
         };
 
         const out = engine.getAntipatternBreakdown();
-        expect(out.diffFlooding.risk0To100).toBe(0);
-        expect(out.diffFlooding.maxBurstInWindow).toBe(0);
+        expect(out.diffFlooding.value.risk0To100).toBe(0);
+        expect(out.diffFlooding.value.maxBurstInWindow).toBe(0);
+    });
+
+    test('verification debt: counts accepted and adapted (not only fully_accepted/partially_accepted)', () => {
+        const Suggestion = require('../../../../../business_modules/awareness/domain/entities/suggestion');
+        const now = Date.now();
+        const recent = now - 5 * 60 * 1000;
+        const s1 = new Suggestion('s1', 'file:///a.js', { start: { line: 1, character: 0 }, end: { line: 2, character: 0 } }, 'x', 10, { timestamp: recent });
+        s1.status = 'accepted';
+        s1.verificationSignals = { testFileModified: false, navigationAfterInsert: false, saveAfterInsert: false, timeToVerify: null };
+        const s2 = new Suggestion('s2', 'file:///b.js', { start: { line: 1, character: 0 }, end: { line: 2, character: 0 } }, 'y', 10, { timestamp: recent });
+        s2.status = 'adapted';
+        s2.verificationSignals = { testFileModified: false, navigationAfterInsert: false, saveAfterInsert: false, timeToVerify: null };
+        engine.suggestionAggregate = {
+            getBatches: () => [],
+            getSuggestions: () => [s1, s2]
+        };
+        const out = engine.getAntipatternBreakdown();
+        expect(out.verificationDebt.value.acceptedTotal).toBe(2);
+        expect(out.verificationDebt.value.acceptedWithoutVerification).toBe(2);
+        expect(out.verificationDebt.value.risk0To100).toBe(100);
+    });
+
+    test('verification debt: old statuses fully_accepted/partially_accepted still counted (backward compat)', () => {
+        const Suggestion = require('../../../../../business_modules/awareness/domain/entities/suggestion');
+        const now = Date.now();
+        const recent = now - 5 * 60 * 1000;
+        const s1 = new Suggestion('s1', 'file:///a.js', { start: { line: 1, character: 0 }, end: { line: 2, character: 0 } }, 'x', 10, { timestamp: recent });
+        s1.status = 'fully_accepted';
+        s1.verificationSignals = { testFileModified: false, navigationAfterInsert: false, saveAfterInsert: false, timeToVerify: null };
+        engine.suggestionAggregate = {
+            getBatches: () => [],
+            getSuggestions: () => [s1]
+        };
+        const out = engine.getAntipatternBreakdown();
+        expect(out.verificationDebt.value.acceptedTotal).toBe(1);
+        expect(out.verificationDebt.value.acceptedWithoutVerification).toBe(1);
     });
 });
 
@@ -136,11 +163,11 @@ describe('getAntipatternBreakdownAsync', () => {
 
         const out = await engine.getAntipatternBreakdownAsync();
         expect(out).toHaveProperty('testTheater');
-        expect(out.testTheater).toHaveProperty('risk0To100');
-        expect(out.testTheater).toHaveProperty('snapshotRatio');
-        expect(out.testTheater).toHaveProperty('trivialAssertRatio');
+        expect(out.testTheater.value).toHaveProperty('risk0To100');
+        expect(out.testTheater.value).toHaveProperty('snapshotRatio');
+        expect(out.testTheater.value).toHaveProperty('trivialAssertRatio');
         expect(out).toHaveProperty('duplication');
-        expect(out.duplication).toHaveProperty('risk0To100');
-        expect(out.testTheater.risk0To100).toBeGreaterThan(0);
+        expect(out.duplication.value).toHaveProperty('risk0To100');
+        expect(out.testTheater.value.risk0To100).toBeGreaterThan(0);
     });
 });

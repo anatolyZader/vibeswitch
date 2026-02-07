@@ -132,6 +132,32 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
             await dashboardDisplay.openDashboard(state.awarenessEngine, mode, state.dashboardContentProvider, state);
         },
 
+        'vibeswitch.setCursorUsageToken': async () => {
+            const ctx = state.extensionContext;
+            if (!ctx || !ctx.secretStorage) {
+                showErrorMessage('Extension context not available.');
+                return;
+            }
+            const token = await vscode.window.showInputBox({
+                title: 'Cursor usage token',
+                prompt: 'Paste your Cursor session token (WorkosCursorSessionToken) for token usage in the dashboard. Leave empty to clear.',
+                password: true,
+                ignoreFocusOut: true
+            });
+            if (token === undefined) return;
+            try {
+                if (token === '') {
+                    await ctx.secretStorage.delete('vibeswitch.cursorUsageToken');
+                    showInformationMessage('Cursor usage token cleared.');
+                } else {
+                    await ctx.secretStorage.store('vibeswitch.cursorUsageToken', token);
+                    showInformationMessage('Cursor usage token saved. Open the dashboard to see token usage.');
+                }
+            } catch (err) {
+                showErrorMessage('Failed to save token: ' + (err && err.message));
+            }
+        },
+
         'vibeswitch.showAwarenessState': () => {
             if (!state.awarenessEngine) {
                 showWarningMessage('Awareness engine not initialized.');

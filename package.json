@@ -81,12 +81,32 @@
       },
       {
         "command": "vibeswitch.showAwarenessState",
-        "title": "Show Awareness State (Subscores + Unreviewed Files)",
+        "title": "Show State",
+        "category": "VibeSwitch"
+      },
+      {
+        "command": "vibeswitch.showStatsToOutput",
+        "title": "Show Statistics (to Output)",
+        "category": "VibeSwitch"
+      },
+      {
+        "command": "vibeswitch.refreshAwarenessMeter",
+        "title": "Refresh Awareness Meter",
+        "category": "VibeSwitch"
+      },
+      {
+        "command": "vibeswitch.verbalReview",
+        "title": "Verbal Review (Antipatterns / State)",
         "category": "VibeSwitch"
       },
       {
         "command": "vibeswitch.openDashboard",
         "title": "Open VibeSwitch Dashboard",
+        "category": "VibeSwitch"
+      },
+      {
+        "command": "vibeswitch.setCursorUsageToken",
+        "title": "Set Cursor Usage Token (for dashboard token count)",
         "category": "VibeSwitch"
       },
       {
@@ -298,6 +318,31 @@
           "default": "gpt-4.1-mini",
           "description": "OpenAI model name (only used when provider=openai)"
         },
+        "vibeswitch.dashboardChat.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use LLM for dashboard chat (read-only agent). If false or no API key, stub replies only."
+        },
+        "vibeswitch.dashboardChat.useWorkspaceContext": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include read-only snippets from open files in dashboard chat context."
+        },
+        "vibeswitch.dashboardChat.timeoutMs": {
+          "type": "number",
+          "default": 15000,
+          "description": "Timeout for dashboard chat LLM request (ms)."
+        },
+        "vibeswitch.dashboardChat.openai.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "OpenAI API key for dashboard chat. If empty, uses vibeswitch.llm.openai.apiKey."
+        },
+        "vibeswitch.dashboardChat.openai.model": {
+          "type": "string",
+          "default": "",
+          "description": "OpenAI model for dashboard chat. If empty, uses vibeswitch.llm.openai.model."
+        },
         "vibeswitch.agents.enabled": {
           "type": "boolean",
           "default": false,
@@ -332,7 +377,8 @@
     }
   },
   "scripts": {
-    "build": "node scripts/build-extension.js",
+    "build": "node scripts/build-extension.js && npm run build:dashboard",
+    "build:dashboard": "cd dashboard-app && npm install && npm run build",
     "test": "jest",
     "test:mvp": "jest --testPathIgnorePatterns=sessionTracker.reviewSession --testPathIgnorePatterns=agentSuggestionHandler.batch --testPathIgnorePatterns=awarenessService.adapters --testPathIgnorePatterns=extension.test --testPathIgnorePatterns=tests/electron",
     "test:watch": "jest --watch",

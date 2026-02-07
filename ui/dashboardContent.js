@@ -41,6 +41,17 @@ function componentToRisk100(value, max, invert = false) {
     return Math.round((invert ? (1 - pct) : pct) * 100);
 }
 
+/** Contract A: breakdown may be envelope { value, meta, updatedTs } per key. Normalize to flat value for display. */
+function normalizeBreakdownForDisplay(breakdown) {
+    if (!breakdown || typeof breakdown !== 'object') return breakdown;
+    const out = {};
+    for (const key of Object.keys(breakdown)) {
+        const entry = breakdown[key];
+        out[key] = entry && typeof entry === 'object' && 'value' in entry ? entry.value : entry;
+    }
+    return out;
+}
+
 /**
  * Returns { text, backgroundColor, tooltip } for the status bar circle.
  * text: single circle character; backgroundColor: hex or null (null = use ThemeColor in caller); tooltip: schematic string.
@@ -100,10 +111,11 @@ function ownershipEngagementRisk100(c) {
  * Canonical "Interaction Quality" risk (0-100): max of flooding, response-drill, and diff flooding (burst).
  */
 function interactionQualityRisk100(antipatternBreakdown) {
-    if (!antipatternBreakdown) return 0;
-    const fl = antipatternBreakdown.flooding?.risk0To100 ?? 0;
-    const rd = antipatternBreakdown.responseDrill?.risk0To100 ?? 0;
-    const df = antipatternBreakdown.diffFlooding?.risk0To100 ?? 0;
+    const b = normalizeBreakdownForDisplay(antipatternBreakdown);
+    if (!b) return 0;
+    const fl = b.flooding?.risk0To100 ?? 0;
+    const rd = b.responseDrill?.risk0To100 ?? 0;
+    const df = b.diffFlooding?.risk0To100 ?? 0;
     return Math.max(fl, rd, df);
 }
 
@@ -112,6 +124,7 @@ function interactionQualityRisk100(antipatternBreakdown) {
  * @param {Object} [antipatternBreakdown] - Result of awarenessEngine.getAntipatternBreakdown()
  */
 function buildSchematicTooltip(scoreData, scoreBreakdown, currentMode, antipatternBreakdown) {
+    antipatternBreakdown = normalizeBreakdownForDisplay(antipatternBreakdown);
     const modeLabel = (currentMode || 'unknown').toUpperCase();
     const score = Math.max(0, Math.min(100, scoreData.total || 0));
     const c = scoreData.components || {};
@@ -178,6 +191,7 @@ function buildSchematicTooltip(scoreData, scoreBreakdown, currentMode, antipatte
  * @param {Object} [antipatternBreakdown] - Result of awarenessEngine.getAntipatternBreakdown()
  */
 function buildDashboardMarkdown(scoreData, scoreBreakdown, currentMode, antipatternBreakdown) {
+    antipatternBreakdown = normalizeBreakdownForDisplay(antipatternBreakdown);
     const modeLabel = (currentMode || 'unknown').toUpperCase();
     const score = Math.max(0, Math.min(100, scoreData.total || 0));
     const c = scoreData.components || {};
@@ -275,10 +289,13 @@ function riskToArcColor(pct) {
 }
 
 /**
- * Build HTML for Webview dashboard with 4 canonical meters (circular gauges) and breakdown.
- * Optional future placeholders for Architecture & Responsibility and AI Mental Model.
+ * Build HTML for Webview dashboard with 4 canonical meters (circular gauges), breakdown, Output (token usage + events), and capabilities.
  */
-function buildDashboardWebviewHtml(scoreData, scoreBreakdown, currentMode, antipatternBreakdown) {
+function buildDashboardWebviewHtml(scoreData, scoreBreakdown, currentMode, antipatternBreakdown, events, tokenUsage, capabilities) {
+    antipatternBreakdown = normalizeBreakdownForDisplay(antipatternBreakdown);
+    events = Array.isArray(events) ? events : [];
+    tokenUsage = tokenUsage || { totalInput: 0, totalOutput: 0, totalTokens: 0, lastUpdatedTs: 0, usageApiAvailable: false };
+    capabilities = capabilities || { git: false, ast: false, tasksObserved: false, usageApiAvailable: false };
     const modeLabel = (currentMode || 'unknown').toUpperCase();
     const score = Math.max(0, Math.min(100, scoreData.total || 0));
     const c = scoreData.components || {};
@@ -354,6 +371,26 @@ function buildDashboardWebviewHtml(scoreData, scoreBreakdown, currentMode, antip
         breakdownHtml += `<p class="breakdown test-theater-hint">Test theater risk: ${testTheaterRisk}% (shallow/snapshot-heavy tests as merge token; research-backed, experimental).</p>`;
     }
 
+    let outputHtml = '<div class="output-section"><h2>Output</h2>';
+    if (capabilities.usageApiAvailable && tokenUsage.totalTokens >= 0) {
+        outputHtml += '<div class="token-usage-block"><strong>Token usage</strong> — Input: ' + (tokenUsage.totalInput || 0) + ', Output: ' + (tokenUsage.totalOutput || 0) + ', Total: ' + (tokenUsage.totalTokens || 0);
+        if (tokenUsage.costCents != null) outputHtml += ', Cost: ' + (tokenUsage.costCents / 100).toFixed(2) + ' USD';
+        outputHtml += '</div>';
+    } else {
+        outputHtml += '<div class="token-usage-block token-unavailable">Token usage unavailable (set session token in extension state or use Cursor usage API).</div>';
+    }
+    outputHtml += '<h3>Events</h3><ul class="events-list">';
+    if (events.length === 0) {
+        outputHtml += '<li><em>No events</em></li>';
+    } else {
+        events.slice(0, 30).forEach((e) => {
+            const ts = e.ts ? new Date(e.ts).toLocaleTimeString() : '';
+            const sev = e.severity || 'info';
+            outputHtml += '<li class="event-sev-' + escapeHtml(sev) + '"><code>' + escapeHtml(ts) + '</code> ' + escapeHtml(e.label || e.type || '') + (e.detail ? ' — ' + escapeHtml(e.detail) : '') + '</li>';
+        });
+    }
+    outputHtml += '</ul><p class="capabilities-note">Capabilities: git ' + (capabilities.git ? 'on' : 'off') + ', ast ' + (capabilities.ast ? 'on' : 'off') + ', usage API ' + (capabilities.usageApiAvailable ? 'on' : 'off') + '</p></div>';
+
     const { unopened, unreviewedSuggestions } = getUnopenedAndUnreviewed(scoreData);
     let filesHtml = '<div class="file-lists"><h3>Unopened files (debt): ' + unopened.count + '</h3><ul>';
     (unopened.files || []).slice(0, 15).forEach(f => {
@@ -398,6 +435,14 @@ function buildDashboardWebviewHtml(scoreData, scoreBreakdown, currentMode, antip
     .test-theater-hint { font-size: 0.8rem; opacity: 0.9; margin: 0.25rem 0 0 0; font-style: italic; }
     .gauge-future { opacity: 0.5; }
     .gauge-future .gauge-label { font-style: italic; }
+    .output-section { margin-top: 1.5rem; }
+    .output-section h2 { font-size: 1rem; margin: 1rem 0 0.5rem 0; }
+    .token-usage-block { font-size: 0.85rem; margin: 0.25rem 0; }
+    .token-unavailable { opacity: 0.8; font-style: italic; }
+    .events-list { margin: 0.25rem 0; padding-left: 1.25rem; font-size: 0.85rem; }
+    .event-sev-high { color: var(--vscode-errorForeground, #e53935); }
+    .event-sev-warn { opacity: 0.95; }
+    .capabilities-note { font-size: 0.75rem; opacity: 0.7; margin-top: 0.5rem; }
   </style>
 </head>
 <body>
@@ -408,6 +453,7 @@ function buildDashboardWebviewHtml(scoreData, scoreBreakdown, currentMode, antip
   <h2>Canonical meters</h2>
   <div class="gauges">${gaugesHtml}${futureGaugesHtml}</div>
   ${breakdownHtml}
+  ${outputHtml}
   <p class="raw-scores"><em>Raw scores: ${escapeHtml(rawScores)}</em></p>
   <p class="docs-note">Meters align with research-backed antipatterns: blind acceptance, verification debt, silent drift, context dilution, over-delegation, prompt thrash, test theater, diff flooding (see <code>docs/2026-02-03_17-41-ai-agent-antipatterns-research-taxonomy.md</code>). GitClear 2025 &amp; DORA 2024: churn, duplication, defect rate. Details: <code>docs/ANTIPATTERN-METERS-REVIEW.md</code>.</p>
   ${filesHtml}
@@ -426,6 +472,7 @@ module.exports = {
     buildSchematicTooltip,
     buildDashboardMarkdown,
     buildDashboardWebviewHtml,
+    normalizeBreakdownForDisplay,
     riskToArcColor,
     RISK_TO_BG,
     componentToRisk100

@@ -26,6 +26,12 @@ const { buildDiffBullets } = require('./utilities/diffBulletService');
 const { aggregateDuplicateRisk } = require('./utilities/duplicateBlockDetector');
 const path = require('path');
 
+/** Contract A: wrap value in uniform envelope { value, meta, updatedTs }. */
+function antipatternEnvelope(value, meta, updatedTs) {
+    const ts = updatedTs != null ? updatedTs : Date.now();
+    return { value, meta: meta || { scale: 'continuous', reliability: 'high', render: 'gauge' }, updatedTs: ts };
+}
+
 /** True if path looks like a test file (e.g. *.test.js, *.spec.js, __tests__/, test/). */
 function isTestFilePath(filePath) {
     const p = (filePath || '').replace(/\\/g, '/');
@@ -146,6 +152,18 @@ class AwarenessEngine {
         // Optional LLM enrichment (wired from composition root)
         this.llmInsightService = null;
         this.llmInsightStore = null;
+        /** Optional: set by composition root for getAntipatternEvents and boundary/async breakdown. */
+        this.antiPatternEventStore = null;
+        this.codeAnalysisService = null;
+    }
+
+    /**
+     * Set antipattern event store and optional code analysis service (for boundary detector, etc.).
+     * @param {Object} opts - { antiPatternEventStore, codeAnalysisService }
+     */
+    setAntipatternServices(opts) {
+        if (opts && opts.antiPatternEventStore != null) this.antiPatternEventStore = opts.antiPatternEventStore;
+        if (opts && opts.codeAnalysisService != null) this.codeAnalysisService = opts.codeAnalysisService;
     }
 
     /**
@@ -625,22 +643,23 @@ class AwarenessEngine {
      * @returns {Object} { flooding, responseDrill, contextSpread, comprehensionDebt?, verificationDebt? }
      */
     getAntipatternBreakdown() {
+        const now = Date.now();
+        const emptyValue = (v, meta) => antipatternEnvelope(v, meta, now);
         const empty = {
-            flooding: { count: 0, risk0To100: 0 },
-            responseDrill: { count: 0, risk0To100: 0 },
-            contextSpread: { maxBatchSize: 0, distinctFiles: 0, risk0To100: 0 },
-            diffFlooding: { maxBurstInWindow: 0, risk0To100: 0 },
-            comprehensionDebt: { risk0To100: 0 },
-            verificationDebt: { acceptedWithoutVerification: 0, acceptedTotal: 0, risk0To100: 0 },
-            testTheater: { risk0To100: 0 },
-            boundaryViolations: { risk0To100: 0 },
-            observabilityNeglect: { risk0To100: 0 }
+            flooding: emptyValue({ count: 0, risk0To100: 0 }, { scale: 'continuous', reliability: 'high', render: 'gauge' }),
+            responseDrill: emptyValue({ count: 0, risk0To100: 0 }, { scale: 'continuous', reliability: 'high', render: 'gauge' }),
+            contextSpread: emptyValue({ maxBatchSize: 0, distinctFiles: 0, risk0To100: 0 }, { scale: 'continuous', reliability: 'high', render: 'gauge' }),
+            diffFlooding: emptyValue({ maxBurstInWindow: 0, risk0To100: 0 }, { scale: 'continuous', reliability: 'high', render: 'gauge' }),
+            comprehensionDebt: emptyValue({ risk0To100: 0 }, { scale: 'continuous', reliability: 'high', render: 'gauge' }),
+            verificationDebt: emptyValue({ acceptedWithoutVerification: 0, acceptedTotal: 0, risk0To100: 0 }, { scale: 'continuous', reliability: 'high', render: 'gauge' }),
+            testTheater: emptyValue({ risk0To100: 0 }, { scale: 'continuous', reliability: 'heuristic', render: 'trend_confidence' }),
+            boundaryViolations: emptyValue({ risk0To100: 0, violations: [], newEdgesThisWeek: 0 }, { scale: 'continuous', reliability: 'high', render: 'gauge' }),
+            observabilityNeglect: emptyValue({ risk0To100: 0 }, { scale: 'continuous', reliability: 'high', render: 'gauge' })
         };
         if (!this.suggestionAggregate) return empty;
 
         const batches = this.suggestionAggregate.getBatches();
         const suggestions = this.suggestionAggregate.getSuggestions();
-        const now = Date.now();
         const FLOODING_WINDOW_MS = 5 * 60 * 1000;   // 5 min
         const DRILL_WINDOW_MS = 5 * 60 * 1000;    // 5 min
         const SPREAD_WINDOW_MS = 10 * 60 * 1000;  // 10 min
@@ -696,25 +715,40 @@ class AwarenessEngine {
             : 0;
 
         // Verification debt (research: AI-touched accepted with no tests/review/save/debug signal)
-        const accepted = completed.filter(s => s.status === 'fully_accepted' || s.status === 'partially_accepted');
+        // Use accepted/adapted (per Suggestion entity); backward compat: fully_accepted/partially_accepted in saved data
+        const isAcceptedOrAdapted = (s) => s.status === 'accepted' || s.status === 'adapted' ||
+            s.status === 'fully_accepted' || s.status === 'partially_accepted';
+        const accepted = completed.filter(isAcceptedOrAdapted);
         const recentAccepted = accepted.filter(s => (now - (s.timestamp || 0)) <= COMPOSITE_WINDOW_MS);
-        const withoutVerification = recentAccepted.filter(s => !(s.hasVerificationSignal && s.hasVerificationSignal()));
+        const withoutVerification = recentAccepted.filter(s => !(s.hasVerification && s.hasVerification()));
         const acceptedTotal = recentAccepted.length;
         const verificationDebtRisk = acceptedTotal > 0
             ? Math.min(100, Math.round((withoutVerification.length / acceptedTotal) * 100))
             : 0;
 
+        const meta = (reliability, render) => ({ scale: 'continuous', reliability, render });
         return {
-            flooding: { count: floodingCount, risk0To100: floodingRisk },
-            responseDrill: { count: responseDrillCount, risk0To100: responseDrillRisk },
-            contextSpread: { maxBatchSize, distinctFiles, risk0To100: contextSpreadRisk },
-            diffFlooding: { maxBurstInWindow, risk0To100: diffFloodingRisk },
-            comprehensionDebt: { risk0To100: comprehensionDebtRisk },
-            verificationDebt: { acceptedWithoutVerification: withoutVerification.length, acceptedTotal, risk0To100: verificationDebtRisk },
-            testTheater: { risk0To100: 0 },
-            boundaryViolations: { risk0To100: 0 },
-            observabilityNeglect: { risk0To100: 0 }
+            flooding: antipatternEnvelope({ count: floodingCount, risk0To100: floodingRisk }, meta('high', 'gauge'), now),
+            responseDrill: antipatternEnvelope({ count: responseDrillCount, risk0To100: responseDrillRisk }, meta('high', 'gauge'), now),
+            contextSpread: antipatternEnvelope({ maxBatchSize, distinctFiles, risk0To100: contextSpreadRisk }, meta('high', 'gauge'), now),
+            diffFlooding: antipatternEnvelope({ maxBurstInWindow, risk0To100: diffFloodingRisk }, meta('high', 'gauge'), now),
+            comprehensionDebt: antipatternEnvelope({ risk0To100: comprehensionDebtRisk }, meta('high', 'gauge'), now),
+            verificationDebt: antipatternEnvelope({ acceptedWithoutVerification: withoutVerification.length, acceptedTotal, risk0To100: verificationDebtRisk }, meta('high', 'gauge'), now),
+            testTheater: antipatternEnvelope({ risk0To100: 0 }, meta('heuristic', 'trend_confidence'), now),
+            boundaryViolations: antipatternEnvelope({ risk0To100: 0, violations: [], newEdgesThisWeek: 0 }, meta('high', 'gauge'), now),
+            observabilityNeglect: antipatternEnvelope({ risk0To100: 0 }, meta('high', 'gauge'), now)
         };
+    }
+
+    /**
+     * Get antipattern events for dashboard Events section (Contract E). Backed by AntiPatternEventStore.
+     * @param {number} [sinceTs] - Return events with ts >= sinceTs (default: 0)
+     * @returns {Promise<Array<{ ts: number, type: string, label: string, detail?: string, severity?: string }>>}
+     */
+    async getAntipatternEvents(sinceTs) {
+        const store = this.antiPatternEventStore;
+        if (!store || typeof store.query !== 'function') return [];
+        return store.query(sinceTs != null ? sinceTs : 0, { dedupe: true });
     }
 
     /**
@@ -724,24 +758,26 @@ class AwarenessEngine {
      */
     async getAntipatternBreakdownAsync() {
         const sync = this.getAntipatternBreakdown();
-        const emptyDuplication = { fileCountWithDuplicates: 0, totalDuplicateBlocks: 0, risk0To100: 0 };
+        const now = Date.now();
+        const meta = (reliability, render) => ({ scale: 'continuous', reliability, render });
+        const emptyDuplication = antipatternEnvelope({ fileCountWithDuplicates: 0, totalDuplicateBlocks: 0, risk0To100: 0 }, meta('high', 'gauge'), now);
         if (!this.suggestionAggregate || !this.vscodeAdapter) {
             return { ...sync, duplication: emptyDuplication };
         }
         const SPREAD_WINDOW_MS = 10 * 60 * 1000;
-        const now = Date.now();
         const batches = this.suggestionAggregate.getBatches();
         const recentForSpread = batches.filter(b => (now - (b.timestamp || 0)) <= SPREAD_WINDOW_MS);
         const filesSet = new Set();
         recentForSpread.forEach(b => { if (b.filePath) filesSet.add(b.filePath); });
-        if (filesSet.size === 0) {
+        const filePaths = Array.from(filesSet);
+        if (filePaths.length === 0) {
             return { ...sync, duplication: emptyDuplication };
         }
         const Uri = this.vscodeAdapter.Uri;
         const workspaceFolders = this.vscodeAdapter.workspaceFolders || [];
         const root = workspaceFolders[0] ? workspaceFolders[0].uri.fsPath : '';
         const filesWithContent = [];
-        for (const filePath of filesSet) {
+        for (const filePath of filePaths) {
             try {
                 const abs = path.isAbsolute(filePath) ? filePath : path.join(root, filePath);
                 const uri = Uri.file(abs);
@@ -754,7 +790,39 @@ class AwarenessEngine {
         }
         const duplication = aggregateDuplicateRisk(filesWithContent);
         const testTheater = computeTestTheaterFromFiles(filesWithContent);
-        return { ...sync, duplication, testTheater: { snapshotRatio: testTheater.snapshotRatio, trivialAssertRatio: testTheater.trivialAssertRatio, risk0To100: testTheater.risk0To100 } };
+        let boundaryResult = sync.boundaryViolations.value;
+        if (this.codeAnalysisService && this.antiPatternEventStore && filePaths.length > 0) {
+            try {
+                const boundaryViolationDetector = require('./antipatterns/boundaryViolationDetector');
+                const ctx = { filePaths, codeAnalysisService: this.codeAnalysisService };
+                const out = await boundaryViolationDetector.compute(ctx, null, { maxFilesPerCycle: 10, maxWorkMsPerTick: 15 });
+                boundaryResult = { risk0To100: out.risk0To100, violations: out.violations || [], newEdgesThisWeek: 0 };
+                for (const v of out.violations || []) {
+                    await this.antiPatternEventStore.append({
+                        type: 'boundary_violation',
+                        label: 'Boundary violation',
+                        detail: v.ruleId + ' in ' + v.filePath,
+                        primaryEntity: v.filePath,
+                        ruleId: v.ruleId,
+                        context: {}
+                    }).catch(() => {});
+                }
+            } catch (_) {}
+        }
+        return {
+            ...sync,
+            testTheater: antipatternEnvelope(
+                { snapshotRatio: testTheater.snapshotRatio, trivialAssertRatio: testTheater.trivialAssertRatio, risk0To100: testTheater.risk0To100 },
+                meta('heuristic', 'trend_confidence'),
+                now
+            ),
+            boundaryViolations: antipatternEnvelope(boundaryResult, meta('high', 'gauge'), now),
+            duplication: antipatternEnvelope(
+                { fileCountWithDuplicates: duplication.fileCountWithDuplicates ?? 0, totalDuplicateBlocks: duplication.totalDuplicateBlocks ?? 0, risk0To100: duplication.risk0To100 ?? 0 },
+                meta('high', 'gauge'),
+                now
+            )
+        };
     }
 
     /**

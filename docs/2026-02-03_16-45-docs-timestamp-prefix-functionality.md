@@ -52,19 +52,11 @@ The script is implemented in `scripts/create-md.js` and is documented in `script
 Per the rule in `rules.common.md`:
 
 - **Creating** a new doc in `/docs` → always use the timestamp prefix (use the script or generate it manually).
-- **Updating** an existing doc in `/docs` → rename the file with a **new** timestamp prefix to reflect the update time. The old file can be kept for history or deleted.
-
----
-
-## Summary
-
-| Item | Location / Command |
+- **Updating** an existing doc in `/docs` → rename the file with a **new** timestamp prefix to reflect the update time. The old file can be kept for history or deleted.---## Summary| Item | Location / Command |
 |------|--------------------|
 | Naming format | `YYYY-MM-DD_HH-MM-filename.md` |
 | Where the rule is defined | `.cursor/rules.common.md` → “Documentation management” |
 | How it becomes active | ruleAssembler writes common + mode → `.cursor/rules.md` on mode switch |
 | Script to create timestamped doc | `npm run create-md "filename"` or `node scripts/create-md.js "filename" --dir docs` |
 | Script implementation | `scripts/create-md.js` |
-| Script docs | `scripts/README.md` |
-
-Created at 2026-02-03T16:45:50.511Z
+| Script docs | `scripts/README.md` |Created at 2026-02-03T16:45:50.511Z

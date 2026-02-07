@@ -97,6 +97,48 @@ function compose(context, state, container) {
         // LLM module is optional; never fail extension startup.
         adapters.loggerAdapter?.error?.('compositionRoot: Failed to compose LLM module', err);
     }
+
+    // Antipattern event store + code analysis (dashboard, boundary detector)
+    try {
+        const fs = require('fs').promises;
+        const path = require('path');
+        const workspaceFolders = vscode.workspace.workspaceFolders || [];
+        const workspaceRoot = workspaceFolders[0] ? workspaceFolders[0].uri.fsPath : '';
+        if (workspaceRoot) {
+            const AntiPatternEventStore = require('./business_modules/awareness/app/antipatterns/antiPatternEventStore');
+            const { createCodeAnalysisService } = require('./cross-cut-modules/code-analysis/app/CodeAnalysisService');
+            const eventStore = new AntiPatternEventStore(workspaceRoot, { loggerPort: adapters.loggerAdapter });
+            const readFile = async (filePath) => {
+                const abs = path.isAbsolute(filePath) ? filePath : path.join(workspaceRoot, filePath);
+                const content = await fs.readFile(abs, 'utf8').catch(() => null);
+                if (content == null) return null;
+                const stat = await fs.stat(abs).catch(() => null);
+                const mtime = stat && stat.mtime ? (typeof stat.mtime.getTime === 'function' ? stat.mtime.getTime() : stat.mtimeMs || 0) : 0;
+                return { content, mtime, size: stat ? stat.size : 0 };
+            };
+            const codeAnalysisService = createCodeAnalysisService({ readFile, cacheMaxEntries: 200 });
+            awarenessEngine.setAntipatternServices({ antiPatternEventStore: eventStore, codeAnalysisService });
+        }
+    } catch (err) {
+        adapters.loggerAdapter?.error?.('compositionRoot: Failed to compose antipattern services', err);
+    }
+
+    // Token usage monitoring (Cursor usage API)
+    try {
+        const { createCursorUsageApiClient } = require('./business_modules/awareness/app/usage/cursorUsageApiClient');
+        const getToken = async () => {
+            try {
+                const t = await context.secretStorage.get('vibeswitch.cursorUsageToken');
+                return typeof t === 'string' ? t : null;
+            } catch (_) {
+                return null;
+            }
+        };
+        const tokenUsageClient = createCursorUsageApiClient({ getToken, loggerPort: adapters.loggerAdapter });
+        state.tokenUsageClient = tokenUsageClient;
+    } catch (err) {
+        adapters.loggerAdapter?.error?.('compositionRoot: Failed to compose token usage client', err);
+    }
     
     // Store adapters in DI container
     container.setAdapter('awareness', 'vscodeAdapter', adapters.vscodeAdapter);
