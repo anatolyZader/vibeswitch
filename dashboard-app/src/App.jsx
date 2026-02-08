@@ -1,5 +1,7 @@
 const React = require('react');
 const MetersSection = require('./MetersSection').default;
+const TokenUsageSection = require('./TokenUsageSection').default;
+const FilesSection = require('./FilesSection').default;
 const OutputSection = require('./OutputSection').default;
 const ChatSection = require('./ChatSection').default;
 
@@ -42,15 +44,23 @@ function App({ vscode }) {
           Mode: {(payload.currentMode || 'unknown').toUpperCase()} &middot; Risk: {Math.max(0, Math.min(100, payload.scoreData?.total ?? 0))}/100
         </p>
       </header>
-      <section className="dashboard-meters">
+      <section className="dashboard-section dashboard-meters">
         <h2>Meters</h2>
         <MetersSection payload={payload} />
       </section>
-      <section className="dashboard-output">
+      <section className="dashboard-section dashboard-token-usage">
+        <h2>Token usage</h2>
+        <TokenUsageSection payload={payload} />
+      </section>
+      <section className="dashboard-section dashboard-files">
+        <h2>Unopened files and unreviewed changes</h2>
+        <FilesSection payload={payload} />
+      </section>
+      <section className="dashboard-section dashboard-output">
         <h2>Output</h2>
         <OutputSection payload={payload} />
       </section>
-      <section className="dashboard-chat">
+      <section className="dashboard-section dashboard-chat">
         <h2>Chat</h2>
         <ChatSection payload={payload} sendChat={sendChat} vscode={vscode} />
       </section>

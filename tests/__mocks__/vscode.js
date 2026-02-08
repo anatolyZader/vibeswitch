@@ -2,7 +2,23 @@
  * Mock vscode module for Jest tests
  */
 
+class EventEmitter {
+    constructor() {
+        this._listeners = [];
+    }
+    get event() {
+        return (listener) => {
+            this._listeners.push(listener);
+            return { dispose: () => {} };
+        };
+    }
+    fire(data) {
+        this._listeners.forEach(l => l(data));
+    }
+}
+
 module.exports = {
+    EventEmitter,
     Uri: {
         parse: (uri) => ({ 
             scheme: uri.startsWith('file://') ? 'file' : 'http',

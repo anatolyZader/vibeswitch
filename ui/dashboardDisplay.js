@@ -6,7 +6,7 @@ const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
 const { buildDashboardMarkdown, buildDashboardWebviewHtml, normalizeBreakdownForDisplay } = require('./dashboardContent');
-const dashboardChatService = require('../business_modules/awareness/app/dashboard/dashboardChatService');
+const dashboardChat = require('../business_modules/dashboard-chat');
 
 const DASHBOARD_URI_SCHEME = 'vibeswitch-dashboard';
 const DASHBOARD_URI_AUTHORITY = 'awareness';
@@ -59,6 +59,10 @@ function buildReactDashboardHtml(webview, extensionUri) {
     .dashboard-meta{opacity:0.9;margin:0;}
     section{margin:1.5rem 0;}
     section h2{font-size:1rem;margin:0 0 0.5rem 0;}
+    .dashboard-section{border-top:1px solid var(--vscode-widget-border);padding-top:1rem;margin-top:1rem;}
+    .dashboard-section:first-of-type{border-top:none;margin-top:0;padding-top:0;}
+    .files-section .files-list{margin:0.25rem 0;padding-left:1.25rem;font-size:0.85rem;}
+    .files-section .file-age{opacity:0.8;font-size:0.8em;}
     .gauges{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:1rem;}
     .gauge-cell{text-align:center;}
     .gauge-svg{width:64px;height:64px;display:block;margin:0 auto;}
@@ -66,22 +70,33 @@ function buildReactDashboardHtml(webview, extensionUri) {
     .gauge-arc{fill:none;stroke-linecap:round;}
     .gauge-label{font-size:0.7rem;margin-top:0.25rem;}
     .gauge-pct{font-size:0.75rem;font-weight:600;}
+    .token-usage-section .token-usage-block{margin:0.25rem 0;}
     .output-section .token-usage-block{margin:0.25rem 0;}
     .token-unavailable{opacity:0.8;font-style:italic;}
     .events-list{margin:0.25rem 0;padding-left:1.25rem;font-size:0.85rem;}
+    .output-messages{margin:0.25rem 0;padding-left:1.25rem;font-size:0.85rem;list-style:disc;}
+    .output-entry{margin:0.2rem 0;}
+    .output-empty{opacity:0.8;margin:0.25rem 0;font-size:0.9rem;}
     .event-sev-high{color:var(--vscode-errorForeground,#e53935);}
     .capabilities-note{font-size:0.75rem;opacity:0.7;margin-top:0.5rem;}
-    .chat-section{border-top:1px solid var(--vscode-widget-border);padding-top:1rem;}
     .chat-hint{font-size:0.85rem;opacity:0.9;margin:0 0 0.5rem 0;}
-    .chat-messages{max-height:200px;overflow-y:auto;margin:0.5rem 0;padding:0.5rem;background:var(--vscode-input-background);border-radius:4px;}
-    .chat-placeholder{opacity:0.7;}
-    .chat-message{margin:0.5rem 0;}
-    .chat-user,.chat-assistant{margin:0.25rem 0;}
-    .chat-error{color:var(--vscode-errorForeground);font-size:0.85rem;}
-    .chat-typing{opacity:0.7;}
-    .chat-input-row{display:flex;gap:0.5rem;}
-    .chat-input{flex:1;padding:0.35rem 0.5rem;}
-    .chat-send{padding:0.35rem 0.75rem;}
+    .chat-messages{min-height:120px;max-height:280px;overflow-y:auto;margin:0.5rem 0;padding:0.5rem 0;}
+    .chat-placeholder{opacity:0.6;font-size:0.9rem;padding:1rem;text-align:center;}
+    .chat-message-group{margin-bottom:1rem;}
+    .chat-row{display:flex;margin:0.25rem 0;}
+    .chat-row-user{justify-content:flex-end;}
+    .chat-row-assistant{justify-content:flex-start;}
+    .chat-bubble{max-width:85%;padding:0.5rem 0.75rem;border-radius:12px;font-size:var(--vscode-font-size);line-height:1.45;word-break:break-word;}
+    .chat-bubble-user{background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border,transparent);}
+    .chat-bubble-assistant{background:var(--vscode-editor-inactiveSelectionBackground,var(--vscode-widget-border));color:var(--vscode-foreground);border:1px solid var(--vscode-widget-border);}
+    .chat-bubble-error{background:var(--vscode-inputValidation-errorBackground);color:var(--vscode-errorForeground);border:1px solid var(--vscode-inputValidation-errorBorder);}
+    .chat-typing{opacity:0.8;}
+    .chat-input-row{display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0;border-top:1px solid var(--vscode-widget-border);margin-top:0.25rem;}
+    .chat-input{flex:1;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid var(--vscode-input-border);background:var(--vscode-input-background);color:var(--vscode-input-foreground);font-size:var(--vscode-font-size);}
+    .chat-input:focus{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px;}
+    .chat-send{padding:0.5rem 1rem;border-radius:8px;border:1px solid var(--vscode-button-border);background:var(--vscode-button-background);color:var(--vscode-button-foreground);font-size:var(--vscode-font-size);cursor:pointer;}
+    .chat-send:hover:not(:disabled){background:var(--vscode-button-hoverBackground);}
+    .chat-send:disabled{opacity:0.5;cursor:default;}
   </style>
 </head>
 <body>
@@ -199,11 +214,12 @@ async function openDashboard(awarenessEngine, currentMode, contentProvider, stat
             const stubReply = `(Read-only assistant) You asked: "${msg.text}". ${stubSummary} I cannot edit files or run commands.`;
             const logger = state && state.outputChannel ? { log: () => {}, error: (m, e) => { state.outputChannel.appendLine('[DashboardChat] ' + m + (e && e.message ? ' ' + e.message : '')); } } : undefined;
             try {
-                const result = await dashboardChatService.reply(vscode, payload, msg.text, logger);
-                const text = result.text != null ? result.text : stubReply;
-                panel.webview.postMessage({ command: 'chatReply', id: msg.id, text, error: result.error || undefined });
+                const result = await dashboardChat.reply(vscode, payload, msg.text, logger);
+                const text = result.text != null ? result.text : (result.error || stubReply);
+                const isConfigMessage = result.error && (result.error.includes('API key') || result.error.includes('disabled'));
+                panel.webview.postMessage({ command: 'chatReply', id: msg.id, text, error: !isConfigMessage ? (result.error || undefined) : undefined });
             } catch (err) {
-                panel.webview.postMessage({ command: 'chatReply', id: msg.id, text: stubReply, error: err.message || 'Request failed' });
+                panel.webview.postMessage({ command: 'chatReply', id: msg.id, text: err.message || stubReply, error: err.message || 'Request failed' });
             }
         });
         if (state) state.useReactDashboard = true;
@@ -226,5 +242,7 @@ async function openDashboard(awarenessEngine, currentMode, contentProvider, stat
 module.exports = {
     openDashboard,
     getDashboardUri,
-    DashboardContentProvider
+    DashboardContentProvider,
+    buildReactDashboardHtml,
+    sendPayloadToWebview
 };

@@ -333,6 +333,11 @@
           "default": 15000,
           "description": "Timeout for dashboard chat LLM request (ms)."
         },
+        "vibeswitch.dashboardChat.includeKeyFiles": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include key files (package.json, README, source) in dashboard chat context via findFiles."
+        },
         "vibeswitch.dashboardChat.openai.apiKey": {
           "type": "string",
           "default": "",
@@ -380,6 +385,7 @@
     "build": "node scripts/build-extension.js && npm run build:dashboard",
     "build:dashboard": "cd dashboard-app && npm install && npm run build",
     "test": "jest",
+    "test:dashboard": "cd dashboard-app && npm test",
     "test:mvp": "jest --testPathIgnorePatterns=sessionTracker.reviewSession --testPathIgnorePatterns=agentSuggestionHandler.batch --testPathIgnorePatterns=awarenessService.adapters --testPathIgnorePatterns=extension.test --testPathIgnorePatterns=tests/electron",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",

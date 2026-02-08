@@ -33,15 +33,23 @@ function ChatSection(props) {
     props.sendChat(id, input.trim());
   }
   return React.createElement('div', { className: 'chat-section' },
-    React.createElement('p', { className: 'chat-hint' }, 'Discuss the dashboard with the read-only subagent (no file edits or commands).'),
+    React.createElement('p', { className: 'chat-hint' }, 'Discuss the dashboard with the read-only subagent (no file edits or commands). Set an OpenAI API key in Settings (VibeSwitch: Dashboard Chat) for full explanations.'),
     React.createElement('div', { className: 'chat-messages', ref: listRef },
       messages.length === 0 && React.createElement('div', { className: 'chat-placeholder' }, 'No messages yet.'),
       messages.map(function (m) {
-        return React.createElement('div', { key: m.id, className: 'chat-message' },
-          React.createElement('div', { className: 'chat-user' }, React.createElement('strong', null, 'You:'), ' ', m.text),
-          m.reply != null && React.createElement('div', { className: 'chat-assistant' }, React.createElement('strong', null, 'Assistant:'), ' ', m.reply),
-          m.error && React.createElement('div', { className: 'chat-error' }, m.error),
-          pendingId === m.id && React.createElement('div', { className: 'chat-assistant chat-typing' }, '…')
+        return React.createElement('div', { key: m.id, className: 'chat-message-group' },
+          React.createElement('div', { className: 'chat-row chat-row-user' },
+            React.createElement('div', { className: 'chat-bubble chat-bubble-user' }, m.text)
+          ),
+          m.reply != null && React.createElement('div', { className: 'chat-row chat-row-assistant' },
+            React.createElement('div', { className: 'chat-bubble chat-bubble-assistant' }, m.reply)
+          ),
+          m.error && React.createElement('div', { className: 'chat-row chat-row-assistant' },
+            React.createElement('div', { className: 'chat-bubble chat-bubble-error' }, m.error)
+          ),
+          pendingId === m.id && React.createElement('div', { className: 'chat-row chat-row-assistant' },
+            React.createElement('div', { className: 'chat-bubble chat-bubble-assistant chat-typing' }, '…')
+          )
         );
       })
     ),

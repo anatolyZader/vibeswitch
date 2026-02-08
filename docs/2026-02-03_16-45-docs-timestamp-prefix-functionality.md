@@ -28,9 +28,7 @@ If the timestamp rule ever “stops working,” it usually means it was only in 
 
 ---
 
-## Creating a New Doc with Timestamp (Script)
-
-Use the project script so the filename gets the correct prefix and the file is created in `/docs`:
+## Creating a New Doc with Timestamp (Script)Use the project script so the filename gets the correct prefix and the file is created in `/docs`:
 
 ```bash
 # From project root
@@ -47,11 +45,7 @@ The script is implemented in `scripts/create-md.js` and is documented in `script
 
 ---
 
-## When to Update the Timestamp
-
-Per the rule in `rules.common.md`:
-
-- **Creating** a new doc in `/docs` → always use the timestamp prefix (use the script or generate it manually).
+## When to Update the TimestampPer the rule in `rules.common.md`:- **Creating** a new doc in `/docs` → always use the timestamp prefix (use the script or generate it manually).
 - **Updating** an existing doc in `/docs` → rename the file with a **new** timestamp prefix to reflect the update time. The old file can be kept for history or deleted.---## Summary| Item | Location / Command |
 |------|--------------------|
 | Naming format | `YYYY-MM-DD_HH-MM-filename.md` |
