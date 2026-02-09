@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# commit-msg hook: validate Conventional Commits format.
+# Install: cp hooks/commit-msg .git/hooks/commit-msg && chmod +x .git/hooks/commit-msg
+# Or run: npm run setup:hooks
+
+set -euo pipefail
+
+COMMIT_MSG_FILE="$1"
+COMMIT_MSG=$(head -1 "$COMMIT_MSG_FILE")
+
+# Skip merge commits
+if echo "$COMMIT_MSG" | grep -qE '^Merge '; then
+    exit 0
+fi
+
+# Validate Conventional Commits format: type(scope): description
+# Types: feat, fix, refactor, chore, docs, test, perf, ci, build, revert
+PATTERN='^(feat|fix|refactor|chore|docs|test|perf|ci|build|revert)(\(.+\))?(!)?: .+'
+if ! echo "$COMMIT_MSG" | grep -qE "$PATTERN"; then
+    echo "❌ ERROR: Commit message does not follow Conventional Commits format."
+    echo ""
+    echo "   Expected: <type>(<scope>): <description>"
+    echo ""
+    echo "   Types: feat, fix, refactor, chore, docs, test, perf, ci, build, revert"
+    echo "   Examples:"
+    echo "     feat(extension): add dashboard webview shell"
+    echo "     fix(awareness): correct verification-debt filter"
+    echo "     chore(infra): add CI workflow"
+    echo ""
+    echo "   Your message: $COMMIT_MSG"
+    echo ""
+    echo "   To bypass: git commit --no-verify"
+    exit 1
+fi
+
+echo "  ✓ Commit message format OK: $COMMIT_MSG"

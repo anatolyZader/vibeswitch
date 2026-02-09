@@ -392,7 +392,11 @@
     "test:electron": "VIBESWITCH_INTEGRATION_TEST=1 node tests/electron/runTest.js",
     "package": "npm run build && vsce package",
     "lint": "eslint . --ext .js,.jsx --max-warnings 150",
-    "create-md": "node scripts/create-md.js"
+    "create-md": "node scripts/create-md.js",
+    "setup:hooks": "cp hooks/pre-commit .git/hooks/pre-commit && cp hooks/commit-msg .git/hooks/commit-msg && chmod +x .git/hooks/pre-commit .git/hooks/commit-msg && echo 'Git hooks installed.'",
+    "setup:labels": "node .github/sync-labels.js",
+    "setup:branch-protection": "bash .github/setup-branch-protection.sh",
+    "setup": "npm run setup:hooks && echo 'Run npm run setup:labels and npm run setup:branch-protection with admin credentials.'"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
