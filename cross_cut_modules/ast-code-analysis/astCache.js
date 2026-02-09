@@ -1,21 +1,16 @@
-/**
- * astCache - In-memory cache for AST and derived data. Key: filePath + mtime + size.
- */
+'use strict';
 
-const DEFAULT_MAX_ENTRIES = 200;
+const DEFAULT_MAX = 200;
 
 function createAstCache(maxEntries) {
-    const max = typeof maxEntries === 'number' && maxEntries > 0 ? maxEntries : DEFAULT_MAX_ENTRIES;
+    const max = typeof maxEntries === 'number' && maxEntries > 0 ? maxEntries : DEFAULT_MAX;
     const map = new Map();
     const order = [];
 
-    function key(filePath, mtime, size) {
-        return (filePath || '') + '\n' + (mtime ?? '') + '\n' + (size ?? '');
-    }
+    const key = (filePath, mtime, size) => (filePath || '') + '\n' + (mtime ?? '') + '\n' + (size ?? '');
 
     function get(filePath, mtime, size) {
-        const k = key(filePath, mtime, size);
-        return map.get(k) || null;
+        return map.get(key(filePath, mtime, size)) || null;
     }
 
     function set(filePath, mtime, size, value) {
@@ -26,10 +21,7 @@ function createAstCache(maxEntries) {
         }
         map.set(k, value);
         order.push(k);
-        while (order.length > max) {
-            const old = order.shift();
-            map.delete(old);
-        }
+        while (order.length > max) map.delete(order.shift());
     }
 
     function clear() {

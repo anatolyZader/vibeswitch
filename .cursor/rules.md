@@ -324,7 +324,7 @@ For any change that affects logic, provide in this order:
 - **Domain**: `business_modules/<module>/domain/**` tested by `tests/business_modules/<module>/domain/**/*.test.js` (mirror structure)
 - **Application**: `business_modules/<module>/app/**` tested by `tests/business_modules/<module>/app/**/*.test.js`
 - **Infrastructure**: `business_modules/<module>/infrastructure/**` tested by `tests/business_modules/<module>/infrastructure/**/*.test.js`
-- **Cross-cut**: `cross-cut-modules/**` tested by `tests/cross-cut-modules/**/*.test.js`
+- **Cross-cut**: `cross_cut_modules/**` tested by `tests/cross_cut_modules/**/*.test.js`
 
 #### Commit-Style Steps (Mental Model)
 - **Commit 1**: Failing test(s)

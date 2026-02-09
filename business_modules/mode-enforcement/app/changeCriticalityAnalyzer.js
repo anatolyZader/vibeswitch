@@ -553,12 +553,12 @@ async function findScopedJSFiles(workspaceRoot) {
     const fileExtensions = ['.js']; // JavaScript only
 
     // Explicit scope: walk only these directories deterministically
-    // NOTE: This is a heuristic - only scans business_modules, cross-cut-modules, and root files
+    // NOTE: This is a heuristic - only scans business_modules, cross_cut_modules, and root files
     // Other directories (e.g., src/, scripts/, infra/) are excluded from dependency counting
     // To include additional directories, add them to this list
     const scopedDirs = [
         path.join(workspaceRoot, 'business_modules'),
-        path.join(workspaceRoot, 'cross-cut-modules')
+        path.join(workspaceRoot, 'cross_cut_modules')
     ];
 
     // Also include root-level files

@@ -23,7 +23,19 @@ function App({ vscode }) {
     const onMessage = (event) => {
       const msg = event.data;
       if (msg && (msg.type === 'init' || msg.type === 'update') && msg.payload) {
-        setPayload((prev) => ({ ...prev, ...msg.payload }));
+        const next = msg.payload;
+        setPayload((prev) => {
+          const merged = { ...prev, ...next };
+          if (next.scoreData && typeof next.scoreData === 'object' && typeof prev.scoreData === 'object') {
+            merged.scoreData = {
+              ...prev.scoreData,
+              ...next.scoreData,
+              unopenedFiles: next.scoreData.unopenedFiles != null ? next.scoreData.unopenedFiles : prev.scoreData.unopenedFiles,
+              unreviewedSuggestions: next.scoreData.unreviewedSuggestions != null ? next.scoreData.unreviewedSuggestions : prev.scoreData.unreviewedSuggestions
+            };
+          }
+          return merged;
+        });
       }
     };
     window.addEventListener('message', onMessage);

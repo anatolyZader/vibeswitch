@@ -9,18 +9,22 @@ function formatAge(ageMinutes) {
 function getUnopenedAndUnreviewed(scoreData) {
   const unopened = (scoreData && scoreData.unopenedFiles) ? scoreData.unopenedFiles : { count: 0, files: [] };
   const unreviewedSuggestions = (scoreData && scoreData.unreviewedSuggestions) ? scoreData.unreviewedSuggestions : { count: 0, files: [] };
-  if (unopened.count === 0 && unreviewedSuggestions.count === 0 && scoreData && scoreData.debt) {
-    const debtFiles = scoreData.debt.files || [];
-    const pendingFiles = (scoreData.suggestions && scoreData.suggestions.pendingFiles) ? scoreData.suggestions.pendingFiles : [];
-    const pendingCount = (scoreData.suggestions && scoreData.suggestions.pending) != null ? scoreData.suggestions.pending : pendingFiles.length;
+  const debt = scoreData && scoreData.debt;
+  const debtFiles = (debt && (debt.allFiles || debt.files)) || [];
+  const debtTotal = (debt && debt.unreviewedFiles != null) ? debt.unreviewedFiles : debtFiles.length;
+  const pendingFiles = (scoreData && scoreData.suggestions && scoreData.suggestions.pendingFiles) ? scoreData.suggestions.pendingFiles : [];
+  const pendingCount = (scoreData && scoreData.suggestions && scoreData.suggestions.pending != null) ? scoreData.suggestions.pending : pendingFiles.length;
+  const useFallback = (unopened.count === 0 && unreviewedSuggestions.count === 0) && (debtTotal > 0 || pendingCount > 0);
+  if (useFallback && scoreData) {
+    const list = (debt.files || debt.allFiles || []).slice(0, 15).map(f => ({ path: f.path || f.fullPath, fullPath: f.fullPath || f.path, ageMinutes: f.ageMinutes || 0 }));
     return {
-      unopened: { count: debtFiles.length, files: debtFiles.map(f => ({ path: f.path || f.fullPath, fullPath: f.fullPath || f.path, ageMinutes: f.ageMinutes || 0 })) },
+      unopened: { count: debtTotal, files: list },
       unreviewedSuggestions: { count: pendingCount, files: pendingFiles }
     };
   }
   return {
-    unopened: { count: unopened.count || 0, files: unopened.files || [] },
-    unreviewedSuggestions: { count: unreviewedSuggestions.count || 0, files: unreviewedSuggestions.files || [] }
+    unopened: { count: unopened.count != null ? unopened.count : debtTotal, files: unopened.files || [] },
+    unreviewedSuggestions: { count: unreviewedSuggestions.count != null ? unreviewedSuggestions.count : pendingCount, files: unreviewedSuggestions.files || [] }
   };
 }
 

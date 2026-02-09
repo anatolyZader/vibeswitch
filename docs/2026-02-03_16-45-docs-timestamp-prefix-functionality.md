@@ -18,9 +18,7 @@ The active Cursor rules are **assembled**, not stored in a single file:
 
 1. **Rule assembler** (`business_modules/mode/app/ruleAssembler.js`) builds the effective rules by concatenating:
    - **Common rules**: `.cursor/rules.common.md` (applies in all modes)
-   - **Mode rules**: `.cursor/rules.dev.md` (DEV) or `.cursor/rules.vibe.md` (VIBE)
-
-2. On **mode switch**, the VibeSwitch extension writes the assembled text to `.cursor/rules.md`. Cursor uses that file as the active rules.
+   - **Mode rules**: `.cursor/rules.dev.md` (DEV) or `.cursor/rules.vibe.md` (VIBE)2. On **mode switch**, the VibeSwitch extension writes the assembled text to `.cursor/rules.md`. Cursor uses that file as the active rules.
 
 3. The **documentation management** section (including “ALWAYS use timestamp prefix” and “UPDATE timestamp prefix when modifying”) lives in **`rules.common.md`**, so it is included in both DEV and VIBE.
 

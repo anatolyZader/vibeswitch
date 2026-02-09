@@ -29,10 +29,18 @@
   - For isolated single-line changes: add `// @ai` on the same line or immediately above.
 - No exceptions.
 
+## Plan preservation (mandatory)
+- **Save all used plans to the project `plans/` folder** - When you are given or use a plan (e.g. from `.cursor/plans/` or an attached plan file), save a copy to the project root folder `plans/` so the plan is preserved and not deleted automatically. Use the plan's original filename (e.g. `some_feature_123.plan.md`) or a descriptive name with optional timestamp. Do this as soon as you start working from a plan (e.g. at the beginning of the task). The `plans/` folder is the long-term store for plans; do not rely on `.cursor/plans/` to keep them.
+
 ## Documentation management
 - **All markdown documentation files MUST be placed in `/docs` directory** - When creating any new markdown files (documentation, explanations, changelogs, architecture notes, etc.), they must be created in the `/docs` folder at the project root. Create `/docs` if it doesn't exist. No markdown documentation files in root or other directories.
 - **ALWAYS use timestamp prefix for markdown files in `/docs`** - When creating markdown files in `/docs`, ALWAYS prefix the filename with timestamp in format `YYYY-MM-DD_HH-MM-filename.md` (e.g., `2026-01-19_14-30-awareness-score-review.md`). Use `scripts/create-md.js` or `npm run create-md "filename"` or manually generate the timestamp prefix. This ensures chronological sorting and prevents naming conflicts.
 - **UPDATE timestamp prefix when modifying markdown files in `/docs`** - When updating an existing markdown file in `/docs`, ALWAYS rename it with a new timestamp prefix to reflect the update time (same format). Use the script or manual prefix. Old file can be kept for history or deleted.
+
+## Git and PR (mandatory)
+- Always work on a branch (`feat/...`, `fix/...`, `agent/...`); never push directly to `dev` or `main`.
+- When starting a task, create a branch if one does not exist (e.g. `agent/extension/<task>` or `feat/scope/short-desc`).
+- After making changes, remind the user to push the branch and open a PR to `dev` (or `main` for hotfix). Agents never merge; only the user merges.
 
 ## Approval levels (reference)
 | Action | DEV | VIBE |

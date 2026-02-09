@@ -1,6 +1,6 @@
 /**
  * BoundaryViolationDetector - Cross-module/layer import rules (Contract: compute budget, emit events).
- * Uses code-analysis extractImports; compares to config allowlist/denylist. Emits violations to event store.
+ * Uses ast-code-analysis extractImports; compares to config allowlist/denylist. Emits violations to event store.
  */
 
 const path = require('path');
@@ -54,14 +54,14 @@ function violatesRule(filePath, importSource, rules) {
 
 /**
  * Compute boundary violations for a set of files. Respects budget (maxWorkMsPerTick, maxFilesPerCycle).
- * @param {Object} ctx - { filePaths: string[], codeAnalysisService: { getExtractImports }, rules?: array }
+ * @param {Object} ctx - { filePaths: string[], astCodeAnalysisService: { getExtractImports }, rules?: array }
  * @param {{ cancelled?: boolean, isCancelled?: () => boolean }} [cancelToken]
  * @param {{ maxWorkMsPerTick?: number, maxFilesPerCycle?: number }} [budget]
  * @returns {Promise<{ risk0To100: number, violations: Array<{ filePath: string, importPath: string, ruleId: string }> }>}
  */
 async function compute(ctx, cancelToken, budget) {
     const filePaths = ctx.filePaths || [];
-    const codeAnalysisService = ctx.codeAnalysisService;
+    const astCodeAnalysisService = ctx.astCodeAnalysisService;
     const rules = ctx.rules || DEFAULT_RULES;
     const maxFiles = (budget && budget.maxFilesPerCycle) || 10;
     const start = Date.now();
@@ -77,10 +77,10 @@ async function compute(ctx, cancelToken, budget) {
         if (Date.now() - start > maxMs) break;
 
         const filePath = filePaths[i];
-        if (!codeAnalysisService || typeof codeAnalysisService.getExtractImports !== 'function') {
+        if (!astCodeAnalysisService || typeof astCodeAnalysisService.getExtractImports !== 'function') {
             continue;
         }
-        const graph = await codeAnalysisService.getExtractImports(filePath, cancelToken).catch(() => null);
+        const graph = await astCodeAnalysisService.getExtractImports(filePath, cancelToken).catch(() => null);
         if (!graph || !Array.isArray(graph.imports)) continue;
 
         for (const imp of graph.imports) {

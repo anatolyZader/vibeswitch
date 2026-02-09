@@ -129,6 +129,8 @@ async function openDashboard(awarenessEngine, currentMode, contentProvider, stat
     let antipatternBreakdown = null;
     let events = [];
     let tokenUsage = null;
+    let sessionView = [];
+    let moduleView = { modules: {} };
     try {
         scoreData = awarenessEngine.getScore();
         if (typeof awarenessEngine.getScoreBreakdown === 'function') {
@@ -141,6 +143,13 @@ async function openDashboard(awarenessEngine, currentMode, contentProvider, stat
         }
         if (typeof awarenessEngine.getAntipatternEvents === 'function') {
             events = await awarenessEngine.getAntipatternEvents(0).catch(() => []);
+        }
+        if (typeof awarenessEngine.getSessionView === 'function') {
+            const sinceTs = Date.now() - 7 * 24 * 60 * 60 * 1000;
+            sessionView = awarenessEngine.getSessionView(sinceTs) || [];
+        }
+        if (typeof awarenessEngine.getModuleView === 'function') {
+            moduleView = await awarenessEngine.getModuleView().catch(() => ({ modules: {} }));
         }
         if (state && state.tokenUsageClient && typeof state.tokenUsageClient.fetchTokenUsage === 'function') {
             tokenUsage = await state.tokenUsageClient.fetchTokenUsage().catch(() => null);
@@ -164,7 +173,9 @@ async function openDashboard(awarenessEngine, currentMode, contentProvider, stat
         antipatternBreakdown: flatBreakdown,
         events,
         tokenUsage: tokenUsage || { totalInput: 0, totalOutput: 0, totalTokens: 0, usageApiAvailable: false },
-        capabilities
+        capabilities,
+        sessionView,
+        moduleView
     };
 
     const extensionContext = state && state.extensionContext;
@@ -181,7 +192,7 @@ async function openDashboard(awarenessEngine, currentMode, contentProvider, stat
             }
             existingPanel.webview.html = useReact
                 ? buildReactDashboardHtml(existingPanel.webview, extensionContext.extensionUri)
-                : buildDashboardWebviewHtml(scoreData, scoreBreakdown, currentMode, antipatternBreakdown, events, tokenUsage, capabilities);
+                : buildDashboardWebviewHtml(scoreData, scoreBreakdown, currentMode, antipatternBreakdown, events, tokenUsage, capabilities, sessionView, moduleView);
             if (useReact) {
                 state.useReactDashboard = true;
                 setTimeout(() => sendPayloadToWebview(existingPanel, payload), 100);
@@ -224,7 +235,7 @@ async function openDashboard(awarenessEngine, currentMode, contentProvider, stat
         });
         if (state) state.useReactDashboard = true;
     } else {
-        panel.webview.html = buildDashboardWebviewHtml(scoreData, scoreBreakdown, currentMode, antipatternBreakdown, events, tokenUsage, capabilities);
+        panel.webview.html = buildDashboardWebviewHtml(scoreData, scoreBreakdown, currentMode, antipatternBreakdown, events, tokenUsage, capabilities, sessionView, moduleView);
         if (state) state.useReactDashboard = false;
     }
 

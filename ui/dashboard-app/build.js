@@ -1,6 +1,6 @@
 const path = require('path');
 const esbuild = require('esbuild');
-const root = path.resolve(__dirname, '..');
+const root = path.resolve(__dirname, '..', '..');
 const outFile = path.join(root, 'out', 'dashboard-app.js');
 esbuild.build({
   entryPoints: [path.join(__dirname, 'src', 'index.jsx')],

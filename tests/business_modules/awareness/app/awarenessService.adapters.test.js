@@ -116,9 +116,9 @@ describe('AwarenessService with Adapters', () => {
         };
         
         // Simulate text document change
-        expect(().not.toThrow() => {
+        expect(() => {
             mockVSCodeAdapter.simulateTextDocumentChange(mockEvent);
-        });
+        }).not.toThrow();
     });
     
     test('should stop monitoring and clean up', async () => {

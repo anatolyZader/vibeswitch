@@ -106,7 +106,7 @@ function compose(context, state, container) {
         const workspaceRoot = workspaceFolders[0] ? workspaceFolders[0].uri.fsPath : '';
         if (workspaceRoot) {
             const AntiPatternEventStore = require('./business_modules/awareness/app/antipatterns/antiPatternEventStore');
-            const { createCodeAnalysisService } = require('./cross-cut-modules/code-analysis/app/CodeAnalysisService');
+            const { createAstCodeAnalysisService } = require('./cross_cut_modules/ast-code-analysis/AstCodeAnalysisService');
             const eventStore = new AntiPatternEventStore(workspaceRoot, { loggerPort: adapters.loggerAdapter });
             const readFile = async (filePath) => {
                 const abs = path.isAbsolute(filePath) ? filePath : path.join(workspaceRoot, filePath);
@@ -116,8 +116,8 @@ function compose(context, state, container) {
                 const mtime = stat && stat.mtime ? (typeof stat.mtime.getTime === 'function' ? stat.mtime.getTime() : stat.mtimeMs || 0) : 0;
                 return { content, mtime, size: stat ? stat.size : 0 };
             };
-            const codeAnalysisService = createCodeAnalysisService({ readFile, cacheMaxEntries: 200 });
-            awarenessEngine.setAntipatternServices({ antiPatternEventStore: eventStore, codeAnalysisService });
+            const astCodeAnalysisService = createAstCodeAnalysisService({ readFile, cacheMaxEntries: 200 });
+            awarenessEngine.setAntipatternServices({ antiPatternEventStore: eventStore, astCodeAnalysisService });
         }
     } catch (err) {
         adapters.loggerAdapter?.error?.('compositionRoot: Failed to compose antipattern services', err);

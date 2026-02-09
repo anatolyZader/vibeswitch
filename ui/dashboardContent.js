@@ -7,18 +7,22 @@
 function getUnopenedAndUnreviewed(scoreData) {
     const unopened = (scoreData && scoreData.unopenedFiles) ? scoreData.unopenedFiles : { count: 0, files: [] };
     const unreviewedSuggestions = (scoreData && scoreData.unreviewedSuggestions) ? scoreData.unreviewedSuggestions : { count: 0, files: [] };
-    if (unopened.count === 0 && unreviewedSuggestions.count === 0 && scoreData && scoreData.debt) {
-        const debtFiles = scoreData.debt.files || [];
-        const pendingFiles = (scoreData.suggestions && scoreData.suggestions.pendingFiles) ? scoreData.suggestions.pendingFiles : [];
-        const pendingCount = (scoreData.suggestions && scoreData.suggestions.pending) != null ? scoreData.suggestions.pending : pendingFiles.length;
+    const debt = scoreData && scoreData.debt;
+    const debtFiles = (debt && (debt.allFiles || debt.files)) || [];
+    const debtTotal = (debt && debt.unreviewedFiles != null) ? debt.unreviewedFiles : debtFiles.length;
+    const pendingFiles = (scoreData && scoreData.suggestions && scoreData.suggestions.pendingFiles) ? scoreData.suggestions.pendingFiles : [];
+    const pendingCount = (scoreData && scoreData.suggestions && scoreData.suggestions.pending != null) ? scoreData.suggestions.pending : pendingFiles.length;
+    const useFallback = (unopened.count === 0 && unreviewedSuggestions.count === 0) && (debtTotal > 0 || pendingCount > 0);
+    if (useFallback && scoreData) {
+        const list = (debt.files || debt.allFiles || []).slice(0, 15).map(f => ({ path: f.path || f.fullPath, fullPath: f.fullPath || f.path, ageMinutes: f.ageMinutes || 0 }));
         return {
-            unopened: { count: debtFiles.length, files: debtFiles.map(f => ({ path: f.path || f.fullPath, fullPath: f.fullPath || f.path, ageMinutes: f.ageMinutes || 0 })) },
+            unopened: { count: debtTotal, files: list },
             unreviewedSuggestions: { count: pendingCount, files: pendingFiles }
         };
     }
     return {
-        unopened: { count: unopened.count || 0, files: unopened.files || [] },
-        unreviewedSuggestions: { count: unreviewedSuggestions.count || 0, files: unreviewedSuggestions.files || [] }
+        unopened: { count: unopened.count != null ? unopened.count : debtTotal, files: unopened.files || [] },
+        unreviewedSuggestions: { count: unreviewedSuggestions.count != null ? unreviewedSuggestions.count : pendingCount, files: unreviewedSuggestions.files || [] }
     };
 }
 
@@ -289,13 +293,15 @@ function riskToArcColor(pct) {
 }
 
 /**
- * Build HTML for Webview dashboard with 4 canonical meters (circular gauges), breakdown, Output (token usage + events), and capabilities.
+ * Build HTML for Webview dashboard with 4 canonical meters (circular gauges), breakdown, Output (token usage + events), Session/Module/Integration views.
  */
-function buildDashboardWebviewHtml(scoreData, scoreBreakdown, currentMode, antipatternBreakdown, events, tokenUsage, capabilities) {
+function buildDashboardWebviewHtml(scoreData, scoreBreakdown, currentMode, antipatternBreakdown, events, tokenUsage, capabilities, sessionView, moduleView) {
     antipatternBreakdown = normalizeBreakdownForDisplay(antipatternBreakdown);
     events = Array.isArray(events) ? events : [];
     tokenUsage = tokenUsage || { totalInput: 0, totalOutput: 0, totalTokens: 0, lastUpdatedTs: 0, usageApiAvailable: false };
     capabilities = capabilities || { git: false, ast: false, tasksObserved: false, usageApiAvailable: false };
+    sessionView = Array.isArray(sessionView) ? sessionView : [];
+    moduleView = moduleView && moduleView.modules ? moduleView : { modules: {} };
     const modeLabel = (currentMode || 'unknown').toUpperCase();
     const score = Math.max(0, Math.min(100, scoreData.total || 0));
     const c = scoreData.components || {};
@@ -371,6 +377,65 @@ function buildDashboardWebviewHtml(scoreData, scoreBreakdown, currentMode, antip
         breakdownHtml += `<p class="breakdown test-theater-hint">Test theater risk: ${testTheaterRisk}% (shallow/snapshot-heavy tests as merge token; research-backed, experimental).</p>`;
     }
 
+    const riskKeys = ['cargoCultRisk', 'refactorAtrophy', 'additiveBias', 'iterativeChurn', 'semanticClones', 'promptThrash', 'observabilityNeglect', 'verificationDebt', 'comprehensionDebt', 'testTheater', 'boundaryViolations', 'silentDrift'];
+    const riskLabels = { cargoCultRisk: 'Cargo cult', refactorAtrophy: 'Refactor atrophy', additiveBias: 'Additive bias', iterativeChurn: 'Iterative churn', semanticClones: 'Semantic clones', promptThrash: 'Prompt thrash', observabilityNeglect: 'Observability neglect', verificationDebt: 'Verification debt', comprehensionDebt: 'Comprehension debt', testTheater: 'Test theater', boundaryViolations: 'Boundary violations', silentDrift: 'Silent drift' };
+    const getRisk = (key) => {
+        const v = antipatternBreakdown && antipatternBreakdown[key];
+        if (v == null) return 0;
+        return (typeof v === 'object' && typeof v.risk0To100 === 'number') ? v.risk0To100 : (typeof v === 'number' ? v : 0);
+    };
+    const topRisks = riskKeys
+        .map(k => ({ key: k, risk: getRisk(k) }))
+        .filter(r => r.risk > 0)
+        .sort((a, b) => b.risk - a.risk)
+        .slice(0, 3);
+    const top3Html = topRisks.length > 0
+        ? '<p class="breakdown top3-risks"><strong>Top 3 active anti-patterns this week:</strong> ' + topRisks.map(r => escapeHtml(riskLabels[r.key] || r.key) + ' ' + r.risk + '%').join(', ') + '</p>'
+        : '';
+
+    const drift = antipatternBreakdown && antipatternBreakdown.silentDrift;
+    const driftTimeline = drift && drift.driftTimeline && drift.driftTimeline.length ? drift.driftTimeline : [];
+    const driftSparklineHtml = driftTimeline.length > 0
+        ? '<p class="breakdown drift-sparkline"><strong>Drift trend</strong> <span class="sparkline" aria-label="Drift score over time">' + driftTimeline.map((d, i) => '<span class="spark-dot" style="height:' + Math.max(4, (d.score || 0) / 5) + 'px" title="' + (d.score || 0) + '%"></span>').join('') + '</span> ' + (drift.risk0To100 != null ? drift.risk0To100 + '%' : '') + '</p>'
+        : '';
+
+    const llmSmells = antipatternBreakdown && antipatternBreakdown.llmSmells;
+    const aiSafetyHtml = llmSmells
+        ? '<div class="integration-section"><h3>AI Safety Posture</h3><ul class="checklist"><li>Model reproducibility: ' + escapeHtml(llmSmells.reproducibilityStatus || 'unknown') + '</li><li>Runtime safety: ' + escapeHtml(llmSmells.runtimeSafetyPosture || 'unknown') + '</li><li>Schema safety: ' + escapeHtml(llmSmells.schemaSafety || 'unknown') + '</li><li>Prompt governance: ' + escapeHtml(llmSmells.promptGovernance || 'unknown') + '</li></ul></div>'
+        : '';
+
+    let sessionViewHtml = '<div class="session-view-section"><h2>Session view</h2>';
+    if (sessionView.length === 0) {
+        sessionViewHtml += '<p><em>No sessions in the last 7 days.</em></p>';
+    } else {
+        sessionViewHtml += '<ul class="sessions-list">';
+        sessionView.slice(0, 15).forEach(s => {
+            const start = s.startTs ? new Date(s.startTs).toLocaleString() : '';
+            const end = s.endTs ? new Date(s.endTs).toLocaleString() : '';
+            const badges = [];
+            if ((s.aiEventCount || 0) >= 2 && (s.humanEditCount || 0) < 1) badges.push('High blind accept');
+            sessionViewHtml += '<li><code>' + escapeHtml(start) + '</code> – <code>' + escapeHtml(end) + '</code> AI: ' + (s.aiEventCount || 0) + ', Human: ' + (s.humanEditCount || 0) + (badges.length ? ' <span class="badge">' + escapeHtml(badges.join(', ')) + '</span>' : '') + '</li>';
+        });
+        sessionViewHtml += '</ul>';
+    }
+    sessionViewHtml += '</div>';
+
+    let moduleViewHtml = '<div class="module-view-section"><h2>Module view</h2>';
+    const mods = Object.keys(moduleView.modules || {});
+    if (mods.length === 0) {
+        moduleViewHtml += '<p><em>No module data.</em></p>';
+    } else {
+        moduleViewHtml += '<ul class="modules-list">';
+        mods.slice(0, 20).forEach(modName => {
+            const m = moduleView.modules[modName];
+            const violations = (m.boundaryViolations && m.boundaryViolations.length) || 0;
+            const actions = (m.actionQueue && m.actionQueue.length) ? m.actionQueue.join('; ') : '';
+            moduleViewHtml += '<li><strong>' + escapeHtml(modName) + '</strong> Boundary violations: ' + violations + (m.driftScore != null ? ', Drift: ' + m.driftScore + '%' : '') + (actions ? ' — ' + escapeHtml(actions) : '') + '</li>';
+        });
+        moduleViewHtml += '</ul>';
+    }
+    moduleViewHtml += '</div>';
+
     let outputHtml = '<div class="output-section"><h2>Output</h2>';
     if (capabilities.usageApiAvailable && tokenUsage.totalTokens >= 0) {
         outputHtml += '<div class="token-usage-block"><strong>Token usage</strong> — Input: ' + (tokenUsage.totalInput || 0) + ', Output: ' + (tokenUsage.totalOutput || 0) + ', Total: ' + (tokenUsage.totalTokens || 0);
@@ -443,6 +508,17 @@ function buildDashboardWebviewHtml(scoreData, scoreBreakdown, currentMode, antip
     .event-sev-high { color: var(--vscode-errorForeground, #e53935); }
     .event-sev-warn { opacity: 0.95; }
     .capabilities-note { font-size: 0.75rem; opacity: 0.7; margin-top: 0.5rem; }
+    .top3-risks { margin-top: 0.5rem; }
+    .drift-sparkline { margin-top: 0.25rem; }
+    .sparkline { display: inline-flex; align-items: flex-end; gap: 2px; vertical-align: middle; }
+    .spark-dot { display: inline-block; width: 4px; min-width: 4px; background: var(--vscode-charts-blue); border-radius: 1px; }
+    .integration-section { margin-top: 1rem; }
+    .integration-section h3 { font-size: 0.95rem; margin: 0 0 0.5rem 0; }
+    .checklist { margin: 0; padding-left: 1.25rem; font-size: 0.85rem; }
+    .session-view-section, .module-view-section { margin-top: 1.5rem; }
+    .session-view-section h2, .module-view-section h2 { font-size: 1rem; margin: 0 0 0.5rem 0; }
+    .sessions-list, .modules-list { margin: 0.25rem 0; padding-left: 1.25rem; font-size: 0.85rem; }
+    .badge { font-size: 0.75rem; opacity: 0.9; margin-left: 0.25rem; }
   </style>
 </head>
 <body>
@@ -453,6 +529,11 @@ function buildDashboardWebviewHtml(scoreData, scoreBreakdown, currentMode, antip
   <h2>Canonical meters</h2>
   <div class="gauges">${gaugesHtml}${futureGaugesHtml}</div>
   ${breakdownHtml}
+  ${top3Html}
+  ${driftSparklineHtml}
+  ${aiSafetyHtml}
+  ${sessionViewHtml}
+  ${moduleViewHtml}
   ${outputHtml}
   <p class="raw-scores"><em>Raw scores: ${escapeHtml(rawScores)}</em></p>
   <p class="docs-note">Meters align with research-backed antipatterns: blind acceptance, verification debt, silent drift, context dilution, over-delegation, prompt thrash, test theater, diff flooding (see <code>docs/2026-02-03_17-41-ai-agent-antipatterns-research-taxonomy.md</code>). GitClear 2025 &amp; DORA 2024: churn, duplication, defect rate. Details: <code>docs/ANTIPATTERN-METERS-REVIEW.md</code>.</p>

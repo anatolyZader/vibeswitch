@@ -9,6 +9,7 @@
 const DebtService = require('./debt/debtService');
 const ChangeLedgerService = require('./persistence/changeLedgerService');
 const SessionService = require('./sessions/sessionService');
+const { buildSessionsFromLedgerAndAggregate } = require('./sessions/devSessionManager');
 const SuggestionLifecycleService = require('./suggestions/suggestionLifecycleService');
 const ClassificationService = require('./classificationService');
 const TimerRegistry = require('./utilities/timerRegistry');
@@ -154,16 +155,16 @@ class AwarenessEngine {
         this.llmInsightStore = null;
         /** Optional: set by composition root for getAntipatternEvents and boundary/async breakdown. */
         this.antiPatternEventStore = null;
-        this.codeAnalysisService = null;
+        this.astCodeAnalysisService = null;
     }
 
     /**
-     * Set antipattern event store and optional code analysis service (for boundary detector, etc.).
-     * @param {Object} opts - { antiPatternEventStore, codeAnalysisService }
+     * Set antipattern event store and optional AST code analysis service (for boundary detector, etc.).
+     * @param {Object} opts - { antiPatternEventStore, astCodeAnalysisService }
      */
     setAntipatternServices(opts) {
         if (opts && opts.antiPatternEventStore != null) this.antiPatternEventStore = opts.antiPatternEventStore;
-        if (opts && opts.codeAnalysisService != null) this.codeAnalysisService = opts.codeAnalysisService;
+        if (opts && opts.astCodeAnalysisService != null) this.astCodeAnalysisService = opts.astCodeAnalysisService;
     }
 
     /**
@@ -610,9 +611,11 @@ class AwarenessEngine {
 
         // Split into two measures: unopened files (debt files user hasn't opened) and unreviewed suggestions (pending)
         const sessionUris = this.sessionTracker ? this.sessionTracker.getSessionUris() : new Set();
-        const debtFiles = result.debt && result.debt.files ? result.debt.files : [];
-        const unopenedFilesList = debtFiles.filter(f => !sessionUris.has(f.fullPath || f.path || ''));
-        result.unopenedFiles = { count: unopenedFilesList.length, files: unopenedFilesList };
+        const debtAll = result.debt && (result.debt.allFiles || result.debt.files) ? (result.debt.allFiles || result.debt.files) : [];
+        const debtFilesForList = result.debt && result.debt.files ? result.debt.files : [];
+        const unopenedAll = debtAll.filter(f => !sessionUris.has(f.fullPath || f.path || ''));
+        const unopenedFilesList = debtFilesForList.filter(f => !sessionUris.has(f.fullPath || f.path || ''));
+        result.unopenedFiles = { count: unopenedAll.length, files: unopenedFilesList };
         result.unreviewedSuggestions = {
             count: result.suggestions ? result.suggestions.pending : 0,
             files: result.suggestions && result.suggestions.pendingFiles ? result.suggestions.pendingFiles : []
@@ -654,9 +657,17 @@ class AwarenessEngine {
             verificationDebt: emptyValue({ acceptedWithoutVerification: 0, acceptedTotal: 0, risk0To100: 0 }, { scale: 'continuous', reliability: 'high', render: 'gauge' }),
             testTheater: emptyValue({ risk0To100: 0 }, { scale: 'continuous', reliability: 'heuristic', render: 'trend_confidence' }),
             boundaryViolations: emptyValue({ risk0To100: 0, violations: [], newEdgesThisWeek: 0 }, { scale: 'continuous', reliability: 'high', render: 'gauge' }),
-            observabilityNeglect: emptyValue({ risk0To100: 0 }, { scale: 'continuous', reliability: 'high', render: 'gauge' })
+            observabilityNeglect: emptyValue({ risk0To100: 0 }, { scale: 'continuous', reliability: 'high', render: 'gauge' }),
+            cargoCultRisk: emptyValue({ risk0To100: 0, highBlindAcceptSessions: 0, missingEvidenceCount: 0 }, { scale: 'continuous', reliability: 'high', render: 'gauge' }),
+            refactorAtrophy: emptyValue({ risk0To100: 0, refactorActivityRatio: 0 }, { scale: 'continuous', reliability: 'heuristic', render: 'gauge' }),
+            additiveBias: emptyValue({ risk0To100: 0, duplicationCandidates: [], consolidationQueue: [] }, { scale: 'continuous', reliability: 'heuristic', render: 'gauge' }),
+            iterativeChurn: emptyValue({ risk0To100: 0, hotFiles: [], aiAssistedChurnCorrelation: 0 }, { scale: 'continuous', reliability: 'heuristic', render: 'gauge' }),
+            semanticClones: emptyValue({ risk0To100: 0, candidates: [], cloneClusters: [] }, { scale: 'continuous', reliability: 'heuristic', render: 'gauge' }),
+            promptThrash: emptyValue({ risk0To100: 0, thrashLoops: [], specDebtLabel: '' }, { scale: 'continuous', reliability: 'heuristic', render: 'gauge' }),
+            silentDrift: emptyValue({ risk0To100: 0, driftTimeline: [], hotspots: [], rootContributors: [] }, { scale: 'continuous', reliability: 'heuristic', render: 'gauge' }),
+            llmSmells: emptyValue({ reproducibilityStatus: 'unknown', runtimeSafetyPosture: 'unknown', schemaSafety: 'unknown', promptGovernance: 'unknown' }, { scale: 'categorical', reliability: 'low', render: 'checklist' })
         };
-        if (!this.suggestionAggregate) return empty;
+        if (!this.suggestionAggregate) return { ...empty };
 
         const batches = this.suggestionAggregate.getBatches();
         const suggestions = this.suggestionAggregate.getSuggestions();
@@ -726,6 +737,10 @@ class AwarenessEngine {
             ? Math.min(100, Math.round((withoutVerification.length / acceptedTotal) * 100))
             : 0;
 
+        const cargoCultDetector = require('./antipatterns/cargoCultDetector');
+        const sessions = this.changeLedger ? buildSessionsFromLedgerAndAggregate(this.changeLedger, this.suggestionAggregate, { sinceTs: now - COMPOSITE_WINDOW_MS }) : [];
+        const cargoCult = cargoCultDetector.compute({ suggestions, sessions });
+
         const meta = (reliability, render) => ({ scale: 'continuous', reliability, render });
         return {
             flooding: antipatternEnvelope({ count: floodingCount, risk0To100: floodingRisk }, meta('high', 'gauge'), now),
@@ -736,7 +751,15 @@ class AwarenessEngine {
             verificationDebt: antipatternEnvelope({ acceptedWithoutVerification: withoutVerification.length, acceptedTotal, risk0To100: verificationDebtRisk }, meta('high', 'gauge'), now),
             testTheater: antipatternEnvelope({ risk0To100: 0 }, meta('heuristic', 'trend_confidence'), now),
             boundaryViolations: antipatternEnvelope({ risk0To100: 0, violations: [], newEdgesThisWeek: 0 }, meta('high', 'gauge'), now),
-            observabilityNeglect: antipatternEnvelope({ risk0To100: 0 }, meta('high', 'gauge'), now)
+            observabilityNeglect: antipatternEnvelope({ risk0To100: 0 }, meta('high', 'gauge'), now),
+            cargoCultRisk: antipatternEnvelope({ risk0To100: cargoCult.risk0To100, highBlindAcceptSessions: cargoCult.highBlindAcceptSessions, missingEvidenceCount: cargoCult.missingEvidenceCount }, meta('high', 'gauge'), now),
+            refactorAtrophy: antipatternEnvelope({ risk0To100: 0, refactorActivityRatio: 0 }, meta('heuristic', 'gauge'), now),
+            additiveBias: antipatternEnvelope({ risk0To100: 0, duplicationCandidates: [], consolidationQueue: [] }, meta('heuristic', 'gauge'), now),
+            iterativeChurn: antipatternEnvelope({ risk0To100: 0, hotFiles: [], aiAssistedChurnCorrelation: 0 }, meta('heuristic', 'gauge'), now),
+            semanticClones: antipatternEnvelope({ risk0To100: 0, candidates: [], cloneClusters: [] }, meta('heuristic', 'gauge'), now),
+            promptThrash: antipatternEnvelope({ risk0To100: 0, thrashLoops: [], specDebtLabel: '' }, meta('heuristic', 'gauge'), now),
+            silentDrift: antipatternEnvelope({ risk0To100: 0, driftTimeline: [], hotspots: [], rootContributors: [] }, meta('heuristic', 'gauge'), now),
+            llmSmells: antipatternEnvelope({ reproducibilityStatus: 'unknown', runtimeSafetyPosture: 'unknown', schemaSafety: 'unknown', promptGovernance: 'unknown' }, { scale: 'categorical', reliability: 'low', render: 'checklist' }, now)
         };
     }
 
@@ -749,6 +772,19 @@ class AwarenessEngine {
         const store = this.antiPatternEventStore;
         if (!store || typeof store.query !== 'function') return [];
         return store.query(sinceTs != null ? sinceTs : 0, { dedupe: true });
+    }
+
+    /**
+     * Get session view for dashboard: DevSessions built from ledger + aggregate (idle gap 30 min).
+     * @param {number} [sinceTs] - Only include sessions with activity >= sinceTs (default: 0)
+     * @returns {Array<{ startTs: number, endTs: number, focusedFiles: string[], aiEventCount: number, humanEditCount: number, timeline: Array<{ ts: number, type: string }> }>}
+     */
+    getSessionView(sinceTs) {
+        if (!this.changeLedger || !this.suggestionAggregate) return [];
+        return buildSessionsFromLedgerAndAggregate(this.changeLedger, this.suggestionAggregate, {
+            sinceTs: sinceTs != null ? sinceTs : 0,
+            useGetSinceCheckpoint: false
+        });
     }
 
     /**
@@ -770,9 +806,6 @@ class AwarenessEngine {
         const filesSet = new Set();
         recentForSpread.forEach(b => { if (b.filePath) filesSet.add(b.filePath); });
         const filePaths = Array.from(filesSet);
-        if (filePaths.length === 0) {
-            return { ...sync, duplication: emptyDuplication };
-        }
         const Uri = this.vscodeAdapter.Uri;
         const workspaceFolders = this.vscodeAdapter.workspaceFolders || [];
         const root = workspaceFolders[0] ? workspaceFolders[0].uri.fsPath : '';
@@ -788,13 +821,13 @@ class AwarenessEngine {
                 // File not in workspace, deleted, or unreadable — skip
             }
         }
-        const duplication = aggregateDuplicateRisk(filesWithContent);
-        const testTheater = computeTestTheaterFromFiles(filesWithContent);
+        const duplication = filePaths.length > 0 ? aggregateDuplicateRisk(filesWithContent) : { fileCountWithDuplicates: 0, totalDuplicateBlocks: 0, risk0To100: 0 };
+        const testTheater = filePaths.length > 0 ? computeTestTheaterFromFiles(filesWithContent) : { snapshotRatio: 0, trivialAssertRatio: 0, risk0To100: 0 };
         let boundaryResult = sync.boundaryViolations.value;
-        if (this.codeAnalysisService && this.antiPatternEventStore && filePaths.length > 0) {
+        if (this.astCodeAnalysisService && this.antiPatternEventStore && filePaths.length > 0) {
             try {
                 const boundaryViolationDetector = require('./antipatterns/boundaryViolationDetector');
-                const ctx = { filePaths, codeAnalysisService: this.codeAnalysisService };
+                const ctx = { filePaths, astCodeAnalysisService: this.astCodeAnalysisService };
                 const out = await boundaryViolationDetector.compute(ctx, null, { maxFilesPerCycle: 10, maxWorkMsPerTick: 15 });
                 boundaryResult = { risk0To100: out.risk0To100, violations: out.violations || [], newEdgesThisWeek: 0 };
                 for (const v of out.violations || []) {
@@ -809,7 +842,52 @@ class AwarenessEngine {
                 }
             } catch (_) {}
         }
-        return {
+
+        const budget = { maxWorkMsPerTick: 25, maxFilesPerCycle: 15 };
+        let observabilityResult = { risk0To100: 0, newPathsWithoutTelemetry: [] };
+        let refactorResult = { risk0To100: 0, refactorActivityRatio: 0 };
+        let churnResult = { risk0To100: 0, hotFiles: [], aiAssistedChurnCorrelation: 0 };
+        let additiveResult = { risk0To100: 0, duplicationCandidates: [], consolidationQueue: [] };
+        let semanticResult = { risk0To100: 0, candidates: [], cloneClusters: [] };
+        let promptThrashResult = { risk0To100: 0, thrashLoops: [], specDebtLabel: '' };
+        let llmSmellsResult = { reproducibilityStatus: 'unknown', runtimeSafetyPosture: 'unknown', schemaSafety: 'unknown', promptGovernance: 'unknown' };
+
+        if (filesWithContent.length > 0) {
+            try {
+                const observabilityNeglectDetector = require('./antipatterns/observabilityNeglectDetector');
+                observabilityResult = await observabilityNeglectDetector.compute({ filePaths, filesWithContent }, null, budget);
+            } catch (_) {}
+            try {
+                const additiveBiasDetector = require('./antipatterns/additiveBiasDetector');
+                additiveResult = await additiveBiasDetector.compute({ filesWithContent, allFilesContent: filesWithContent }, null, budget);
+            } catch (_) {}
+            try {
+                const semanticCloneDetector = require('./antipatterns/semanticCloneDetector');
+                semanticResult = await semanticCloneDetector.compute({ filesWithContent, allFilesContent: filesWithContent }, null, budget);
+            } catch (_) {}
+            try {
+                const llmIntegrationSmellsDetector = require('./antipatterns/llmIntegrationSmellsDetector');
+                llmSmellsResult = await llmIntegrationSmellsDetector.compute({ filesWithContent }, null, budget);
+            } catch (_) {}
+        }
+        if (root) {
+            try {
+                const refactorAtrophyDetector = require('./antipatterns/refactorAtrophyDetector');
+                refactorResult = await refactorAtrophyDetector.compute({ workspaceRoot: root }, null, budget);
+            } catch (_) {}
+            try {
+                const churnDetector = require('./antipatterns/churnDetector');
+                const ledgerEntries = this.changeLedger && this.changeLedger.getAll ? this.changeLedger.getAll() : [];
+                churnResult = await churnDetector.compute({ workspaceRoot: root, ledgerEntries }, null, budget);
+            } catch (_) {}
+        }
+        try {
+            const promptThrashDetector = require('./antipatterns/promptThrashDetector');
+            const ledgerEntries = this.changeLedger && this.changeLedger.getAll ? this.changeLedger.getAll() : [];
+            promptThrashResult = await promptThrashDetector.compute({ ledgerEntries, sinceTs: now - 3600000 }, null, budget);
+        } catch (_) {}
+
+        const merged = {
             ...sync,
             testTheater: antipatternEnvelope(
                 { snapshotRatio: testTheater.snapshotRatio, trivialAssertRatio: testTheater.trivialAssertRatio, risk0To100: testTheater.risk0To100 },
@@ -817,12 +895,120 @@ class AwarenessEngine {
                 now
             ),
             boundaryViolations: antipatternEnvelope(boundaryResult, meta('high', 'gauge'), now),
+            observabilityNeglect: antipatternEnvelope(
+                { risk0To100: observabilityResult.risk0To100, operabilityCoveragePerModule: observabilityResult.operabilityCoveragePerModule, newPathsWithoutTelemetry: observabilityResult.newPathsWithoutTelemetry || [] },
+                meta('high', 'gauge'),
+                now
+            ),
+            refactorAtrophy: antipatternEnvelope(
+                { risk0To100: refactorResult.risk0To100, refactorActivityRatio: refactorResult.refactorActivityRatio, trendByModule: refactorResult.trendByModule },
+                meta('heuristic', 'gauge'),
+                now
+            ),
+            additiveBias: antipatternEnvelope(
+                { risk0To100: additiveResult.risk0To100, duplicationCandidates: additiveResult.duplicationCandidates || [], consolidationQueue: additiveResult.consolidationQueue || [] },
+                meta('heuristic', 'gauge'),
+                now
+            ),
+            iterativeChurn: antipatternEnvelope(
+                { risk0To100: churnResult.risk0To100, hotFiles: churnResult.hotFiles || [], aiAssistedChurnCorrelation: churnResult.aiAssistedChurnCorrelation },
+                meta('heuristic', 'gauge'),
+                now
+            ),
+            semanticClones: antipatternEnvelope(
+                { risk0To100: semanticResult.risk0To100, candidates: semanticResult.candidates || [], cloneClusters: semanticResult.cloneClusters || [] },
+                meta('heuristic', 'gauge'),
+                now
+            ),
+            promptThrash: antipatternEnvelope(
+                { risk0To100: promptThrashResult.risk0To100, thrashLoops: promptThrashResult.thrashLoops || [], specDebtLabel: promptThrashResult.specDebtLabel || '' },
+                meta('heuristic', 'gauge'),
+                now
+            ),
             duplication: antipatternEnvelope(
                 { fileCountWithDuplicates: duplication.fileCountWithDuplicates ?? 0, totalDuplicateBlocks: duplication.totalDuplicateBlocks ?? 0, risk0To100: duplication.risk0To100 ?? 0 },
                 meta('high', 'gauge'),
                 now
             )
         };
+        const silentDriftComposite = require('./antipatterns/silentDriftComposite');
+        const driftInput = {};
+        for (const k of ['boundaryViolations', 'refactorAtrophy', 'additiveBias', 'semanticClones', 'iterativeChurn']) {
+            driftInput[k] = merged[k] && merged[k].value ? merged[k].value : merged[k];
+        }
+        const silentDrift = silentDriftComposite.compute({ breakdown: driftInput });
+        merged.silentDrift = antipatternEnvelope(
+            { risk0To100: silentDrift.risk0To100, driftTimeline: silentDrift.driftTimeline, hotspots: silentDrift.hotspots, rootContributors: silentDrift.rootContributors },
+            meta('heuristic', 'gauge'),
+            now
+        );
+        merged.llmSmells = antipatternEnvelope(llmSmellsResult, { scale: 'categorical', reliability: 'low', render: 'checklist' }, now);
+        return merged;
+    }
+
+    /**
+     * Get module view for dashboard: per-module boundary violations, drift, refactor, clone candidates, action queue.
+     * @returns {Promise<{ modules: Object<string, { boundaryViolations: Array, driftScore?: number, refactorActivity?: object, cloneCandidates?: Array, actionQueue?: string[] }> }>}
+     */
+    async getModuleView() {
+        const breakdown = await this.getAntipatternBreakdownAsync();
+        const modules = {};
+        const v = (key) => (breakdown[key] && breakdown[key].value) || breakdown[key];
+
+        const violations = (v('boundaryViolations') && v('boundaryViolations').violations) || [];
+        for (const vv of violations) {
+            const mod = (vv.filePath || '').split(/[/\\]/)[0] || 'root';
+            if (!modules[mod]) modules[mod] = { boundaryViolations: [], actionQueue: [] };
+            modules[mod].boundaryViolations.push(vv);
+        }
+
+        const trendByModule = (v('refactorAtrophy') && v('refactorAtrophy').trendByModule) || {};
+        for (const [mod, data] of Object.entries(trendByModule)) {
+            if (!modules[mod]) modules[mod] = { boundaryViolations: [], actionQueue: [] };
+            modules[mod].refactorActivity = data;
+        }
+
+        const hotFiles = (v('iterativeChurn') && v('iterativeChurn').hotFiles) || [];
+        for (const h of hotFiles) {
+            const mod = (h.path || '').split(/[/\\]/)[0] || 'root';
+            if (!modules[mod]) modules[mod] = { boundaryViolations: [], actionQueue: [] };
+            if (!modules[mod].hotFiles) modules[mod].hotFiles = [];
+            modules[mod].hotFiles.push(h);
+        }
+
+        const drift = v('silentDrift');
+        if (drift && drift.rootContributors && drift.rootContributors.length) {
+            for (const name of drift.rootContributors) {
+                const mod = name.replace(/\s+/g, '_').toLowerCase();
+                if (!modules[mod]) modules[mod] = { boundaryViolations: [], actionQueue: [] };
+                modules[mod].driftScore = drift.risk0To100;
+            }
+        }
+
+        const additiveCandidates = (v('additiveBias') && v('additiveBias').duplicationCandidates) || [];
+        const semanticCandidates = (v('semanticClones') && v('semanticClones').candidates) || [];
+        for (const c of additiveCandidates) {
+            const mod = 'additive_bias';
+            if (!modules[mod]) modules[mod] = { boundaryViolations: [], actionQueue: [] };
+            if (!modules[mod].cloneCandidates) modules[mod].cloneCandidates = [];
+            modules[mod].cloneCandidates.push({ type: 'additive', newSymbol: c.newSymbol, existingSymbol: c.existingSymbol });
+        }
+        for (const c of semanticCandidates) {
+            const mod = 'semantic_clones';
+            if (!modules[mod]) modules[mod] = { boundaryViolations: [], actionQueue: [] };
+            if (!modules[mod].cloneCandidates) modules[mod].cloneCandidates = [];
+            modules[mod].cloneCandidates.push({ type: 'semantic', new: c.new, existing: c.existing, score: c.score });
+        }
+
+        for (const mod of Object.keys(modules)) {
+            const m = modules[mod];
+            m.actionQueue = m.actionQueue || [];
+            if ((m.boundaryViolations && m.boundaryViolations.length) > 0) m.actionQueue.push('Fix boundary violations');
+            if (m.driftScore >= 50) m.actionQueue.push('Review drift contributors');
+            if (m.cloneCandidates && m.cloneCandidates.length > 0) m.actionQueue.push('Consolidate or dismiss clones');
+        }
+
+        return { modules };
     }
 
     /**
