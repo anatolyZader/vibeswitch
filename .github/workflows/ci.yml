@@ -1,0 +1,40 @@
+# General CI: lint, full tests, coverage, and SonarCloud analysis.
+# Require this workflow (and optionally SonarCloud quality gate) before merging into main/dev.
+# Store SonarCloud token as repository secret SONAR_TOKEN (Settings → Secrets and variables → Actions).
+name: CI
+
+on:
+  pull_request:
+    branches: [main, dev]
+  push:
+    branches: [main, dev]
+
+jobs:
+  ci:
+    name: Lint, test, coverage, SonarCloud
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test and coverage (LCOV for SonarCloud)
+        run: npm run test:ci
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@v7
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

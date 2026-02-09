@@ -383,10 +383,11 @@
   },
   "scripts": {
     "build": "node scripts/build-extension.js && npm run build:dashboard",
-    "build:dashboard": "cd dashboard-app && npm install && npm run build",
+    "build:dashboard": "cd ui/dashboard-app && npm install && npm run build",
     "test": "jest",
-    "test:dashboard": "cd dashboard-app && npm test",
+    "test:dashboard": "cd ui/dashboard-app && npm test",
     "test:mvp": "jest --testPathIgnorePatterns=sessionTracker.reviewSession --testPathIgnorePatterns=agentSuggestionHandler.batch --testPathIgnorePatterns=awarenessService.adapters --testPathIgnorePatterns=extension.test --testPathIgnorePatterns=tests/electron",
+    "test:ci": "jest --coverage --testPathIgnorePatterns=sessionTracker.reviewSession --testPathIgnorePatterns=agentSuggestionHandler.batch --testPathIgnorePatterns=awarenessService.adapters --testPathIgnorePatterns=extension.test --testPathIgnorePatterns=tests/electron",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:electron": "VIBESWITCH_INTEGRATION_TEST=1 node tests/electron/runTest.js",

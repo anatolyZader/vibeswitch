@@ -22,6 +22,7 @@ module.exports = {
         '/tests/',
         '/infrastructure/legacy/'
     ],
+    coverageReporters: ['lcov', 'text', 'text-summary'],
     // Mock vscode module for tests
     moduleNameMapper: {
         '^vscode$': '<rootDir>/tests/__mocks__/vscode.js'
