@@ -401,7 +401,7 @@
   },
   "devDependencies": {
     "@types/vscode": "^1.80.0",
-    "@vscode/test-electron": "^3.0.0",
+    "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^2.19.0",
     "fast-check": "^4.5.3",
     "glob": "^13.0.0",
