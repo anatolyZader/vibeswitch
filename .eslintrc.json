@@ -1,0 +1,67 @@
+{
+  "env": {
+    "node": true,
+    "commonjs": true,
+    "es2021": true,
+    "jest": true
+  },
+  "parserOptions": {
+    "ecmaVersion": 2022
+  },
+  "rules": {
+    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+    "no-undef": "error",
+    "no-constant-condition": "warn",
+    "no-debugger": "error",
+    "no-dupe-keys": "error",
+    "no-duplicate-case": "error",
+    "no-empty": ["warn", { "allowEmptyCatch": true }],
+    "no-extra-semi": "warn",
+    "no-unreachable": "warn",
+    "eqeqeq": ["warn", "smart"],
+    "no-eval": "error",
+    "no-implied-eval": "error",
+    "no-new-func": "error",
+    "no-throw-literal": "warn",
+    "prefer-const": "warn",
+    "no-var": "error"
+  },
+  "ignorePatterns": [
+    "node_modules/",
+    "out/",
+    "*.vsix",
+    "dashboard-app/build/",
+    "awareness-context/",
+    "eventstorm/",
+    "tests/business_modules/awareness/app/awarenessService.adapters.test.js"
+  ],
+  "overrides": [
+    {
+      "files": ["dashboard-app/**/*.jsx", "dashboard-app/**/*.js"],
+      "env": {
+        "browser": true
+      },
+      "parserOptions": {
+        "ecmaFeatures": {
+          "jsx": true
+        }
+      },
+      "globals": {
+        "acquireVsCodeApi": "readonly"
+      }
+    },
+    {
+      "files": ["tests/electron/**/*.js", "tests/extension.test.js"],
+      "env": {
+        "mocha": true
+      },
+      "globals": {
+        "suite": "readonly",
+        "suiteSetup": "readonly",
+        "suiteTeardown": "readonly",
+        "test": "readonly",
+        "assert": "readonly"
+      }
+    }
+  ]
+}

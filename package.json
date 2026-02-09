@@ -391,7 +391,7 @@
     "test:coverage": "jest --coverage",
     "test:electron": "VIBESWITCH_INTEGRATION_TEST=1 node tests/electron/runTest.js",
     "package": "npm run build && vsce package",
-    "lint": "echo 'No linter configured yet'",
+    "lint": "eslint . --ext .js,.jsx --max-warnings 150",
     "create-md": "node scripts/create-md.js"
   },
   "dependencies": {
@@ -400,8 +400,9 @@
   },
   "devDependencies": {
     "@types/vscode": "^1.80.0",
-    "@vscode/test-electron": "^3.0.0",
+    "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^2.19.0",
+    "eslint": "^8.57.1",
     "fast-check": "^4.5.3",
     "glob": "^13.0.0",
     "jest": "^30.2.0",
