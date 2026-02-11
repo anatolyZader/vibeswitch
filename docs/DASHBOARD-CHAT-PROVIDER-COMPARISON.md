@@ -4,15 +4,15 @@ This document helps you decide which LLM provider to use for your VibeSwitch das
 
 ## Quick Summary
 
-| Aspect | Claude (Anthropic) | OpenAI (GPT-4o-mini) |
-|--------|-------------------|---------------------|
-| **Best For** | Deep codebase analysis, architectural understanding | Quick answers, cost efficiency |
-| **Context Window** | 200K tokens (150K chars used) | 128K tokens (16K chars used) |
-| **Code Understanding** | Excellent, purpose-built for code | Very good |
-| **Response Quality** | More detailed, thorough | More concise, faster |
-| **Cost per Query** | ~$0.018-0.026 | ~$0.001-0.003 |
-| **Speed** | 3-8 seconds | 2-5 seconds |
-| **Default Model** | claude-3-5-sonnet-20241022 | gpt-4o-mini |
+| Aspect | Auto (Recommended) | Claude (Anthropic) | OpenAI (GPT-4o-mini) |
+|--------|-------------------|-------------------|---------------------|
+| **Best For** | All users - automatic optimization | Deep codebase analysis, architectural understanding | Quick answers, cost efficiency |
+| **How It Works** | Analyzes question, picks optimal provider | Always uses Claude | Always uses OpenAI |
+| **Context Window** | Adaptive (16K-150K) | 200K tokens (150K chars used) | 128K tokens (16K chars used) |
+| **Cost per Query** | ~$0.001-0.026 (mixed) | ~$0.018-0.026 | ~$0.001-0.003 |
+| **Speed** | 2-8 seconds (adaptive) | 3-8 seconds | 2-5 seconds |
+| **Cost Optimization** | ✅ Yes (50-70% savings) | ❌ No | ❌ No |
+| **API Keys Needed** | Both (OpenAI + Claude) | Claude only | OpenAI only |
 
 ## Detailed Comparison
 
@@ -539,16 +539,51 @@ Cost per query:
 }
 ```
 
+## Auto Mode (NEW! - Recommended)
+
+**The best of both worlds:** Set provider to "auto" and let the system intelligently choose:
+
+```json
+{
+  "vibeswitch.dashboardChat.provider": "auto",
+  "vibeswitch.dashboardChat.openai.apiKey": "sk-...",
+  "vibeswitch.dashboardChat.claude.apiKey": "sk-ant-..."
+}
+```
+
+**How it works:**
+1. You ask a question
+2. System analyzes complexity (keywords, length, file references, etc.)
+3. Simple questions → OpenAI (fast, cheap)
+4. Complex questions → Claude (deep, comprehensive)
+5. Response shows which was used: "*Auto-selected: CLAUDE (complex question)*"
+
+**Benefits:**
+- ✅ **Cost optimization:** 50-70% cheaper than always using Claude
+- ✅ **Speed optimization:** Simple queries get fast responses
+- ✅ **Quality optimization:** Complex questions get enhanced context
+- ✅ **Zero effort:** No manual switching or decision-making
+
+**Typical cost (200 queries/month):**
+- All OpenAI: $0.16/month
+- All Claude: $4.40/month
+- **Auto mode: ~$1.43/month** (70% simple, 30% complex)
+
+See [Auto-Selection Documentation](./DASHBOARD-CHAT-AUTO-SELECTION.md) for details.
+
 ## Final Thoughts
 
-**There's no universally "better" choice** - it depends on your needs:
+**New recommendation for most users:**
 
-- **Claude = Depth:** Like consulting a senior architect who's read your entire codebase
-- **OpenAI = Breadth:** Like asking a quick question to a knowledgeable colleague
+1. **Use Auto Mode (provider: "auto")** - Let the system optimize for you
+2. **Configure both API keys** - Unlock full auto capabilities
+3. **Monitor for a week** - See how it classifies your questions
+4. **Adjust if needed** - Switch to manual mode if auto doesn't fit your usage
 
-For most users starting out, I'd recommend:
-1. **Start with OpenAI (gpt-4o-mini)** - it's cheap, fast, and good enough for 80% of questions
-2. **Try Claude when you hit limitations** - when you need deeper analysis
-3. **Keep both API keys configured** - switch as needed in settings
+**Manual mode still makes sense if:**
+- You only have one API key
+- You need predictable costs (stick to OpenAI)
+- You always want maximum quality (stick to Claude)
+- The auto classifier doesn't match your preferences
 
-The beauty of the implementation is that **switching takes 10 seconds** - just change the provider in settings. Try both and see which fits your workflow better!
+The beauty of the implementation is that **switching takes 10 seconds** - just change the provider in settings. Try auto mode first, then adjust based on your experience!

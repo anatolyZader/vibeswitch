@@ -325,12 +325,18 @@
         },
         "vibeswitch.dashboardChat.provider": {
           "type": "string",
-          "default": "openai",
+          "default": "auto",
           "enum": [
+            "auto",
             "openai",
             "claude"
           ],
-          "description": "LLM provider for dashboard chat. Choose 'openai' for OpenAI API or 'claude' for Anthropic Claude API."
+          "enumDescriptions": [
+            "Automatically select provider based on question complexity (recommended)",
+            "Always use OpenAI (fast, cost-effective)",
+            "Always use Claude (deep analysis, enhanced context)"
+          ],
+          "description": "LLM provider for dashboard chat. 'auto' intelligently chooses between OpenAI (simple questions) and Claude (complex analysis) based on your prompt."
         },
         "vibeswitch.dashboardChat.useWorkspaceContext": {
           "type": "boolean",
