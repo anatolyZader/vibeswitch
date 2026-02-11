@@ -29,7 +29,7 @@ function createClaudeLLMAdapter(opts = {}) {
                 },
                 body: JSON.stringify({
                     model,
-                    max_tokens: 1024,
+                    max_tokens: 4096,  // Higher token limit for more detailed responses
                     temperature: 0.3,
                     system: systemContent,
                     messages: [

@@ -125,12 +125,82 @@ If you hit rate limits, consider:
 
 Check the VS Code developer console (Help > Toggle Developer Tools) for detailed error messages.
 
+## Enhanced Codebase Awareness (Claude)
+
+When using Claude as your provider, the dashboard chat includes **enhanced codebase awareness** with up to **150K characters of context** (compared to 16K for other models). This leverages Claude's large 200K token context window.
+
+### What's Included in Enhanced Mode:
+
+1. **Project Structure Tree**
+   - Complete directory and file hierarchy
+   - Up to 500 files mapped
+   - Excludes node_modules, build artifacts, etc.
+
+2. **Git Status & Recent Changes**
+   - Current branch information
+   - Modified files (working tree)
+   - Staged files (index)
+   - Up to 20 recent changes shown
+
+3. **Project Metadata**
+   - Package name, version, description
+   - Dependencies and devDependencies
+   - Available npm scripts
+
+4. **Open Files**
+   - Up to 20 currently open files
+   - Up to 4K characters per file
+   - Full content with relative paths
+
+5. **Key Source Files**
+   - Up to 50 important files from your codebase
+   - Prioritizes: package.json, README, configs, source files
+   - Up to 4K characters per file
+
+### Configuration
+
+Enhanced mode is **enabled by default** for Claude:
+
+```json
+{
+  "vibeswitch.dashboardChat.provider": "claude",
+  "vibeswitch.dashboardChat.enhancedCodebaseAwareness": true
+}
+```
+
+To disable enhanced mode (falls back to standard 16K context):
+
+```json
+{
+  "vibeswitch.dashboardChat.enhancedCodebaseAwareness": false
+}
+```
+
+### Example Use Cases
+
+With enhanced codebase awareness, you can ask Claude:
+
+- **"What is the architecture of this project?"** - Claude will analyze the structure and explain the organization
+- **"Which files are related to the dashboard feature?"** - Claude can trace dependencies and related files
+- **"Why is the awareness score high?"** - Claude can correlate metrics with specific code patterns
+- **"What recent changes might have affected the metrics?"** - Claude can see git status and relate it to dashboard data
+- **"Explain how the LLM module works"** - Claude has access to the actual source files and can explain implementation details
+
+### Technical Details
+
+- **Context Limit:** 150K chars (~37K tokens) for Claude vs 16K chars for others
+- **Response Tokens:** 4096 max tokens (vs 1024 for OpenAI) for more detailed answers
+- **File Selection:** Intelligent prioritization of important files
+- **Performance:** Context building is async and cached where possible
+
 ## Benefits of Claude API
 
 1. **Code Understanding:** Claude excels at understanding and explaining code
-2. **Context Window:** Large context windows for complex codebases
-3. **Safety:** Built-in safety features and content filtering
-4. **Pricing:** Competitive pricing, especially for Haiku models
+2. **Large Context Window:** 200K token context for complex codebases (leveraged in enhanced mode)
+3. **Deep Codebase Awareness:** Enhanced mode provides comprehensive project understanding
+4. **Safety:** Built-in safety features and content filtering
+5. **Detailed Responses:** 4096 token responses for thorough explanations
+6. **Pricing:** Competitive pricing, especially for Haiku models
 
 ## Privacy
 

@@ -5,6 +5,7 @@
 
 const ContextBuilder = require('./ContextBuilder');
 const { getReadOnlyContext } = require('../infrastructure/adapters/WorkspaceContextAdapter');
+const { getEnhancedReadOnlyContext } = require('../infrastructure/adapters/EnhancedWorkspaceContextAdapter');
 const { createOpenAILLMAdapter } = require('../infrastructure/adapters/OpenAILLMAdapter');
 const { createClaudeLLMAdapter } = require('../infrastructure/adapters/ClaudeLLMAdapter');
 
@@ -69,11 +70,20 @@ async function reply(vscode, payload, userMessage, logger) {
         return { text: null, error: `No ${providerName} API key set. Add your key in Settings under VibeSwitch: Dashboard Chat (${providerName} API Key) to get explanations about meters and antipatterns.` };
     }
 
-    const systemPrompt = ContextBuilder.getSystemPrompt();
+    const systemPrompt = ContextBuilder.getSystemPrompt(config.provider);
     let codebaseContext = '';
     if (config.useWorkspaceContext) {
         try {
-            codebaseContext = await getReadOnlyContext(vscode, { includeKeyFiles: config.includeKeyFiles });
+            // Use enhanced context for Claude (larger context window, more codebase awareness)
+            if (config.provider === 'claude') {
+                codebaseContext = await getEnhancedReadOnlyContext(vscode, { 
+                    includeKeyFiles: config.includeKeyFiles,
+                    enhancedMode: true,
+                    provider: 'claude'
+                });
+            } else {
+                codebaseContext = await getReadOnlyContext(vscode, { includeKeyFiles: config.includeKeyFiles });
+            }
         } catch (e) {
             errLog('DashboardChat: workspace context failed', e);
         }

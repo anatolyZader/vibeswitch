@@ -367,6 +367,11 @@
           "default": "claude-3-5-sonnet-20241022",
           "description": "Claude model for dashboard chat (e.g., claude-3-5-sonnet-20241022, claude-3-opus-20240229)"
         },
+        "vibeswitch.dashboardChat.enhancedCodebaseAwareness": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable enhanced codebase awareness for Claude (includes project structure, git status, and up to 150K chars of context). Automatically enabled for Claude provider."
+        },
         "vibeswitch.agents.enabled": {
           "type": "boolean",
           "default": false,
