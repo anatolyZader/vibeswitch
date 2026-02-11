@@ -33,7 +33,7 @@ function ChatSection(props) {
     props.sendChat(id, input.trim());
   }
   return React.createElement('div', { className: 'chat-section' },
-    React.createElement('p', { className: 'chat-hint' }, 'Discuss the dashboard with the read-only subagent (no file edits or commands). Set an OpenAI API key in Settings (VibeSwitch: Dashboard Chat) for full explanations.'),
+    React.createElement('p', { className: 'chat-hint' }, 'Discuss the dashboard with the read-only subagent (no file edits or commands). Set an API key (OpenAI or Claude) in Settings (VibeSwitch: Dashboard Chat) for full explanations.'),
     React.createElement('div', { className: 'chat-messages', ref: listRef },
       messages.length === 0 && React.createElement('div', { className: 'chat-placeholder' }, 'No messages yet.'),
       messages.map(function (m) {

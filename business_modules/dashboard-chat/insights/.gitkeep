@@ -1,0 +1,14 @@
+# Dashboard Chat Insights
+
+This directory contains markdown review files created by the dashboard chat agent.
+
+The chat agent can create insights/review files here to document:
+- Code quality analysis
+- Architecture reviews
+- Metric correlation findings
+- Technical debt assessments
+- Best practice recommendations
+
+Files are named with timestamps: `insight_YYYY-MM-DD_HH-mm-ss.md`
+
+This is the ONLY location where the dashboard chat agent can write files.

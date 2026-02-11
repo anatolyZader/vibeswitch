@@ -323,6 +323,21 @@
           "default": true,
           "description": "Use LLM for dashboard chat (read-only agent). If false or no API key, stub replies only."
         },
+        "vibeswitch.dashboardChat.provider": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "openai",
+            "claude"
+          ],
+          "enumDescriptions": [
+            "Automatically select provider based on question complexity (recommended)",
+            "Always use OpenAI (fast, cost-effective)",
+            "Always use Claude (deep analysis, enhanced context)"
+          ],
+          "description": "LLM provider for dashboard chat. 'auto' intelligently chooses between OpenAI (simple questions) and Claude (complex analysis) based on your prompt."
+        },
         "vibeswitch.dashboardChat.useWorkspaceContext": {
           "type": "boolean",
           "default": true,
@@ -347,6 +362,21 @@
           "type": "string",
           "default": "",
           "description": "OpenAI model for dashboard chat. If empty, uses vibeswitch.llm.openai.model."
+        },
+        "vibeswitch.dashboardChat.claude.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Anthropic Claude API key for dashboard chat. Get your key from https://console.anthropic.com/"
+        },
+        "vibeswitch.dashboardChat.claude.model": {
+          "type": "string",
+          "default": "claude-3-5-sonnet-20241022",
+          "description": "Claude model for dashboard chat (e.g., claude-3-5-sonnet-20241022, claude-3-opus-20240229)"
+        },
+        "vibeswitch.dashboardChat.enhancedCodebaseAwareness": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable enhanced codebase awareness for Claude (includes project structure, git status, and up to 150K chars of context). Automatically enabled for Claude provider."
         },
         "vibeswitch.agents.enabled": {
           "type": "boolean",
