@@ -72,6 +72,34 @@ With enhanced codebase awareness enabled, Claude has access to:
 
 **Total context:** Up to 150,000 characters (~37K tokens)
 
+## What Claude Can Do (Special Capability)
+
+Claude is **almost read-only** with ONE exception:
+
+✍️ **Create Insight Files** - Claude can save comprehensive analysis to markdown files in:
+```
+business_modules/dashboard-chat/insights/
+```
+
+**Perfect for:**
+- Architecture reviews
+- Code quality assessments  
+- Technical debt reports
+- Metric correlation findings
+
+**Safe & Restricted:**
+- ✅ Cannot edit your code
+- ✅ Cannot run commands
+- ✅ Cannot write anywhere except insights directory
+- ✅ All files validated and timestamped
+
+**Just ask:**
+- "Review the architecture and save it"
+- "Create a technical debt report"
+- "Document these findings"
+
+See [Insights Documentation](./DASHBOARD-CHAT-INSIGHTS.md) for details.
+
 ## Example Conversation
 
 **You:** "What is the architecture of this project?"
