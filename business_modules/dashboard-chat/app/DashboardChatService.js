@@ -10,6 +10,7 @@ const { createOpenAILLMAdapter } = require('../infrastructure/adapters/OpenAILLM
 const { createClaudeLLMAdapter } = require('../infrastructure/adapters/ClaudeLLMAdapter');
 const { analyzePrompt } = require('./PromptAnalyzer');
 const { createInsight } = require('./InsightsWriter');
+const { validateToolRequest, validateToolDefinitions, validateResponseContent } = require('./OperationValidator');
 
 const DEFAULT_TIMEOUT_MS = 15000;
 
@@ -178,12 +179,35 @@ async function reply(vscode, payload, userMessage, logger) {
         // Prepare tools array (only for Claude with enhanced mode)
         const tools = actualProvider === 'claude' ? [CREATE_INSIGHT_TOOL] : undefined;
         
+        // SECURITY: Validate tool definitions before passing to LLM
+        if (tools) {
+            const toolValidation = validateToolDefinitions(tools);
+            if (!toolValidation.valid) {
+                errLog('DashboardChat: Invalid tool definitions', toolValidation.invalidTools);
+                return { 
+                    text: null, 
+                    error: `Security error: Unauthorized tools in definition: ${toolValidation.invalidTools.join(', ')}` 
+                };
+            }
+        }
+        
         const response = await llm.chat(systemPrompt, userContent, tools);
         
         // Handle tool use response from Claude
         if (response && typeof response === 'object' && response.type === 'tool_use') {
+            // SECURITY: Validate tool request before executing
+            const validation = validateToolRequest(response);
+            if (!validation.allowed) {
+                errLog('DashboardChat: Unauthorized tool request blocked', { tool: response.tool, reason: validation.reason });
+                return {
+                    text: null,
+                    error: `Security error: ${validation.reason}`,
+                    securityViolation: true
+                };
+            }
+            
             if (response.tool === 'create_insight') {
-                infoLog('DashboardChat: Claude requested to create insight');
+                infoLog('DashboardChat: Claude requested to create insight (validated)');
                 
                 // Get extension path from vscode context
                 const extensionPath = vscode?.extensionPath || process.cwd();
@@ -223,6 +247,19 @@ async function reply(vscode, payload, userMessage, logger) {
         
         // Handle regular text response
         const text = typeof response === 'string' ? response : null;
+        
+        // SECURITY: Validate response content for malicious patterns
+        if (text) {
+            const contentValidation = validateResponseContent(text);
+            if (!contentValidation.safe) {
+                errLog('DashboardChat: Unsafe content detected in response', contentValidation.issues);
+                return {
+                    text: null,
+                    error: 'Security error: Response contains potentially unsafe content',
+                    securityViolation: true
+                };
+            }
+        }
         
         // Include provider selection info in response if in auto mode
         let responseText = text || null;
