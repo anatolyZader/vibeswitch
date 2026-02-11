@@ -26,9 +26,7 @@ If the timestamp rule ever “stops working,” it usually means it was only in 
 
 ---
 
-## Creating a New Doc with Timestamp (Script)Use the project script so the filename gets the correct prefix and the file is created in `/docs`:
-
-```bash
+## Creating a New Doc with Timestamp (Script)Use the project script so the filename gets the correct prefix and the file is created in `/docs`:```bash
 # From project root
 npm run create-md "my-doc-name"
 

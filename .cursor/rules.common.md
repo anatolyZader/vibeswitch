@@ -30,6 +30,7 @@
 - No exceptions.
 
 ## Plan preservation (mandatory)
+- **Create all new plans in `.cursor/plans` with timestamp prefix** - When creating a new plan file, ALWAYS create it in `.cursor/plans` with a timestamp prefix in the same format as docs: `YYYY-MM-DD_HH-MM-name.plan.md`. Use `scripts/create-md.js "name.plan" --plans` or `npm run create-plan "name.plan"` so the filename is generated correctly. This ensures chronological sorting and consistent naming (same convention as `docs/`).
 - **Save all used plans to the project `plans/` folder** - When you are given or use a plan (e.g. from `.cursor/plans/` or an attached plan file), save a copy to the project root folder `plans/` so the plan is preserved and not deleted automatically. Use the plan's original filename (e.g. `some_feature_123.plan.md`) or a descriptive name with optional timestamp. Do this as soon as you start working from a plan (e.g. at the beginning of the task). The `plans/` folder is the long-term store for plans; do not rely on `.cursor/plans/` to keep them.
 
 ## Documentation management

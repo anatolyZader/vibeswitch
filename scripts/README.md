@@ -41,7 +41,21 @@ npm run create-md "meeting-notes" -- --no-timestamp
 
 # Creates: custom-dir/2024-12-19_14-30-notes.md
 npm run create-md "notes" -- --dir custom-dir
+
+# Creates: .cursor/plans/2024-12-19_14-30-my-feature.plan.md (timestamp required)
+npm run create-plan "my-feature.plan"
+node scripts/create-md.js "my-feature.plan" --plans
 ```
+
+### Plans (`.cursor/plans`)
+
+Plans are created in `.cursor/plans` with the same timestamp prefix format as docs. Use the `create-plan` script so the filename is generated correctly:
+
+```bash
+npm run create-plan "short-plan-name.plan"
+```
+
+This creates `.cursor/plans/YYYY-MM-DD_HH-MM-short-plan-name.plan.md`. The `--plans` flag forces timestamp (no `--no-timestamp` for plans).
 
 ### Why Use This?
 

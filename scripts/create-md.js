@@ -7,11 +7,13 @@
  *   node scripts/create-md.js "filename"
  *   node scripts/create-md.js "filename" --dir docs
  *   node scripts/create-md.js "filename" --dir docs --no-timestamp
+ *   node scripts/create-md.js "plan-name.plan" --plans   (creates in .cursor/plans with timestamp)
  * 
  * Creates a markdown file with optional timestamp prefix:
  *   YYYY-MM-DD_HH-MM-filename.md
  * 
  * If --no-timestamp is provided, creates: filename.md
+ * If --plans is provided, target dir is .cursor/plans (timestamp always used).
  */
 
 const fs = require('fs');
@@ -27,6 +29,9 @@ for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--dir' || arg === '-d') {
         targetDir = args[++i];
+    } else if (arg === '--plans' || arg === '-p') {
+        targetDir = '.cursor/plans';
+        noTimestamp = false; // plans always get timestamp
     } else if (arg === '--no-timestamp' || arg === '-n') {
         noTimestamp = true;
     } else if (!filename && !arg.startsWith('-')) {
@@ -41,8 +46,14 @@ if (!filename) {
     console.error('Usage:');
     console.error('  node scripts/create-md.js "filename"');
     console.error('  node scripts/create-md.js "filename" --dir docs');
+    console.error('  node scripts/create-md.js "plan-name.plan" --plans');
     console.error('  node scripts/create-md.js "filename" --no-timestamp');
     process.exit(1);
+}
+
+// Plans always use timestamp
+if (targetDir === '.cursor/plans') {
+    noTimestamp = false;
 }
 
 // Remove .md extension if provided (we'll add it)
