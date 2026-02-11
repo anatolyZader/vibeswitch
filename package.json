@@ -323,6 +323,15 @@
           "default": true,
           "description": "Use LLM for dashboard chat (read-only agent). If false or no API key, stub replies only."
         },
+        "vibeswitch.dashboardChat.provider": {
+          "type": "string",
+          "default": "openai",
+          "enum": [
+            "openai",
+            "claude"
+          ],
+          "description": "LLM provider for dashboard chat. Choose 'openai' for OpenAI API or 'claude' for Anthropic Claude API."
+        },
         "vibeswitch.dashboardChat.useWorkspaceContext": {
           "type": "boolean",
           "default": true,
@@ -347,6 +356,16 @@
           "type": "string",
           "default": "",
           "description": "OpenAI model for dashboard chat. If empty, uses vibeswitch.llm.openai.model."
+        },
+        "vibeswitch.dashboardChat.claude.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Anthropic Claude API key for dashboard chat. Get your key from https://console.anthropic.com/"
+        },
+        "vibeswitch.dashboardChat.claude.model": {
+          "type": "string",
+          "default": "claude-3-5-sonnet-20241022",
+          "description": "Claude model for dashboard chat (e.g., claude-3-5-sonnet-20241022, claude-3-opus-20240229)"
         },
         "vibeswitch.agents.enabled": {
           "type": "boolean",

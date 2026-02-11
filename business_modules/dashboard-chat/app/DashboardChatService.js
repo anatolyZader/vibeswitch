@@ -6,29 +6,44 @@
 const ContextBuilder = require('./ContextBuilder');
 const { getReadOnlyContext } = require('../infrastructure/adapters/WorkspaceContextAdapter');
 const { createOpenAILLMAdapter } = require('../infrastructure/adapters/OpenAILLMAdapter');
+const { createClaudeLLMAdapter } = require('../infrastructure/adapters/ClaudeLLMAdapter');
 
 const DEFAULT_TIMEOUT_MS = 15000;
 
 /**
- * Get dashboard chat config from VS Code settings. Reuses llm.openai when dashboardChat keys are empty.
+ * Get dashboard chat config from VS Code settings. Supports both OpenAI and Claude providers.
  * @param {typeof import('vscode')} vscode
- * @returns {{ enabled: boolean, apiKey: string, model: string, useWorkspaceContext: boolean, includeKeyFiles: boolean, timeoutMs: number }}
+ * @returns {{ enabled: boolean, provider: string, apiKey: string, model: string, useWorkspaceContext: boolean, includeKeyFiles: boolean, timeoutMs: number }}
  */
 function getConfig(vscode) {
     if (!vscode || !vscode.workspace) {
-        return { enabled: false, apiKey: '', model: 'gpt-4o-mini', useWorkspaceContext: true, includeKeyFiles: true, timeoutMs: DEFAULT_TIMEOUT_MS };
+        return { enabled: false, provider: 'openai', apiKey: '', model: 'gpt-4o-mini', useWorkspaceContext: true, includeKeyFiles: true, timeoutMs: DEFAULT_TIMEOUT_MS };
     }
     const cfg = vscode.workspace.getConfiguration('vibeswitch');
     const enabled = cfg.get('dashboardChat.enabled', true) !== false;
+    const provider = cfg.get('dashboardChat.provider', 'openai');
     const useWorkspaceContext = cfg.get('dashboardChat.useWorkspaceContext', true) !== false;
-    const apiKey = (cfg.get('dashboardChat.openai.apiKey', '') || cfg.get('llm.openai.apiKey', '') || '').trim();
-    const model = cfg.get('dashboardChat.openai.model', '') || cfg.get('llm.openai.model', '') || 'gpt-4o-mini';
-    const timeoutMs = cfg.get('dashboardChat.timeoutMs', DEFAULT_TIMEOUT_MS);
     const includeKeyFiles = cfg.get('dashboardChat.includeKeyFiles', true) !== false;
+    const timeoutMs = cfg.get('dashboardChat.timeoutMs', DEFAULT_TIMEOUT_MS);
+    
+    // Get API key and model based on provider
+    let apiKey = '';
+    let model = '';
+    
+    if (provider === 'claude') {
+        apiKey = (cfg.get('dashboardChat.claude.apiKey', '') || '').trim();
+        model = cfg.get('dashboardChat.claude.model', '') || 'claude-3-5-sonnet-20241022';
+    } else {
+        // Default to OpenAI
+        apiKey = (cfg.get('dashboardChat.openai.apiKey', '') || cfg.get('llm.openai.apiKey', '') || '').trim();
+        model = cfg.get('dashboardChat.openai.model', '') || cfg.get('llm.openai.model', '') || 'gpt-4o-mini';
+    }
+    
     return {
         enabled,
+        provider,
         apiKey,
-        model: model || 'gpt-4o-mini',
+        model,
         useWorkspaceContext,
         includeKeyFiles,
         timeoutMs
@@ -50,7 +65,8 @@ async function reply(vscode, payload, userMessage, logger) {
         return { text: null, error: 'Dashboard chat is disabled. Enable it in Settings (VibeSwitch: Dashboard Chat).' };
     }
     if (!config.apiKey) {
-        return { text: null, error: 'No OpenAI API key set. Add your key in Settings under VibeSwitch: Dashboard Chat (OpenAI API Key) to get explanations about meters and antipatterns.' };
+        const providerName = config.provider === 'claude' ? 'Claude' : 'OpenAI';
+        return { text: null, error: `No ${providerName} API key set. Add your key in Settings under VibeSwitch: Dashboard Chat (${providerName} API Key) to get explanations about meters and antipatterns.` };
     }
 
     const systemPrompt = ContextBuilder.getSystemPrompt();
@@ -64,11 +80,21 @@ async function reply(vscode, payload, userMessage, logger) {
     }
     const userContent = ContextBuilder.buildUserContent(payload, codebaseContext, userMessage);
 
-    const llm = createOpenAILLMAdapter({
-        apiKey: config.apiKey,
-        model: config.model,
-        timeoutMs: config.timeoutMs
-    });
+    // Create appropriate LLM adapter based on provider
+    let llm;
+    if (config.provider === 'claude') {
+        llm = createClaudeLLMAdapter({
+            apiKey: config.apiKey,
+            model: config.model,
+            timeoutMs: config.timeoutMs
+        });
+    } else {
+        llm = createOpenAILLMAdapter({
+            apiKey: config.apiKey,
+            model: config.model,
+            timeoutMs: config.timeoutMs
+        });
+    }
 
     try {
         const text = await llm.chat(systemPrompt, userContent);
