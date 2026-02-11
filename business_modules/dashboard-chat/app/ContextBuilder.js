@@ -1,12 +1,18 @@
 /**
- * ContextBuilder: dashboard glossary (meter meanings), structured dashboard summary with file references,
- * and combined user content for the LLM.
+ * ContextBuilder: dashboard glossary, structured dashboard summary, and combined user content.
+ * Supports enhanced system prompt for Claude with codebase awareness and insights creation.
  */
 
 const READ_ONLY_RULES = `You are a read-only assistant for the VibeSwitch dashboard. You have access to dashboard metrics and optional read-only codebase snippets. You cannot edit files, run commands, or use git.
-- Only discuss, explain, and answer questions. Never suggest file edits, terminal commands, or git operations.
-- If the user asks to change something, explain that you are read-only and they should use the main Cursor editor/agent for that.
+- Only discuss, explain, and answer questions. Never suggest file edits, terminal commands, or git operations (except creating insight documents via the create_insight tool).
+- If the user asks to change source code, explain that you are read-only and they should use the main Cursor editor/agent for that.
 - Be concise. Use the provided context to give relevant answers about metrics, code structure, or events.`;
+
+const ENHANCED_CLAUDE_RULES = `You are a codebase-aware assistant with deep understanding of the project. You have extensive context: project structure, git status, package metadata, open files, and key source files.
+- Leverage this context to answer architecture questions, trace dependencies, and explain how modules interact.
+- You can create markdown insight/review files in the insights directory using the create_insight tool when the user explicitly asks to save, document, or create a review/report/assessment.
+- Only use create_insight when the analysis is substantial and worth preserving. Do not create insights for simple Q&A or trivial exchanges.
+- You cannot edit source code, run commands, or modify git.`;
 
 const DASHBOARD_GLOSSARY = `
 Dashboard glossary (VibeSwitch):
@@ -17,15 +23,22 @@ Dashboard glossary (VibeSwitch):
 - Unopened files and Unreviewed suggestions = file paths that contribute to debt; the model can refer to these when explaining why debt or metrics are high.`;
 
 /**
- * System prompt: read-only rules + dashboard glossary.
+ * System prompt: read-only rules + optional enhanced rules + dashboard glossary.
+ * @param {'openai'|'claude'} [provider]
+ * @param {boolean} [useEnhanced]
+ * @returns {string}
  */
-function getSystemPrompt() {
-    return READ_ONLY_RULES + DASHBOARD_GLOSSARY;
+function getSystemPrompt(provider, useEnhanced) {
+    let rules = READ_ONLY_RULES;
+    if (provider === 'claude' && useEnhanced) {
+        rules = READ_ONLY_RULES + '\n\n' + ENHANCED_CLAUDE_RULES;
+    }
+    return rules + DASHBOARD_GLOSSARY;
 }
 
 /**
- * Build structured dashboard summary from payload, including file-level references.
- * @param {Object} payload - Dashboard payload (scoreData, events, antipatternBreakdown, tokenUsage, capabilities)
+ * Build structured dashboard summary from payload.
+ * @param {Object} payload
  * @returns {string}
  */
 function buildDashboardSummary(payload) {
@@ -77,9 +90,9 @@ function buildDashboardSummary(payload) {
 
 /**
  * Build full user message: dashboard summary + codebase context + user question.
- * @param {Object} payload - Dashboard payload
- * @param {string} codebaseContext - Read-only workspace/codebase context string (can be empty)
- * @param {string} userMessage - User's question
+ * @param {Object} payload
+ * @param {string} codebaseContext
+ * @param {string} userMessage
  * @returns {string}
  */
 function buildUserContent(payload, codebaseContext, userMessage) {

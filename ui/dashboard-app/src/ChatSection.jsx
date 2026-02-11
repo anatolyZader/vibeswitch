@@ -5,14 +5,14 @@ function ChatSection(props) {
   const [pendingId, setPendingId] = React.useState(null);
   const listRef = React.useRef(null);
   const vscode = props.vscode;
-  React.useEffect(function () {
+    React.useEffect(function () {
     if (!vscode) return;
     function onMessage(event) {
       const msg = event.data;
       if (msg && msg.command === 'chatReply') {
         setMessages(function (prev) {
-          const next = prev.map(function (m) { return m.id === msg.id ? Object.assign({}, m, { reply: msg.text, error: msg.error }) : m; });
-          if (next.every(function (m) { return m.id !== msg.id; })) next.push({ id: msg.id, text: '', reply: msg.text, error: msg.error });
+          const next = prev.map(function (m) { return m.id === msg.id ? Object.assign({}, m, { reply: msg.text, error: msg.error, providerUsed: msg.providerUsed }) : m; });
+          if (next.every(function (m) { return m.id !== msg.id; })) next.push({ id: msg.id, text: '', reply: msg.text, error: msg.error, providerUsed: msg.providerUsed });
           return next;
         });
         setPendingId(function (id) { return id === msg.id ? null : id; });
@@ -33,7 +33,7 @@ function ChatSection(props) {
     props.sendChat(id, input.trim());
   }
   return React.createElement('div', { className: 'chat-section' },
-    React.createElement('p', { className: 'chat-hint' }, 'Discuss the dashboard with the read-only subagent (no file edits or commands). Set an OpenAI API key in Settings (VibeSwitch: Dashboard Chat) for full explanations.'),
+    React.createElement('p', { className: 'chat-hint' }, 'Discuss the dashboard with the read-only subagent (no file edits or commands). Set an OpenAI or Claude API key in Settings (VibeSwitch: Dashboard Chat). Provider auto-selects based on question complexity.'),
     React.createElement('div', { className: 'chat-messages', ref: listRef },
       messages.length === 0 && React.createElement('div', { className: 'chat-placeholder' }, 'No messages yet.'),
       messages.map(function (m) {

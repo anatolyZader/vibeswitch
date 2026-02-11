@@ -348,6 +348,28 @@
           "default": "",
           "description": "OpenAI model for dashboard chat. If empty, uses vibeswitch.llm.openai.model."
         },
+        "vibeswitch.dashboardChat.provider": {
+          "type": "string",
+          "enum": ["auto", "openai", "claude"],
+          "default": "auto",
+          "enumDescriptions": ["Auto-select based on question complexity (recommended)", "Always use OpenAI", "Always use Claude"],
+          "description": "LLM provider for dashboard chat. 'auto' chooses based on prompt analysis."
+        },
+        "vibeswitch.dashboardChat.claude.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Anthropic API key for Claude dashboard chat. Get from console.anthropic.com."
+        },
+        "vibeswitch.dashboardChat.claude.model": {
+          "type": "string",
+          "default": "claude-3-5-sonnet-20241022",
+          "description": "Claude model for dashboard chat."
+        },
+        "vibeswitch.dashboardChat.enhancedCodebaseAwareness": {
+          "type": "boolean",
+          "default": true,
+          "description": "When using Claude, include enhanced context (project structure, git, 50+ files, 150K chars)."
+        },
         "vibeswitch.agents.enabled": {
           "type": "boolean",
           "default": false,

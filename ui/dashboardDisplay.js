@@ -224,11 +224,12 @@ async function openDashboard(awarenessEngine, currentMode, contentProvider, stat
             const stubSummary = `Dashboard: risk ${payload.scoreData?.total ?? 0}/100, ${(payload.events || []).length} events, mode ${payload.currentMode}.`;
             const stubReply = `(Read-only assistant) You asked: "${msg.text}". ${stubSummary} I cannot edit files or run commands.`;
             const logger = state && state.outputChannel ? { log: () => {}, error: (m, e) => { state.outputChannel.appendLine('[DashboardChat] ' + m + (e && e.message ? ' ' + e.message : '')); } } : undefined;
+            const extensionPath = extensionContext ? extensionContext.extensionPath : '';
             try {
-                const result = await dashboardChat.reply(vscode, payload, msg.text, logger);
+                const result = await dashboardChat.reply(vscode, payload, msg.text, logger, { extensionPath });
                 const text = result.text != null ? result.text : (result.error || stubReply);
                 const isConfigMessage = result.error && (result.error.includes('API key') || result.error.includes('disabled'));
-                panel.webview.postMessage({ command: 'chatReply', id: msg.id, text, error: !isConfigMessage ? (result.error || undefined) : undefined });
+                panel.webview.postMessage({ command: 'chatReply', id: msg.id, text, error: !isConfigMessage ? (result.error || undefined) : undefined, providerUsed: result.providerUsed });
             } catch (err) {
                 panel.webview.postMessage({ command: 'chatReply', id: msg.id, text: err.message || stubReply, error: err.message || 'Request failed' });
             }
