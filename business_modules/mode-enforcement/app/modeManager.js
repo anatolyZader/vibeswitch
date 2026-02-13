@@ -10,6 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { getGlobalKey, setGlobalKey } = require('../../../cross_cut_modules/storage-uri/globalKeysStorage');
 
 const VIBESWITCH_DIR = path.join(os.homedir(), '.vibeswitch');
 const STATE_DIR = path.join(VIBESWITCH_DIR, 'state');
@@ -43,7 +44,7 @@ class ModeManager {
      * @returns {string} 'dev' or 'vibe'
      */
     getMode() {
-        const mode = this._context.globalState.get(GLOBAL_STATE_KEY);
+        const mode = getGlobalKey(this._context, GLOBAL_STATE_KEY);
         return mode === 'dev' ? 'dev' : 'vibe';  // Default to vibe
     }
 
@@ -57,8 +58,8 @@ class ModeManager {
             throw new Error(`ModeManager: Invalid mode '${mode}'`);
         }
 
-        // Store in globalState (source of truth)
-        await this._context.globalState.update(GLOBAL_STATE_KEY, mode);
+        // Store in disk (unified storage)
+        await setGlobalKey(this._context, GLOBAL_STATE_KEY, mode);
 
         // Mirror to filesystem (best-effort, for hooks)
         this._mirrorToFileSystem(mode);

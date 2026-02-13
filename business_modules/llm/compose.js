@@ -9,7 +9,7 @@ const InsightStore = require('./app/insightStore');
 const AwarenessLLMInsightService = require('./app/awarenessLLMInsightService');
 
 const VSCodeLLMConfigAdapter = require('./infrastructure/adapters/vscodeLLMConfigAdapter');
-const WorkspaceStateCacheAdapter = require('./infrastructure/adapters/workspaceStateCacheAdapter');
+const StorageUriCacheAdapter = require('./infrastructure/adapters/storageUriCacheAdapter');
 const InMemoryRateLimiterAdapter = require('./infrastructure/adapters/inMemoryRateLimiterAdapter');
 const LocalHeuristicLLMClientAdapter = require('./infrastructure/adapters/localHeuristicLLMClientAdapter');
 const OpenAIChatLLMClientAdapter = require('./infrastructure/adapters/openAIChatLLMClientAdapter');
@@ -19,7 +19,7 @@ function composeLLM({ context, loggerPort = null } = {}) {
     const configPort = new VSCodeLLMConfigAdapter();
     const insightStore = new InsightStore();
 
-    const cachePort = new WorkspaceStateCacheAdapter(context);
+    const cachePort = new StorageUriCacheAdapter(context);
 
     // Rate limiter is configured from config at construction time.
     // If user changes budgets at runtime, it will take effect on reload (acceptable for now).

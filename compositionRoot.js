@@ -13,14 +13,14 @@ const AwarenessEngine = require('./business_modules/awareness/app/awarenessEngin
  */
 function buildAdapters(context) {
     const AwarenessVSCodeAdapter = require('./business_modules/awareness/infrastructure/adapters/awarenessVSCodeAdapter');
-    const AwarenessWorkspaceStateAdapter = require('./business_modules/awareness/infrastructure/adapters/awarenessWorkspaceStateAdapter');
+    const AwarenessStorageUriAdapter = require('./business_modules/awareness/infrastructure/adapters/awarenessStorageUriAdapter');
     const AwarenessLoggerAdapter = require('./business_modules/awareness/infrastructure/adapters/awarenessLoggerAdapter');
     const AwarenessIdGeneratorAdapter = require('./business_modules/awareness/infrastructure/adapters/awarenessIdGeneratorAdapter');
     const AwarenessHashGeneratorAdapter = require('./business_modules/awareness/infrastructure/adapters/awarenessHashGeneratorAdapter');
     
     return {
         vscodeAdapter: new AwarenessVSCodeAdapter(vscode),
-        persistenceAdapter: new AwarenessWorkspaceStateAdapter(context),
+        persistenceAdapter: new AwarenessStorageUriAdapter(context),
         loggerAdapter: new AwarenessLoggerAdapter(),
         idGeneratorAdapter: new AwarenessIdGeneratorAdapter(),
         hashGeneratorAdapter: new AwarenessHashGeneratorAdapter()
@@ -160,8 +160,39 @@ function compose(context, state, container) {
     };
 }
 
+/**
+ * Compose research module (optional). Call after compose() when vibeswitch.research.enabled is true.
+ * @param {vscode.ExtensionContext} context
+ * @param {Object} state - Extension state (must have awarenessEngine, tokenUsageClient, extensionContext)
+ * @param {Object} [adapters] - Adapters from compose (for loggerPort)
+ * @returns {Promise<{ researchService: Object } | null>}
+ */
+async function composeResearch(context, state, adapters) {
+    if (!vscode.workspace.getConfiguration('vibeswitch.research').get('enabled', false)) {
+        return null;
+    }
+    try {
+        const research = require('./business_modules/research');
+        const loggerPort = adapters && adapters.loggerAdapter
+            ? { error: (m, e) => adapters.loggerAdapter.error?.('[Research] ' + m + (e && e.message ? ' ' + e.message : '')) }
+            : (state.outputChannel ? { error: (m, e) => state.outputChannel.appendLine('[Research] ' + m + (e && e.message ? ' ' + e.message : '')) } : undefined);
+        const researchService = await research.createResearchService({
+            context,
+            state,
+            loggerPort
+        });
+        return { researchService };
+    } catch (err) {
+        if (adapters && adapters.loggerAdapter) {
+            adapters.loggerAdapter.error?.('compositionRoot: Failed to compose research module', err);
+        }
+        return null;
+    }
+}
+
 module.exports = {
     compose,
+    composeResearch,
     buildAwarenessEngine,
     buildUsageStatsService,
     buildAdapters,

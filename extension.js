@@ -12,6 +12,7 @@ const DIContainer = require('./diContainer');
 const initializeHelpers = require('./initializeHelpers');
 const safe = require('./safe');
 const compositionRoot = require('./compositionRoot');
+const { getGlobalKey, setGlobalKeySync } = require('./cross_cut_modules/storage-uri/globalKeysStorage');
 const {
     ModeManager,
     HooksJsonGuard,
@@ -135,7 +136,7 @@ async function activate(context) {
         // ========== MODE-ENFORCEMENT INITIALIZATION ==========
         // Initialize early before any other components
         
-        // 1. Mode Manager - source of truth in globalState, mirror to filesystem
+        // 1. Mode Manager - source of truth in disk (globalStorageUri), mirror to filesystem
         const modeManager = new ModeManager(context);
         modeManager.syncToFileSystem();  // Ensure filesystem is in sync on startup
         log('VibeSwitch: ModeManager initialized');
@@ -162,12 +163,12 @@ async function activate(context) {
             vscode.window.showWarningMessage(
                 `VibeSwitch: Setup verification failed: ${testResult.errors[0]}. Capability enforcement may not work correctly.`
             );
-            const setupPromptShown = context.globalState.get('vibeswitch.setupPromptShown', false);
+            const setupPromptShown = getGlobalKey(context, 'vibeswitch.setupPromptShown', false);
             // #region agent log
             fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'extension.js:setup_prompt',message:'first_run_setup',data:{setupPromptShown},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H5'})}).catch(()=>{});
             // #endregion
             if (!setupPromptShown) {
-                context.globalState.update('vibeswitch.setupPromptShown', true);
+                setGlobalKeySync(context, 'vibeswitch.setupPromptShown', true);
                 vscode.window.showInformationMessage(
                     'VibeSwitch: Copy hook scripts and canonical.js to ~/.vibeswitch?',
                     'Setup',
@@ -267,7 +268,7 @@ async function activate(context) {
         // ========== END MULTI-AGENT ARCHITECTURE ==========
         
         // Compose all dependencies (adapters, services, domain services)
-        const { awarenessEngine } = compositionRoot.compose(context, state, container);
+        const { awarenessEngine, adapters } = compositionRoot.compose(context, state, container);
         
         // Subscribe usage stats service for cleanup
         context.subscriptions.push(state.usageStats);
@@ -341,6 +342,15 @@ async function activate(context) {
                 });
             }
         });
+
+        // Research module (optional): time-series collection and daily statistical analysis
+        const researchResult = await compositionRoot.composeResearch(context, state, adapters);
+        if (researchResult && researchResult.researchService) {
+            researchResult.researchService.start();
+            context.subscriptions.push({ dispose: () => researchResult.researchService.dispose() });
+            state.researchService = researchResult.researchService;
+            log('VibeSwitch: Research module started');
+        }
         
         // Initialize status bar items using direct VS Code API with explicit IDs
         // Use Right alignment with high priority to appear prominently

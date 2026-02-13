@@ -45,7 +45,7 @@ class DashboardContentProvider {
  */
 function buildReactDashboardHtml(webview, extensionUri) {
     const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'out', 'dashboard-app.js'));
-    const csp = "default-src 'none'; script-src " + webview.cspSource + "; style-src 'unsafe-inline' " + webview.cspSource + ";";
+    const csp = "default-src 'none'; script-src 'unsafe-eval' " + webview.cspSource + "; style-src 'unsafe-inline' " + webview.cspSource + ";";
     return `<!DOCTYPE html>
 <html lang="en">
 <head>

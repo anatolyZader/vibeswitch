@@ -399,6 +399,26 @@
           "type": "boolean",
           "default": true,
           "description": "Trigger agents before push/PR (strongest gate)"
+        },
+        "vibeswitch.research.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable research module: time-series collection and daily statistical analysis."
+        },
+        "vibeswitch.research.scheduleHours": {
+          "type": "number",
+          "default": 24,
+          "description": "Hours between research runs (e.g. 24 = daily)."
+        },
+        "vibeswitch.research.internetResearchEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include internet research summary in reports (requires webSearchApiKey, Phase 2)."
+        },
+        "vibeswitch.research.webSearchApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API key for web search (e.g. Serper, Perplexity) to enable internet research in reports. Phase 2."
         }
       }
     }
@@ -420,7 +440,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "chokidar": "^3.6.0"
+    "chokidar": "^3.6.0",
+    "sql.js": "^1.10.0"
   },
   "devDependencies": {
     "@types/vscode": "^1.80.0",

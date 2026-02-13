@@ -12,9 +12,7 @@ This document describes how documentation files in `/docs` are named with date/t
 
 ---
 
-## How the Rule Reaches Cursor
-
-The active Cursor rules are **assembled**, not stored in a single file:
+## How the Rule Reaches CursorThe active Cursor rules are **assembled**, not stored in a single file:
 
 1. **Rule assembler** (`business_modules/mode/app/ruleAssembler.js`) builds the effective rules by concatenating:
    - **Common rules**: `.cursor/rules.common.md` (applies in all modes)
@@ -22,9 +20,7 @@ The active Cursor rules are **assembled**, not stored in a single file:
 
 3. The **documentation management** section (including “ALWAYS use timestamp prefix” and “UPDATE timestamp prefix when modifying”) lives in **`rules.common.md`**, so it is included in both DEV and VIBE.
 
-If the timestamp rule ever “stops working,” it usually means it was only in the legacy long `rules.md` and not in `rules.common.md`; the assembler only uses common + mode files, so the rule must be in `rules.common.md` to be in effect.
-
----
+If the timestamp rule ever “stops working,” it usually means it was only in the legacy long `rules.md` and not in `rules.common.md`; the assembler only uses common + mode files, so the rule must be in `rules.common.md` to be in effect.---
 
 ## Creating a New Doc with Timestamp (Script)Use the project script so the filename gets the correct prefix and the file is created in `/docs`:```bash
 # From project root

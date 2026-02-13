@@ -1,12 +1,21 @@
 /**
  * Findings Store
- * 
+ *
  * Local cache for agent findings, organized by workspace/branch/commit.
- * Persists to VS Code workspace state for durability.
+ * Uses disk storage (storageUri) when available to avoid large workspace state.
  */
 
 const vscode = require('vscode');
-const path = require('path');
+const {
+    getStorageDir,
+    readFromDiskSync,
+    writeToDisk,
+    writeToDiskSync,
+    ensureDirSync
+} = require('../../../../cross_cut_modules/storage-uri/diskStorage');
+
+const FINDINGS_KEY = 'vibeswitch.agents.findings';
+const MIGRATION_MARKER_FINDINGS = 'vibeswitch.agents.findings.migrated';
 
 class FindingsStore {
     /**
@@ -16,8 +25,9 @@ class FindingsStore {
     constructor(context, log = null) {
         this.context = context;
         this.log = log || (() => {});
-        this._cache = new Map(); // In-memory cache: key -> findings[]
-        this._loadFromState();
+        this._cache = new Map();
+        this._dir = context ? getStorageDir(context) : null;
+        this._load();
     }
 
     /**
@@ -148,30 +158,59 @@ class FindingsStore {
     }
 
     /**
-     * Load findings from workspace state
+     * Load findings from disk or workspace state (with migration)
      * @private
      */
-    _loadFromState() {
+    _load() {
         try {
-            const stored = this.context.workspaceState.get('vibeswitch.agents.findings', {});
+            if (this._dir) {
+                const migrated = this.context.workspaceState?.get(MIGRATION_MARKER_FINDINGS, false);
+                if (!migrated) {
+                    const stored = this.context.workspaceState?.get(FINDINGS_KEY, {});
+                    if (stored && typeof stored === 'object' && Object.keys(stored).length > 0) {
+                        ensureDirSync(this._dir);
+                        try {
+                            writeToDiskSync(this._dir, FINDINGS_KEY, stored);
+                        } catch { /* ignore */ }
+                        this.context.workspaceState?.update(FINDINGS_KEY, undefined).catch(() => {});
+                    }
+                    this.context.workspaceState?.update(MIGRATION_MARKER_FINDINGS, true).catch(() => {});
+                }
+                const fromDisk = readFromDiskSync(this._dir, FINDINGS_KEY);
+                if (fromDisk && typeof fromDisk === 'object') {
+                    this._cache = new Map(Object.entries(fromDisk));
+                    this.log(`Loaded ${this._cache.size} finding groups from disk`);
+                    return;
+                }
+            }
+            const stored = this.context?.workspaceState?.get(FINDINGS_KEY, {}) || {};
             this._cache = new Map(Object.entries(stored));
             this.log(`Loaded ${this._cache.size} finding groups from workspace state`);
         } catch (error) {
-            this.log(`Error loading findings from state: ${error.message}`, true);
+            this.log(`Error loading findings: ${error.message}`, true);
             this._cache = new Map();
         }
     }
 
     /**
-     * Persist findings to workspace state
+     * Persist findings to disk or workspace state
      * @private
      */
     _persistToState() {
         try {
             const serializable = Object.fromEntries(this._cache);
-            this.context.workspaceState.update('vibeswitch.agents.findings', serializable);
+            if (this._dir) {
+                ensureDirSync(this._dir);
+                try {
+                    writeToDiskSync(this._dir, FINDINGS_KEY, serializable);
+                } catch (err) {
+                    writeToDisk(this._dir, FINDINGS_KEY, serializable).catch(() => {});
+                }
+            } else if (this.context?.workspaceState) {
+                this.context.workspaceState.update(FINDINGS_KEY, serializable).catch(() => {});
+            }
         } catch (error) {
-            this.log(`Error persisting findings to state: ${error.message}`, true);
+            this.log(`Error persisting findings: ${error.message}`, true);
         }
     }
 }
