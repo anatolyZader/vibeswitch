@@ -155,6 +155,9 @@ class FindingsStore {
         try {
             const stored = this.context.workspaceState.get('vibeswitch.agents.findings', {});
             this._cache = new Map(Object.entries(stored));
+            // #region agent log
+            fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'findingsStore.js:_load',message:'using_workspaceState_fallback',data:{cacheSize:this._cache.size},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
+            // #endregion
             this.log(`Loaded ${this._cache.size} finding groups from workspace state`);
         } catch (error) {
             this.log(`Error loading findings from state: ${error.message}`, true);

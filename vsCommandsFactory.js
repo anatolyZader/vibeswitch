@@ -12,6 +12,7 @@ const userStatsUI = require('./ui/statsDashboardDisplay');
 const { mapDomainStateToViewModel, getUnreviewedFilesForDisplay, getUnopenedAndUnreviewedForDisplay } = require('./ui/awarenessMeterDisplay');
 const { triggerFlashNow } = require('./ui/frameFlash');
 const dashboardDisplay = require('./ui/dashboardDisplay');
+const modeDetection = require('./business_modules/mode/app/modeDetection');
 
 /**
  * Create command handlers with dependency injection
@@ -128,7 +129,15 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
         },
 
         'vibeswitch.openDashboard': async () => {
-            const mode = state.getMode ? state.getMode() : state.currentMode;
+            let mode = state.getMode ? state.getMode() : state.currentMode;
+            log(`VibeSwitch: [DEBUG] openDashboard called, state.getMode()=${state.getMode?.()}, state.currentMode=${state.currentMode}, mode=${mode}`);
+            if (!mode) {
+                const detected = modeDetection(true);
+                const normalized = detected && (detected === 'vibe' || detected === 'dev') ? detected : 'vibe';
+                if (state.setMode) state.setMode(normalized);
+                mode = normalized;
+                log(`VibeSwitch: Dashboard opened with null state mode; used detected mode: ${mode}`);
+            }
             await dashboardDisplay.openDashboard(state.awarenessEngine, mode, state.dashboardContentProvider, state);
         },
 

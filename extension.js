@@ -113,6 +113,9 @@ async function activate(context) {
     const state = new ExtensionState();
     const container = new DIContainer();
     state.extensionContext = context;
+    // #region agent log
+    fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'extension.js:activate',message:'storage_uris',data:{hasStorageUri:!!context?.storageUri,hasGlobalStorageUri:!!context?.globalStorageUri,storagePath:context?.storageUri?.fsPath?.slice(-50),globalPath:context?.globalStorageUri?.fsPath?.slice(-50)},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+    // #endregion
     
     // Initialize logger early for error reporting
     let log = null;
@@ -304,12 +307,14 @@ async function activate(context) {
         context.subscriptions.push({ dispose: disposeFrameFlash });
         
         // Set callbacks for UI updates and UsageStats integration
+        const { refreshDashboardIfOpen } = require('./ui/dashboardDisplay');
         awarenessEngine.setCallbacks({
             onScoreUpdate: () => {
                 safe('onScoreUpdate', () => {
                     if (updateAwarenessMeter) {
                         updateAwarenessMeter();
                     }
+                    refreshDashboardIfOpen(awarenessEngine, state).catch(() => {});
                 });
             },
             onAISuggestion: (event) => {

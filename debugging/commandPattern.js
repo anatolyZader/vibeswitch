@@ -104,6 +104,42 @@ class CommandInvoker {
 }
 
 // ---------------------------------------------------------------------------
+// GoF Composite: treat individual commands and groups uniformly.
+// MacroCommand executes a list of commands; supports undo by reversing the list.
+// ---------------------------------------------------------------------------
+
+/**
+ * Composite command: executes multiple commands as a single unit.
+ * Undo runs in reverse order.
+ */
+class MacroCommand extends DebugCommand {
+    /**
+     * @param {DebugCommand[]} [commands] – commands to execute in order
+     */
+    constructor(commands = []) {
+        super();
+        this.commands = [...commands];
+    }
+
+    add(command) {
+        this.commands.push(command);
+    }
+
+    execute() {
+        for (const cmd of this.commands) {
+            cmd.execute();
+        }
+    }
+
+    undo() {
+        for (let i = this.commands.length - 1; i >= 0; i--) {
+            const cmd = this.commands[i];
+            if (typeof cmd.undo === 'function') cmd.undo();
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // GoF Observer: define a one-to-many dependency so observers are notified
 // when a subject’s state changes. Used for debug events (e.g. command run, state change).
 // ---------------------------------------------------------------------------
@@ -170,6 +206,7 @@ module.exports = {
     LogMarkerCommand,
     ToggleFlagCommand,
     CommandInvoker,
+    MacroCommand,
     DebugSubject,
     ObservableCommandInvoker
 };

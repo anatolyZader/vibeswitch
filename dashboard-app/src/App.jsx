@@ -4,6 +4,7 @@ const TokenUsageSection = require('./TokenUsageSection').default;
 const FilesSection = require('./FilesSection').default;
 const OutputSection = require('./OutputSection').default;
 const ChatSection = require('./ChatSection').default;
+const ResearchSection = require('./ResearchSection').default;
 
 const defaultPayload = {
   currentMode: 'dev',
@@ -12,18 +13,44 @@ const defaultPayload = {
   antipatternBreakdown: {},
   events: [],
   tokenUsage: { totalInput: 0, totalOutput: 0, totalTokens: 0, usageApiAvailable: false },
-  capabilities: { git: false, ast: false, tasksObserved: false, usageApiAvailable: false }
+  capabilities: { git: false, ast: false, tasksObserved: false, usageApiAvailable: false },
+  sessionView: [],
+  moduleView: { modules: {} }
 };
 
+function getInitialPayload() {
+  try {
+    if (typeof document === 'undefined') return defaultPayload;
+    var raw = null;
+    var root = document.getElementById('root');
+    if (root && root.getAttribute) raw = root.getAttribute('data-initial-payload');
+    if (!raw && typeof window !== 'undefined' && window.__VIBESWITCH_INITIAL_PAYLOAD__) raw = window.__VIBESWITCH_INITIAL_PAYLOAD__;
+    if (raw && typeof raw === 'string') {
+      var parsed = JSON.parse(raw);
+      return { ...defaultPayload, ...parsed };
+    }
+  } catch (_) {}
+  return defaultPayload;
+}
+
 function App({ vscode }) {
-  const [payload, setPayload] = React.useState(defaultPayload);
+  const [payload, setPayload] = React.useState(getInitialPayload);
 
   React.useEffect(() => {
     if (!vscode) return;
     const onMessage = (event) => {
       const msg = event.data;
-      if (msg && (msg.type === 'init' || msg.type === 'update') && msg.payload) {
-        setPayload((prev) => ({ ...prev, ...msg.payload }));
+        if (msg && (msg.type === 'init' || msg.type === 'update') && msg.payload) {
+        const next = msg.payload;
+        setPayload((prev) => {
+          const merged = { ...prev, ...next };
+          if (next.scoreData && typeof next.scoreData === 'object') {
+            merged.scoreData = typeof prev.scoreData === 'object'
+              ? { ...prev.scoreData, ...next.scoreData }
+              : { ...next.scoreData };
+          }
+          return merged;
+        });
       }
     };
     window.addEventListener('message', onMessage);
@@ -59,6 +86,9 @@ function App({ vscode }) {
       <section className="dashboard-section dashboard-output">
         <h2>Output</h2>
         <OutputSection payload={payload} />
+      </section>
+      <section className="dashboard-section dashboard-research">
+        <ResearchSection payload={payload} />
       </section>
       <section className="dashboard-section dashboard-chat">
         <h2>Chat</h2>
