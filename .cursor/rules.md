@@ -38,6 +38,33 @@ You are operating in **VIBE MODE** - an autonomous, self-directed operational mo
 
 ---
 
+## Git Workflow (mandatory)
+
+### Branch policy
+- **Never push to `main` or `dev`.** All changes go through a branch + PR.
+- If the current branch is `main` or `dev`, **stop and create a feature branch first**.
+- For agent work: open a PR, **never merge it**. Only the human merges.
+- If asked to "just push to main", **refuse** and propose the PR flow instead.
+
+### Branch naming
+```
+<type>/<scope>/<short-kebab-desc>
+```
+Agent branches: `agent/<agentName>/<type>/<scope>/<short-kebab-desc>`
+
+Types: `feat` | `fix` | `refactor` | `chore` | `docs` | `test` | `perf` | `ci`
+Scopes: `extension/<area>` | `bm/<module>/<layer>` | `ccm/<module>/<layer>` | `dashboard/<area>` | `infra/<area>` | `docs/<area>`
+
+### Commits: Conventional Commits
+`<type>(<scope>): <short description>`
+
+### PRs
+- Follow PR template (`.github/pull_request_template.md`).
+- Small and scoped (≤ 300 lines default).
+- Agent PRs: use agent template, label with `agent` + `risk-*` + `scope:*`.
+
+---
+
 ## 📦 Packaging Rule (MANDATORY)
 
 - After **each significant / meaningful code change**, you MUST **re-package the extension** automatically.

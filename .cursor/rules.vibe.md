@@ -19,6 +19,13 @@
   2) run `npm run package`
   3) report the generated `.vsix` path
 
+## Git workflow (VIBE mode — fast but safe)
+- Still branch-based: **never push to `main` or `dev`**.
+- Draft PRs early; iterate on branch autonomously.
+- You decide when it's ready to convert to "Ready for review".
+- VIBE mode lowers the human friction, **not the safety bar**.
+- If on `main` or `dev`: **stop**, create a branch first.
+
 ## Hard safety constraints
 - Do not change production behavior unless explicitly instructed.
 - Do not introduce breaking changes implicitly.

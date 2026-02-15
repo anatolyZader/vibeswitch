@@ -31,6 +31,13 @@ If a command is likely to modify tracked files (or you're not sure) → ask firs
 - If behavior changes: RED → GREEN → REFACTOR.
 - If you cannot reasonably produce a failing test first, STOP and ask permission to proceed without strict TDD.
 
+## Git workflow (DEV mode — strict)
+- You create branch (or confirm branch before work).
+- Implement or suggest changes, but human approves.
+- PR required, CI required before merge.
+- Merge only after human review checklist.
+- If on `main` or `dev`: **stop**, ask to create a branch first.
+
 ## Packaging (after approved changes only)
 - After significant approved code changes:
   1) run `npm test` (if present/relevant)

@@ -1,0 +1,41 @@
+# CODEOWNERS — VibeSwitch
+# These owners are automatically requested for review on PRs touching these paths.
+# Docs: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for everything
+* @anatolyZader
+
+# Extension core (activation, commands, DI)
+/extension.js @anatolyZader
+/extensionState.js @anatolyZader
+/compositionRoot.js @anatolyZader
+/diContainer.js @anatolyZader
+/vsCommandsFactory.js @anatolyZader
+
+# Business modules (isolated, event-driven)
+/business_modules/ @anatolyZader
+
+# Cross-cut modules (shared services)
+/cross-cut-modules/ @anatolyZader
+
+# Dashboard app (React webview)
+/dashboard-app/ @anatolyZader
+
+# UI layer
+/ui/ @anatolyZader
+
+# MCP server
+/mcp/ @anatolyZader
+
+# Infrastructure / CI / tooling
+/.github/ @anatolyZader
+/scripts/ @anatolyZader
+/hooks/ @anatolyZader
+/package.json @anatolyZader
+/package-lock.json @anatolyZader
+
+# Cursor rules (process/workflow)
+/.cursor/ @anatolyZader
+
+# Security-sensitive
+/.eslintrc.json @anatolyZader

@@ -34,6 +34,72 @@
 - **ALWAYS use timestamp prefix for markdown files in `/docs`** - When creating markdown files in `/docs`, ALWAYS prefix the filename with timestamp in format `YYYY-MM-DD_HH-MM-filename.md` (e.g., `2026-01-19_14-30-awareness-score-review.md`). Use `scripts/create-md.js` or `npm run create-md "filename"` or manually generate the timestamp prefix. This ensures chronological sorting and prevents naming conflicts.
 - **UPDATE timestamp prefix when modifying markdown files in `/docs`** - When updating an existing markdown file in `/docs`, ALWAYS rename it with a new timestamp prefix to reflect the update time (same format). Use the script or manual prefix. Old file can be kept for history or deleted.
 
+## Git workflow (mandatory — all modes)
+
+### Branch policy
+- **Never push directly to `main`.** All changes go through a branch + PR.
+- **Never push directly to `dev`** unless explicitly instructed. Prefer PR.
+- If the current branch is `main` or `dev`, **stop and create a feature branch first**.
+- For agent work: open a PR, **never merge it**. Only the human merges.
+
+### Branch naming convention
+```
+<type>/<scope>/<short-kebab-desc>
+```
+For agent-created branches:
+```
+agent/<agentName>/<type>/<scope>/<short-kebab-desc>
+```
+
+**Types:** `feat` | `fix` | `refactor` | `chore` | `docs` | `test` | `perf` | `ci` | `build`
+
+**Scopes (maps to repo structure):**
+- `extension/<area>` — VS Code/Cursor extension core
+- `bm/<module>/<layer>` — business_modules (e.g. `bm/awareness/app`)
+- `ccm/<module>/<layer>` — cross-cut-modules (e.g. `ccm/code-analysis/app`)
+- `dashboard/<area>` — dashboard-app
+- `infra/<area>` — CI, tooling, scripts
+- `docs/<area>` — documentation
+
+**Examples:**
+- `feat/extension/webview-dashboard-tab`
+- `fix/bm/awareness/app-verification-debt-filter`
+- `agent/cursor/refactor/bm/awareness/app-dedupe-window`
+
+**Rules:** keep under ~80 chars, one PR = one branch = one concern.
+
+### Commit convention (Conventional Commits)
+```
+<type>(<scope>): <short description>
+```
+- `feat(extension): add dashboard webview shell`
+- `fix(awareness): correct verification-debt filter`
+- `refactor(pubsub): extract port interface`
+- `chore(infra): add CI workflow`
+- `test(awareness): add score monotonicity tests`
+
+### PR rules
+- PR description **must** follow the repository PR template (`.github/pull_request_template.md`).
+- Include: summary, scope, boundaries, tests, risk, rollback.
+- PRs should be small and scoped: **≤ 300 lines changed** as default. If bigger, split by concern.
+- If asked to "just push to main", **refuse** and propose the PR flow instead.
+
+### Agent-specific PR rules
+- Use the agent PR template (`.github/PULL_REQUEST_TEMPLATE/agent.md`).
+- Label agent PRs with: `agent`, appropriate `risk-*`, and `scope:*` labels.
+- No cross-module imports unless explicitly allowed.
+- No dependency additions without a rationale section.
+- No large refactors mixed with features.
+- Require a "Why this design" paragraph.
+- Require an executable test plan.
+
+### Review checklist (before merge)
+- [ ] Architecture: boundaries respected, no new coupling introduced casually
+- [ ] Correctness: tests added/updated, edge cases considered
+- [ ] Observability: logs/events meaningful (especially for agent changes)
+- [ ] Security: no secrets, dependencies justified
+- [ ] Maintainability: naming consistent, docs updated if behavior changed
+
 ## Approval levels (reference)
 | Action | DEV | VIBE |
 |--------|-----|------|

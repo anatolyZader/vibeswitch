@@ -1,0 +1,78 @@
+# Repository labels for VibeSwitch
+# Apply with: gh label create "<name>" --color "<color>" --description "<desc>"
+# Or use: node .github/sync-labels.js
+
+# PR source / author type
+- name: agent
+  color: "7057ff"
+  description: "PR created by an LLM/AI agent"
+- name: human
+  color: "0075ca"
+  description: "PR created by a human developer"
+
+# Risk levels
+- name: risk-low
+  color: "0e8a16"
+  description: "Low risk change"
+- name: risk-medium
+  color: "fbca04"
+  description: "Medium risk — review carefully"
+- name: risk-high
+  color: "d93f0b"
+  description: "High risk — extra review required"
+
+# Architecture / boundaries
+- name: boundary-change
+  color: "e4e669"
+  description: "Touches module boundaries or cross-module imports"
+- name: new-dependency
+  color: "c5def5"
+  description: "Adds a new npm dependency"
+
+# Change type (conventional commits mapping)
+- name: feat
+  color: "a2eeef"
+  description: "New feature"
+- name: fix
+  color: "d73a4a"
+  description: "Bug fix"
+- name: refactor
+  color: "cfd3d7"
+  description: "Code refactoring (no behavior change)"
+- name: chore
+  color: "ededed"
+  description: "Maintenance / tooling"
+- name: docs
+  color: "0075ca"
+  description: "Documentation only"
+- name: test
+  color: "bfdadc"
+  description: "Test additions or fixes"
+- name: ci
+  color: "d4c5f9"
+  description: "CI/CD changes"
+
+# Scope
+- name: "scope:extension"
+  color: "1d76db"
+  description: "VS Code/Cursor extension core"
+- name: "scope:awareness"
+  color: "5319e7"
+  description: "Awareness module (scoring, classification, etc.)"
+- name: "scope:dashboard"
+  color: "006b75"
+  description: "Dashboard app / webview"
+- name: "scope:mode-enforcement"
+  color: "b60205"
+  description: "Mode enforcement module"
+- name: "scope:infra"
+  color: "666666"
+  description: "Infrastructure, CI, tooling"
+
+# Review state
+- name: needs-review
+  color: "ff9f1c"
+  description: "Ready for human review"
+- name: wip
+  color: "ffffff"
+  description: "Work in progress — not ready"

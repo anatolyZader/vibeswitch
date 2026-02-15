@@ -29,6 +29,7 @@ module.exports = {
     // Don't run tests that require VS Code API by default
     testPathIgnorePatterns: [
         '/node_modules/',
+        '/tests/electron/', // Mocha-based, runs via npm run test:electron
         '/tests/extension.test.js',
         '/tests/business_modules/awareness/app/awarenessService.adapters.test.js',
         '/tests/business_modules/awareness/domain/entities/agentSuggestionHandler.batch.test.js', // Module removed during refactoring
