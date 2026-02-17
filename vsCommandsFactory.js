@@ -107,15 +107,15 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
                 showWarningMessage('Awareness engine not initialized.');
                 return;
             }
-            const refreshMeter = () => {
-                if (typeof state.updateAwarenessMeter === 'function') {
-                    state.updateAwarenessMeter();
+            const refreshButton = () => {
+                if (typeof state.updateReportButton === 'function') {
+                    state.updateReportButton();
                 }
             };
             try {
                 await state.awarenessEngine.resetAwarenessState();
-                refreshMeter();
-                setImmediate(refreshMeter);
+                refreshButton();
+                setImmediate(refreshButton);
                 if (state.fileDecorationProvider && typeof state.fileDecorationProvider.refresh === 'function') {
                     state.fileDecorationProvider.refresh();
                 }
@@ -286,17 +286,17 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
                 return;
             }
             try {
-                if (typeof state.updateAwarenessMeter === 'function') {
-                    state.updateAwarenessMeter();
+                if (typeof state.updateReportButton === 'function') {
+                    state.updateReportButton();
                 }
                 if (state.fileDecorationProvider && typeof state.fileDecorationProvider.refresh === 'function') {
                     state.fileDecorationProvider.refresh();
                 }
-                const line = `Awareness meter refreshed at ${new Date().toISOString()}`;
+                const line = `Report button refreshed at ${new Date().toISOString()}`;
                 ch.clear();
                 ch.appendLine(line);
                 ch.show(true);
-                showInformationMessage('Awareness meter refreshed. See Output (VibeSwitch).');
+                showInformationMessage('Report button refreshed. See Output (VibeSwitch).');
             } catch (error) {
                 log(`VibeSwitch: Error refreshing awareness meter: ${error.message}`, true, true);
                 if (ch) {

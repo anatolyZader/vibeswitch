@@ -14,7 +14,7 @@
  * 
  * INITIALIZATION ORDER (critical):
  * 1. Create log helper (needed by everything)
- * 2. Create UI helpers (updateAwarenessMeter, switchModeInStatusBar, updateFileColorsInExplorer, updateFileColorsForMode)
+ * 2. Create UI helpers (updateReportButton, switchModeInStatusBar, updateFileColorsInExplorer, updateFileColorsForMode)
  * 3. Create monitor lifecycle helpers (start/stop)
  * 4. Create mode switching helper (depends on UI helpers)
  * 5. Create file decoration helper
@@ -24,7 +24,7 @@
 const vscode = require('vscode');
 
 // Import modules
-const awarenessMeter = require('./ui/awarenessMeterDisplay');
+const reportButton = require('./ui/reportButtonDisplay');
 const modeSwitcher = require('./ui/modeSwitcherDisplay');
 const commandHandlersFactory = require('./vsCommandsFactory');
 const modeService = require('./business_modules/mode/app/modeService');
@@ -82,10 +82,10 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
         // }
     };
     
-    // Update awareness meter - called after score calculation
+    // Update report button - called after score calculation
     // Internal helper - errors propagate to caller (boundary)
-    const updateAwarenessMeter = () => {
-        awarenessMeter.updateAwarenessMeter(
+    const updateReportButton = () => {
+        reportButton.updateReportButton(
             state.awarenessBarItem, 
             state.awarenessEngine, 
             state.getMode(), 
@@ -93,8 +93,8 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
         );
     };
     
-    // Switch mode in status bar - shows/omits awareness meter based on mode
-    // Called when mode changes to update mode indicator and show/hide awareness meter
+    // Switch mode in status bar - shows/omits report button based on mode
+    // Called when mode changes to update mode indicator and show/hide report button
     // NOTE: File colors are updated separately via updateFileColorsForMode()
     const switchModeInStatusBar = (forceMode = null) => {
         // Only update if mode is explicitly provided or already set
@@ -107,14 +107,14 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
         // If no mode set at all, show neutral state (don't detect)
         if (!currentMode) {
             modeSwitcher.updateStatusBar(state.statusBarItem, null, state.outputChannel);
-            updateAwarenessMeter(); // This will hide the meter if no mode
+            updateReportButton(); // Update report button with current state
             return;
         }
         
         // Update mode indicator in status bar
         modeSwitcher.updateStatusBar(state.statusBarItem, currentMode, state.outputChannel);
-        // Update awareness meter (shows in both 'dev' and 'vibe' modes)
-        updateAwarenessMeter();
+        // Update report button (always visible, shows basic info)
+        updateReportButton();
         // NOTE: File colors are updated separately - not mixed with status bar updates
     };
 
@@ -197,13 +197,13 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
             clearInterval(state.meterUpdateTimer);
         }
         state.meterUpdateTimer = setInterval(() => {
-            safe('meterUpdateTimer', () => {
-                // Always update meter - runs continuously regardless of mode
-                updateAwarenessMeter();
+            safe('reportButtonUpdateTimer', () => {
+                // Always update report button - runs continuously regardless of mode
+                updateReportButton();
             });
         }, 10000);
         
-        updateAwarenessMeter();
+        updateReportButton();
     };
 
     // stopAwarenessMonitor is used ONLY for cleanup on extension deactivation
@@ -278,8 +278,8 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
     // ============================================================================
     // STEP 6: Initialize command handlers (depends on all above helpers)
     // ============================================================================
-    // Expose so commands (e.g. restart awareness meter) can force meter refresh
-    state.updateAwarenessMeter = updateAwarenessMeter;
+    // Expose so commands (e.g. restart report button) can force button refresh
+    state.updateReportButton = updateReportButton;
     const commandHandlers = commandHandlersFactory({
         log,
         switchToMode,
@@ -292,7 +292,7 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
     // Return all helpers for use in activate function
     // ============================================================================
     return {
-        updateAwarenessMeter,
+        updateReportButton,
         switchModeInStatusBar,
         updateFileColorsInExplorer,
         updateFileColorsForMode,

@@ -284,7 +284,7 @@ async function activate(context) {
             switchModeInStatusBar, 
             updateFileColorsForMode, 
             commandHandlers,
-            updateAwarenessMeter,
+            updateReportButton,
             startAwarenessMonitor,
             stopAwarenessMonitor,
             initFileDecorations
@@ -325,8 +325,8 @@ async function activate(context) {
         awarenessEngine.setCallbacks({
             onScoreUpdate: () => {
                 safe('onScoreUpdate', () => {
-                    if (updateAwarenessMeter) {
-                        updateAwarenessMeter();
+                    if (updateReportButton) {
+                        updateReportButton();
                     }
                 });
             },
@@ -433,9 +433,9 @@ async function activate(context) {
         if (startAwarenessMonitor) {
             await startAwarenessMonitor();
         }
-        // Ensure awareness meter is updated (updates tooltip with detailed info)
-        if (updateAwarenessMeter) {
-            updateAwarenessMeter();
+        // Ensure report button is updated (updates tooltip with current score)
+        if (updateReportButton) {
+            updateReportButton();
         }
 
         // Ensure Report status bar item is visible (in case it was hidden earlier in activation)
