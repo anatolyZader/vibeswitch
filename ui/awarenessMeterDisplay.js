@@ -192,11 +192,8 @@ function updateAwarenessMeter(awarenessBarItem, awarenessEngine, currentMode, ou
     }
 
     const workspaceFolders = vscode.workspace.workspaceFolders;
-    if (!workspaceFolders) {
-        awarenessBarItem.hide();
-        return;
-    }
-
+    
+    // Always show report button - it works even without a workspace (shows "no data" state)
     // Show colored circle in both DEV and VIBE modes (click opens dashboard, hover shows schematic)
     if (currentMode === 'vibe' || currentMode === 'dev') {
         let scoreData;
@@ -243,14 +240,16 @@ function updateAwarenessMeter(awarenessBarItem, awarenessEngine, currentMode, ou
             awarenessBarItem.backgroundColor = circle.backgroundColor;
         }
     } else {
+        // Even without mode, show report button with basic info
         awarenessBarItem.text = 'REPORT';
-        awarenessBarItem.tooltip = 'Mode not set';
+        awarenessBarItem.tooltip = 'VibeSwitch: Click to open dashboard';
         awarenessBarItem.backgroundColor = undefined;
     }
 
-    // Show awareness meter in both DEV and VIBE modes
+    // Always show report button (unless explicitly disabled by config)
+    // Report button provides value even without active mode - shows dashboard with available data
     const config = vscode.workspace.getConfiguration('vibeswitch');
-    const shouldShow = (currentMode === 'dev' || currentMode === 'vibe') && config.get('showInStatusBar', true); // Default to true
+    const shouldShow = config.get('showInStatusBar', true); // Default to true
     
     if (shouldShow) {
         awarenessBarItem.show();

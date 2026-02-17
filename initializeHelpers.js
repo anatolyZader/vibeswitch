@@ -14,20 +14,17 @@
  * 
  * INITIALIZATION ORDER (critical):
  * 1. Create log helper (needed by everything)
- * 2. Create UI helpers (updateAwarenessMeter, switchModeInStatusBar, updateFileColorsInExplorer, updateFileColorsForMode)
+ * 2. Create UI helpers (updateReportButton, updateFileColorsInExplorer)
  * 3. Create monitor lifecycle helpers (start/stop)
- * 4. Create mode switching helper (depends on UI helpers)
- * 5. Create file decoration helper
- * 6. Create command handlers (depends on all above)
+ * 4. Create file decoration helper
+ * 5. Create command handlers (depends on all above)
  */
 
 const vscode = require('vscode');
 
 // Import modules
-const awarenessMeter = require('./ui/awarenessMeterDisplay');
-const modeSwitcher = require('./ui/modeSwitcherDisplay');
+const reportButton = require('./ui/reportButtonDisplay');
 const commandHandlersFactory = require('./vsCommandsFactory');
-const modeService = require('./business_modules/mode/app/modeService');
 const UnreviewedFileDecor = require('./ui/fileColoringDisplay');
 const safe = require('./safe');
 
@@ -53,69 +50,26 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
     const log = createLogWrapperFunc();
 
     // ============================================================================
-    // STEP 2: Initialize UI helpers (needed by monitor and mode switching)
+    // STEP 2: Initialize UI helpers (needed by monitor)
     // ============================================================================
     // Update file colors in Explorer - updates file name colors based on review debt/pending status
     // Called when debt/suggestions change to reflect current state
-    // NOTE: This is for content-based updates (debt/suggestions), NOT mode changes
     // DISABLED: File coloring module disabled to prevent noise and excessive load
     // Internal helper - errors propagate to caller (boundary)
     const updateFileColorsInExplorer = () => {
         // DISABLED: File coloring disabled
         return;
-        // if (state.fileDecorationProvider && state.getMode() === 'dev') {
-        //     state.fileDecorationProvider.refresh();
-        // }
     };
     
-    // Update file colors for mode change - shows/hides file colors based on mode
-    // Called when mode changes to show/hide file decorations
-    // DISABLED: File coloring module disabled to prevent noise and excessive load
-    // NOTE: This is separate from content-based updates to isolate mode switching concerns
+    // Update report button - called after score calculation
     // Internal helper - errors propagate to caller (boundary)
-    const updateFileColorsForMode = () => {
-        // DISABLED: File coloring disabled
-        return;
-        // if (state.fileDecorationProvider) {
-        //     // Refresh to show/hide based on current mode (provider checks mode internally)
-        //     state.fileDecorationProvider.refresh();
-        // }
-    };
-    
-    // Update awareness meter - called after score calculation
-    // Internal helper - errors propagate to caller (boundary)
-    const updateAwarenessMeter = () => {
-        awarenessMeter.updateAwarenessMeter(
+    const updateReportButton = () => {
+        reportButton.updateReportButton(
             state.awarenessBarItem, 
             state.awarenessEngine, 
-            state.getMode(), 
+            null, // No mode - VibeSwitch doesn't use modes anymore
             state.outputChannel
         );
-    };
-    
-    // Switch mode in status bar - shows/omits awareness meter based on mode
-    // Called when mode changes to update mode indicator and show/hide awareness meter
-    // NOTE: File colors are updated separately via updateFileColorsForMode()
-    const switchModeInStatusBar = (forceMode = null) => {
-        // Only update if mode is explicitly provided or already set
-        if (forceMode !== null) {
-            state.setMode(forceMode);
-        }
-        
-        const currentMode = state.getMode();
-        
-        // If no mode set at all, show neutral state (don't detect)
-        if (!currentMode) {
-            modeSwitcher.updateStatusBar(state.statusBarItem, null, state.outputChannel);
-            updateAwarenessMeter(); // This will hide the meter if no mode
-            return;
-        }
-        
-        // Update mode indicator in status bar
-        modeSwitcher.updateStatusBar(state.statusBarItem, currentMode, state.outputChannel);
-        // Update awareness meter (shows in both 'dev' and 'vibe' modes)
-        updateAwarenessMeter();
-        // NOTE: File colors are updated separately - not mixed with status bar updates
     };
 
     // ============================================================================
@@ -147,10 +101,10 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
     };
 
     // ============================================================================
-    // STEP 4: Initialize monitor lifecycle helpers
+    // STEP 3: Initialize monitor lifecycle helpers
     // ============================================================================
     // Starts the awareness monitor - called once on extension activation
-    // The monitor runs continuously regardless of mode and is never stopped
+    // The monitor runs continuously and is never stopped
     const startAwarenessMonitor = async () => {
         if (!state.awarenessEngine || !state.extensionContext) {
             return;
@@ -159,8 +113,6 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
         // Store updateFileColorsInExplorer in state so modules can access it
         state.updateFileColorsInExplorer = updateFileColorsInExplorer;
         
-        // Pass current mode to classifier for mode-specific thresholds
-        const currentMode = state.getMode() || 'dev';
         const recordOptions = {};
         try {
             const cfg = vscode.workspace.getConfiguration('vibeswitch');
@@ -178,7 +130,7 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
                 }
             }
         } catch (_) { }
-        await state.awarenessEngine.start(state.extensionContext, updateFileColorsInExplorer, currentMode, recordOptions);
+        await state.awarenessEngine.start(state.extensionContext, updateFileColorsInExplorer, null, recordOptions);
         log('VibeSwitch: Started real-time awareness monitoring');
         
         // Update awareness engine reference in file decoration provider (if it exists)
@@ -192,97 +144,46 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
         }
         
         // Timer is a boundary - use safe() wrapper
-        // Guard against double-start (switch dev→dev)
-        if (state.meterUpdateTimer) {
-            clearInterval(state.meterUpdateTimer);
+        if (state.reportButtonUpdateTimer) {
+            clearInterval(state.reportButtonUpdateTimer);
         }
-        state.meterUpdateTimer = setInterval(() => {
-            safe('meterUpdateTimer', () => {
-                // Always update meter - runs continuously regardless of mode
-                updateAwarenessMeter();
+        state.reportButtonUpdateTimer = setInterval(() => {
+            safe('reportButtonUpdateTimer', () => {
+                // Always update report button - runs continuously
+                updateReportButton();
             });
         }, 10000);
         
-        updateAwarenessMeter();
+        updateReportButton();
     };
 
     // stopAwarenessMonitor is used ONLY for cleanup on extension deactivation
-    // It is NOT called during mode switches - the monitor runs continuously
     const stopAwarenessMonitor = async () => {
         if (!state.awarenessEngine) {
             return;
         }
         
         await state.awarenessEngine.stop();
-        log('VibeSwitch: Stopped awareness monitoring (VIBE mode)');
+        log('VibeSwitch: Stopped awareness monitoring');
         
         if (state.fileDecorationProvider) {
             state.fileDecorationProvider.dispose();
             state.fileDecorationProvider = null;
         }
         
-        if (state.meterUpdateTimer) {
-            clearInterval(state.meterUpdateTimer);
-            state.meterUpdateTimer = null;
+        if (state.reportButtonUpdateTimer) {
+            clearInterval(state.reportButtonUpdateTimer);
+            state.reportButtonUpdateTimer = null;
         }
     };
 
     // ============================================================================
-    // STEP 5: Initialize mode switching helper (depends on UI helpers)
+    // STEP 4: Initialize command handlers (depends on all above helpers)
     // ============================================================================
-    // Boundary: Command handler - errors handled at boundary
-    const switchToMode = async (mode) => {
-        try {
-            const currentMode = state.getMode();
-            log(`VibeSwitch: Switching to ${mode} mode (current: ${currentMode})`);
-            
-            // Set mode IMMEDIATELY before any file operations
-            // This prevents any detection from seeing the wrong mode
-            const previousMode = currentMode;
-            state.setMode(mode);
-            
-            // Update UI immediately with the new mode (shows/omits awareness meter)
-            switchModeInStatusBar(mode);
-            // Update file colors separately based on mode change
-            updateFileColorsForMode();
-            
-            await modeService(mode, {
-                currentMode: previousMode, // Pass previous mode for stats
-                onModeSwitched: (newMode) => {
-                    // Don't change currentMode here - we already set it
-                    log(`VibeSwitch: Mode switched callback called with: ${newMode} (already set to ${state.getMode()})`);
-                },
-                usageStats: state.usageStats,
-                vscodeAdapter: container.getAdapter('awareness', 'vscodeAdapter') // Pass adapter for Ports and Adapters pattern
-            });
-            
-            // Verify file was written correctly, but DON'T detect mode from file
-            // We trust what we just set
-            log(`VibeSwitch: Successfully switched to ${mode} mode (mode locked, no re-detection)`);
-            
-            // Final UI update to ensure consistency (shows/omits awareness meter)
-            switchModeInStatusBar(mode);
-            // Update file colors separately to ensure they reflect the new mode
-            updateFileColorsForMode();
-        } catch (error) {
-            // Boundary: Command handler - show user-facing error
-            log(`ERROR in switchToMode: ${error.message}`, true, true);
-            // Use adapter if available, fallback to direct vscode
-            const vscodeAdapter = container.getAdapter('awareness', 'vscodeAdapter');
-            const showError = (vscodeAdapter && vscodeAdapter.showErrorMessage) ? vscodeAdapter.showErrorMessage.bind(vscodeAdapter) : vscode.window.showErrorMessage;
-            showError(`Failed to switch mode: ${error.message}`);
-            throw error; // Re-throw so caller knows it failed
-        }
-    };
-
-    // ============================================================================
-    // STEP 6: Initialize command handlers (depends on all above helpers)
-    // ============================================================================
-    // Expose so commands (e.g. restart awareness meter) can force meter refresh
-    state.updateAwarenessMeter = updateAwarenessMeter;
+    // Expose so commands (e.g. restart report button) can force button refresh
+    state.updateReportButton = updateReportButton;
     const commandHandlers = commandHandlersFactory({
         log,
-        switchToMode,
         updateFileColorsInExplorer,
         state,
         container
@@ -292,14 +193,11 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
     // Return all helpers for use in activate function
     // ============================================================================
     return {
-        updateAwarenessMeter,
-        switchModeInStatusBar,
+        updateReportButton,
         updateFileColorsInExplorer,
-        updateFileColorsForMode,
         commandHandlers,
         initFileDecorations,
         startAwarenessMonitor,
-        stopAwarenessMonitor,
-        switchToMode
+        stopAwarenessMonitor
     };
 };
