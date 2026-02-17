@@ -643,62 +643,6 @@ function commandHandlers({ log, updateFileColorsInExplorer, state, container }) 
             }
         },
 
-        'vibeswitch.setupCapability': async () => {
-            // #region agent log
-            fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'vsCommandsFactory.js:setupCapability',message:'command_invoked',data:{hasExtensionPath:!!state.extensionContext?.extensionPath},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
-            // #endregion
-            const capabilitySetup = require('./business_modules/mode-enforcement/app/capabilitySetup');
-            const extensionPath = state.extensionContext?.extensionPath;
-            if (!extensionPath) {
-                showErrorMessage('Extension context not available');
-                return;
-            }
-            const result = capabilitySetup.runSetup(extensionPath);
-            // #region agent log
-            fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'vsCommandsFactory.js:setupCapability',message:'after_runSetup',data:{success:result.success,copiedCount:result.copied?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
-            // #endregion
-            let message = '=== Setup Capability Scripts ===\n\n';
-            if (result.copied.length > 0) {
-                message += 'Copied:\n';
-                result.copied.forEach(f => message += `  ${f}\n`);
-            }
-            if (result.errors.length > 0) {
-                message += '\nErrors:\n';
-                result.errors.forEach(e => message += `  ${e}\n`);
-            }
-            message += `\nStatus: ${result.success ? 'OK' : 'FAILED'}\n`;
-            state.outputChannel?.appendLine(message);
-            state.outputChannel?.show(true);
-            if (result.success) {
-                showInformationMessage('VibeSwitch capability scripts installed. Run Capability Self-Test to verify.');
-                if (state.modeEnforcement?.selfTest) {
-                    const testResult = state.modeEnforcement.selfTest.run();
-                    if (testResult.passed) {
-                        showInformationMessage('Capability self-test passed.');
-                    } else {
-                        showWarningMessage(`Self-test still failing: ${testResult.errors[0]}. Ensure jq is installed.`);
-                    }
-                }
-            } else {
-                showErrorMessage(`Setup failed: ${result.errors[0]}`);
-            }
-        },
-
-        'vibeswitch.registerMcpServer': async () => {
-            const mcpRegistration = require('./business_modules/mode-enforcement/app/mcpRegistration');
-            const extensionPath = state.extensionContext?.extensionPath;
-            if (!extensionPath) {
-                showErrorMessage('Extension context not available');
-                return;
-            }
-            const result = mcpRegistration.registerMcpServer(extensionPath);
-            if (result.success) {
-                showInformationMessage('VibeSwitch: MCP server registered. Restart Cursor or reload window if needed.');
-            } else {
-                showErrorMessage(`VibeSwitch: Register MCP failed: ${result.error}`);
-            }
-        },
-
         // @ai
         'vibeswitch.testAddAICode': async () => {
             // @ai
