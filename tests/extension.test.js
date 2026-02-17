@@ -18,9 +18,8 @@ describe('VibeSwitch Extension Test Suite', () => {
 
     test('Commands should be registered', async () => {
         const commands = await vscode.commands.getCommands(true);
-        expect(commands.includes('vibeswitch.switchMode').toBeTruthy());
-        expect(commands.includes('vibeswitch.toVibe').toBeTruthy());
-        expect(commands.includes('vibeswitch.toDev').toBeTruthy());
+        expect(commands.includes('vibeswitch.openDashboard')).toBeTruthy();
+        expect(commands.includes('vibeswitch.showStats')).toBeTruthy();
     });
 
     test('Configuration settings should exist', () => {
@@ -54,70 +53,11 @@ describe('Path Safety Tests', () => {
     });
 });
 
-describe('Mode Switching Tests', () => {
-    let testWorkspacePath;
-
-    suiteSetup(() => {
-        // Create a temporary test workspace
-        testWorkspacePath = path.join(__dirname, '..', '..', 'test-workspace');
-        if (!fs.existsSync(testWorkspacePath)) {
-            fs.mkdirSync(testWorkspacePath, { recursive: true });
-        }
-    });
-
-    suiteTeardown(() => {
-        // Cleanup test workspace
-        if (fs.existsSync(testWorkspacePath)) {
-            fs.rmSync(testWorkspacePath, { recursive: true, force: true });
-        }
-    });
-
-    test('Should create default mode files when missing', async function() {
-        this.timeout(5000);
-        
-        const cursorDir = path.join(testWorkspacePath, '.cursor');
-        const vibeRules = path.join(cursorDir, 'rules.vibe.md');
-        const devRules = path.join(cursorDir, 'rules.dev.md');
-        
-        // Create .cursor directory if it doesn't exist
-        if (!fs.existsSync(cursorDir)) {
-            fs.mkdirSync(cursorDir, { recursive: true });
-        }
-        
-        // Create files
-        if (!fs.existsSync(vibeRules)) {
-            fs.writeFileSync(vibeRules, '# VIBE MODE\nTest content');
-        }
-        if (!fs.existsSync(devRules)) {
-            fs.writeFileSync(devRules, '# DEV MODE\nTest content');
-        }
-        
-        expect(fs.existsSync(vibeRules).toBeTruthy(), 'VIBE rules file should exist');
-        expect(fs.existsSync(devRules).toBeTruthy(), 'DEV rules file should exist');
-    });
-
-    test('Should validate mode parameter', () => {
-        const validModes = ['vibe', 'dev'];
-        expect(validModes.includes('vibe').toBeTruthy());
-        expect(validModes.includes('dev').toBeTruthy());
-        expect(!validModes.includes('invalid').toBeTruthy());
-        expect(!validModes.includes('hacker').toBeTruthy());
-    });
-
-    test('Mode files should contain correct markers', () => {
-        const cursorDir = path.join(testWorkspacePath, '.cursor');
-        const vibeRules = path.join(cursorDir, 'rules.vibe.md');
-        const devRules = path.join(cursorDir, 'rules.dev.md');
-        
-        if (fs.existsSync(vibeRules)) {
-            const content = fs.readFileSync(vibeRules, 'utf8');
-            expect(content.includes('VIBE MODE').toBeTruthy(), 'VIBE file should contain VIBE MODE marker');
-        }
-        
-        if (fs.existsSync(devRules)) {
-            const content = fs.readFileSync(devRules, 'utf8');
-            expect(content.includes('DEV MODE').toBeTruthy(), 'DEV file should contain DEV MODE marker');
-        }
+describe('Cursor rules', () => {
+    test('.cursor/rules.md is the single rules file (no separate dev/vibe files)', () => {
+        const workspaceRoot = path.join(__dirname, '..', '..');
+        const rulesFile = path.join(workspaceRoot, '.cursor', 'rules.md');
+        expect(fs.existsSync(rulesFile)).toBeTruthy();
     });
 });
 

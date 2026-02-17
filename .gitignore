@@ -42,3 +42,6 @@ coverage/
 # Temporary files
 *.tmp
 *.temp
+
+# Daily research reports (generated; keep .gitkeep)
+business_modules/research/researchReview/reports/*.md

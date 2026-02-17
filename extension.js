@@ -6,21 +6,11 @@ const {
     applyVSCodeLoggingSettings,
     createLogWrapperFunc
 } = require('./logger');
-const modeDetection = require('./business_modules/mode/app/modeDetection');
 const ExtensionState = require('./extensionState');
 const DIContainer = require('./diContainer');
 const initializeHelpers = require('./initializeHelpers');
 const safe = require('./safe');
 const compositionRoot = require('./compositionRoot');
-const {
-    ModeManager,
-    HooksJsonGuard,
-    CapabilitySelfTest,
-    WorkspaceAllowlist,
-    AlertFileEditDetector,
-    KeypairManager,
-    ApprovalManager
-} = require('./business_modules/mode-enforcement');
 
 /**
  * Register all VS Code commands
@@ -135,121 +125,8 @@ async function activate(context) {
         // Create log wrapper function for extension-level code
         log = createLogWrapperFunc();
         
-        // ========== MODE-ENFORCEMENT INITIALIZATION ==========
-        // Initialize early before any other components
-        
-        // 1. Mode Manager - source of truth in globalState, mirror to filesystem
-        const modeManager = new ModeManager(context);
-        modeManager.syncToFileSystem();  // Ensure filesystem is in sync on startup
-        log('VibeSwitch: ModeManager initialized');
-        
-        // 2. Workspace Allowlist - sync current workspaces
-        const workspaceAllowlist = new WorkspaceAllowlist();
-        if (vscode.workspace.workspaceFolders) {
-            workspaceAllowlist.syncFromWorkspace(vscode.workspace.workspaceFolders);
-        }
-        log('VibeSwitch: WorkspaceAllowlist synced');
-        
-        // 3. Sync hooks and lib from extension to ~/.vibeswitch (so Cursor runs latest hook code)
-        const capabilitySetup = require('./business_modules/mode-enforcement/app/capabilitySetup');
-        capabilitySetup.runSetup(context.extensionPath);
-
-        // 4. Capability Self-Test - verify setup integrity
-        const selfTest = new CapabilitySelfTest();
-        let testResult = selfTest.run();
-        // #region agent log
-        fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'extension.js:selftest',message:'selftest_result',data:{passed:testResult.passed,errors:testResult.errors,warningCount:testResult.warnings?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
-        // #endregion
-        if (!testResult.passed) {
-            log(`VibeSwitch: Capability self-test FAILED: ${testResult.errors.join(', ')}`, true, true);
-            vscode.window.showWarningMessage(
-                `VibeSwitch: Setup verification failed: ${testResult.errors[0]}. Capability enforcement may not work correctly.`
-            );
-            const setupPromptShown = context.globalState.get('vibeswitch.setupPromptShown', false);
-            // #region agent log
-            fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'extension.js:setup_prompt',message:'first_run_setup',data:{setupPromptShown},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H5'})}).catch(()=>{});
-            // #endregion
-            if (!setupPromptShown) {
-                context.globalState.update('vibeswitch.setupPromptShown', true);
-                vscode.window.showInformationMessage(
-                    'VibeSwitch: Copy hook scripts and canonical.js to ~/.vibeswitch?',
-                    'Setup',
-                    'Later'
-                ).then(choice => {
-                    // #region agent log
-                    fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'extension.js:setup_choice',message:'user_choice',data:{choice:choice||'dismissed'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H5'})}).catch(()=>{});
-                    // #endregion
-                    if (choice === 'Setup') {
-                        const capabilitySetup = require('./business_modules/mode-enforcement/app/capabilitySetup');
-                        const setupResult = capabilitySetup.runSetup(context.extensionPath);
-                        // #region agent log
-                        fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'extension.js:setup_done',message:'setup_after_prompt',data:{success:setupResult.success,copied:setupResult.copied?.length,errors:setupResult.errors?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
-                        // #endregion
-                        if (setupResult.success) {
-                            testResult = selfTest.run();
-                            if (testResult.passed) {
-                                vscode.window.showInformationMessage('VibeSwitch: Setup complete. Capability self-test passed.');
-                            } else {
-                                vscode.window.showWarningMessage(`VibeSwitch: Scripts copied. Self-test still failing: ${testResult.errors[0]}. Ensure jq is installed.`);
-                            }
-                        } else {
-                            vscode.window.showErrorMessage(`VibeSwitch: Setup failed: ${setupResult.errors[0]}`);
-                        }
-                    }
-                });
-            }
-        } else {
-            log('VibeSwitch: Capability self-test passed');
-        }
-        if (testResult.warnings.length > 0) {
-            log(`VibeSwitch: Warnings: ${testResult.warnings.join(', ')}`);
-        }
-        
-        // Start periodic self-test
-        selfTest.startPeriodic((result) => {
-            log(`VibeSwitch: Periodic self-test FAILED: ${result.errors.join(', ')}`, true, false);
-        });
-        context.subscriptions.push({ dispose: () => selfTest.dispose() });
-        
-        // 5. HooksJsonGuard - watch and protect hooks.json
-        const hooksGuard = new HooksJsonGuard(context, modeManager);
-        if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
-            hooksGuard.start(vscode.workspace.workspaceFolders[0].uri.fsPath);
-        }
-        context.subscriptions.push({ dispose: () => hooksGuard.dispose() });
-        log('VibeSwitch: HooksJsonGuard started');
-        
-        // 6. AlertFileEditDetector - monitor for unapproved edits with auto-revert
-        const autoRevertEnabled = vscode.workspace.getConfiguration('vibeswitch').get('autoRevertUnapprovedEdits', false);
-        const alertDetector = new AlertFileEditDetector(modeManager, { autoRevert: autoRevertEnabled });
-        alertDetector.createBadge(context);
-        alertDetector.start();
-        context.subscriptions.push({ dispose: () => alertDetector.dispose() });
-        log(`VibeSwitch: AlertFileEditDetector started (autoRevert: ${autoRevertEnabled})`);
-        
-        // 7. KeypairManager - Ed25519 keypair for token signing
-        const keypairManager = new KeypairManager(context);
-        await keypairManager.initialize();
-        log('VibeSwitch: KeypairManager initialized');
-        
-        // 8. ApprovalManager - MCP patch request approval workflow
-        const approvalManager = new ApprovalManager(context, keypairManager, modeManager);
-        approvalManager.start();
-        context.subscriptions.push({ dispose: () => approvalManager.dispose() });
-        log('VibeSwitch: ApprovalManager started');
-        
-        // Store mode-enforcement components in state for later access
-        state.modeEnforcement = {
-            modeManager,
-            workspaceAllowlist,
-            selfTest,
-            hooksGuard,
-            alertDetector,
-            keypairManager,
-            approvalManager
-        };
-        
-        // ========== END MODE-ENFORCEMENT ==========
+        // Fixed mode for awareness/dashboard (no mode switching)
+        state.currentMode = 'vibe';
         
         // ========== MULTI-AGENT ARCHITECTURE INITIALIZATION ==========
         // Initialize agents integration if enabled
@@ -305,6 +182,22 @@ async function activate(context) {
         // Restore window border and clear frame-flash timeout on deactivate
         const { disposeFrameFlash } = require('./ui/frameFlash');
         context.subscriptions.push({ dispose: disposeFrameFlash });
+
+        // Create Report status bar item early (before any await) so it appears even if later steps fail
+        const showInStatusBar = vscode.workspace.getConfiguration('vibeswitch').get('showInStatusBar', true);
+        state.statusBarItem = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            1000
+        );
+        state.statusBarItem.name = 'VibeSwitch Report';
+        state.statusBarItem.command = 'vibeswitch.openDashboard';
+        state.statusBarItem.text = 'Report';
+        state.statusBarItem.tooltip = 'Open VibeSwitch dashboard';
+        context.subscriptions.push(state.statusBarItem);
+        if (showInStatusBar) {
+            state.statusBarItem.show();
+        }
+        log('VibeSwitch: Status bar item (Report) created' + (showInStatusBar ? ' and shown' : ' (hidden by showInStatusBar)'));
         
         // Set callbacks for UI updates and UsageStats integration
         const { refreshDashboardIfOpen } = require('./ui/dashboardDisplay');
@@ -347,34 +240,6 @@ async function activate(context) {
             }
         });
         
-        // Initialize status bar items using direct VS Code API with explicit IDs
-        // Use Right alignment with high priority to appear prominently
-        state.statusBarItem = vscode.window.createStatusBarItem(
-            'vibeswitch.modeIndicator',
-            vscode.StatusBarAlignment.Right,
-            1000  // High priority to appear early (leftmost on right side)
-        );
-        state.awarenessBarItem = vscode.window.createStatusBarItem(
-            'vibeswitch.awarenessMeter',
-            vscode.StatusBarAlignment.Right,
-            999
-        );
-        state.statusBarItem.name = 'VibeSwitch Mode';
-        state.awarenessBarItem.name = 'VibeSwitch Awareness';
-        state.statusBarItem.command = 'vibeswitch.switchMode';
-        state.awarenessBarItem.command = 'vibeswitch.openDashboard';
-        
-        // Register status bar items for cleanup
-        context.subscriptions.push(state.statusBarItem);
-        context.subscriptions.push(state.awarenessBarItem);
-        
-        // Set initial text to ensure status bar is visible (will be updated by switchModeInStatusBar)
-        state.statusBarItem.text = '$(zap) INIT';
-        state.statusBarItem.tooltip = 'VibeSwitch: Initializing...';
-        state.statusBarItem.show();
-        
-        log('VibeSwitch: Status bar item created and shown');
-        
         // Initialize file decorations early (needed for file coloring regardless of mode)
         // This ensures file decorations are available even if monitor doesn't start
         if (initFileDecorations) {
@@ -392,32 +257,12 @@ async function activate(context) {
         // Register all commands
         registerCommands(context, commandHandlers, log);
         
-        // Detect initial mode from file
-        let initialMode = null;
-        try {
-            const detectedMode = modeDetection();
-            initialMode = normalizeMode(detectedMode);
-            if (initialMode) {
-                log(`VibeSwitch: Detected initial mode from file: ${initialMode}`);
-            } else {
-                log(`VibeSwitch: No valid mode detected (got: ${detectedMode})`);
-            }
-        } catch (error) {
-            log(`ERROR detecting initial mode: ${error.message}`, true, false);
+        // Refresh status bar (single Report item)
+        if (switchModeInStatusBar) {
+            switchModeInStatusBar();
         }
         
-        // Update status bar and file colors
-        if (initialMode) {
-            switchModeInStatusBar(initialMode);
-            updateFileColorsForMode();
-        } else {
-            // Set default mode if detection failed
-            log('VibeSwitch: Using default mode (vibe)');
-            switchModeInStatusBar('vibe');
-            updateFileColorsForMode();
-        }
-        
-        // Start awareness monitor once - it runs continuously regardless of mode
+        // Start awareness monitor once
         // The monitor tracks AI suggestions and calculates awareness score in all modes
         if (startAwarenessMonitor) {
             await startAwarenessMonitor();
@@ -425,6 +270,56 @@ async function activate(context) {
         // Ensure awareness meter is updated
         if (updateAwarenessMeter) {
             updateAwarenessMeter();
+        }
+
+        // Ensure Report status bar item is visible (in case it was hidden earlier in activation)
+        if (state.statusBarItem && vscode.workspace.getConfiguration('vibeswitch').get('showInStatusBar', true)) {
+            state.statusBarItem.show();
+        }
+
+        // Re-show Report item after workbench settles (multiple attempts in case layout/host is slow)
+        const showReportIfEnabled = () => {
+            if (state.statusBarItem && vscode.workspace.getConfiguration('vibeswitch').get('showInStatusBar', true)) {
+                state.statusBarItem.show();
+            }
+        };
+        [200, 800, 2000].forEach((ms) => {
+            const t = setTimeout(showReportIfEnabled, ms);
+            context.subscriptions.push({ dispose: () => clearTimeout(t) });
+        });
+
+        // When user toggles "Show in status bar", show or hide the Report item without reload
+        context.subscriptions.push(
+            vscode.workspace.onDidChangeConfiguration((e) => {
+                if (!e.affectsConfiguration('vibeswitch.showInStatusBar') || !state.statusBarItem) return;
+                const show = vscode.workspace.getConfiguration('vibeswitch').get('showInStatusBar', true);
+                if (show) state.statusBarItem.show(); else state.statusBarItem.hide();
+            })
+        );
+
+        // Start research module when enabled: gathers Sonar, token usage, extension metrics and sends to external agent (Fastify/Cloud Run)
+        if (state.researchService) {
+            state.researchService.start();
+            context.subscriptions.push({
+                dispose: () => {
+                    if (state.researchService && typeof state.researchService.stop === 'function') {
+                        state.researchService.stop();
+                    }
+                }
+            });
+            log('VibeSwitch: Research module started (data sent to external analysis agent)');
+        }
+        // Start daily research when enabled: fetches arxiv, Medium, LinkedIn, X and writes report to researchReview/reports once per day
+        if (state.dailyResearchRunner) {
+            state.dailyResearchRunner.start();
+            context.subscriptions.push({
+                dispose: () => {
+                    if (state.dailyResearchRunner && typeof state.dailyResearchRunner.stop === 'function') {
+                        state.dailyResearchRunner.stop();
+                    }
+                }
+            });
+            log('VibeSwitch: Daily research started (reports in researchReview/reports)');
         }
         
         log('VibeSwitch: File watcher disabled - mode only changes on explicit user action');
@@ -453,6 +348,11 @@ async function activate(context) {
         }
         console.error('VibeSwitch activation detail:', detail);
 
+        // Ensure Report status bar is visible so user can still open dashboard
+        if (state.statusBarItem && vscode.workspace.getConfiguration('vibeswitch').get('showInStatusBar', true)) {
+            state.statusBarItem.show();
+        }
+
         // Show user-facing error message
         try {
             const errorAdapter = container.getAdapter('awareness', 'vscodeAdapter');
@@ -467,17 +367,6 @@ async function activate(context) {
             }
         }
     }
-}
-
-/**
- * Normalize mode value to valid mode or null
- * @param {string|null|undefined} mode - Raw mode value
- * @returns {string|null} 'vibe', 'dev', or null if invalid
- */
-function normalizeMode(mode) {
-    if (!mode) return null;
-    const normalized = String(mode).trim().toLowerCase();
-    return (normalized === 'vibe' || normalized === 'dev') ? normalized : null;
 }
 
 // Deactivation function

@@ -2,6 +2,8 @@
 .vscode/**
 .vscode-test/**
 .cursor/**
+!.cursor/hooks/
+!.cursor/hooks/grind.js
 .gitignore
 .gitattributes
 .idea/
@@ -29,6 +31,15 @@ awareness-context/**
 eventstorm/**
 debugging/**
 scripts/**
+play/**
+research-agent/**
+.github/**
+
+# Dashboard: only out/dashboard-app.js is shipped; exclude source and deps
+dashboard-app/**
+
+# Duplicate dashboard copy under ui (not used at runtime)
+ui/dashboard-app/**
 
 # Source (shipped as bundle in out/extension.js)
 extension.js

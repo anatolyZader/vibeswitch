@@ -30,21 +30,6 @@
   "contributes": {
     "commands": [
       {
-        "command": "vibeswitch.switchMode",
-        "title": "Switch AI Collaboration Mode",
-        "category": "VibeSwitch"
-      },
-      {
-        "command": "vibeswitch.toVibe",
-        "title": "Switch to VIBE Mode (Fast & Autonomous)",
-        "category": "VibeSwitch"
-      },
-      {
-        "command": "vibeswitch.toDev",
-        "title": "Switch to DEV Mode (Slow & Aware)",
-        "category": "VibeSwitch"
-      },
-      {
         "command": "vibeswitch.showStats",
         "title": "Show Awareness Report",
         "category": "VibeSwitch"
@@ -135,40 +120,34 @@
         "category": "VibeSwitch"
       },
       {
-        "command": "vibeswitch.showAlertLog",
-        "title": "Show Capability Alert Log",
+        "command": "vibeswitch.setSonarToken",
+        "title": "Set SonarCloud Token (for research/dashboard)",
         "category": "VibeSwitch"
       },
       {
-        "command": "vibeswitch.capabilitySelfTest",
-        "title": "Run Capability Self-Test",
+        "command": "vibeswitch.setSonarProjectKey",
+        "title": "Set Sonar Project Key",
         "category": "VibeSwitch"
       },
       {
-        "command": "vibeswitch.setupCapability",
-        "title": "Setup Capability Scripts (hooks and canonical.js)",
+        "command": "vibeswitch.clearSonarConfig",
+        "title": "Clear Sonar Configuration",
         "category": "VibeSwitch"
       },
       {
-        "command": "vibeswitch.registerMcpServer",
-        "title": "Register MCP Server",
+        "command": "vibeswitch.setResearchAgentApiKey",
+        "title": "Set Research Agent API Key",
         "category": "VibeSwitch"
       }
     ],
-    "keybindings": [
-      {
-        "command": "vibeswitch.switchMode",
-        "key": "ctrl+shift+m",
-        "mac": "cmd+shift+m"
-      }
-    ],
+    "keybindings": [],
     "configuration": {
       "title": "VibeSwitch",
       "properties": {
         "vibeswitch.showInStatusBar": {
           "type": "boolean",
           "default": true,
-          "description": "Show mode indicator and awareness meter in status bar"
+          "description": "Show the Report item in the status bar (click opens dashboard)"
         },
         "vibeswitch.awarenessHighScoreFrameFlash": {
           "type": "boolean",
@@ -333,6 +312,64 @@
           "default": 15000,
           "description": "Timeout for dashboard chat LLM request (ms)."
         },
+        "vibeswitch.research.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable research module: gather objective code quality data (Sonar, token usage, extension metrics) and send to external analysis agent (Fastify/Cloud Run). Analysis is performed by the external Claude agent, not in the extension."
+        },
+        "vibeswitch.research.agentUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL of the research analysis agent (e.g. https://your-service-xxx.run.app). Extension POSTs to /ingest. Leave empty to disable sending."
+        },
+        "vibeswitch.research.pollIntervalMs": {
+          "type": "number",
+          "default": 300000,
+          "minimum": 60000,
+          "description": "How often to gather and send research data to the agent (milliseconds). Default 5 min."
+        },
+        "vibeswitch.research.daily.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Run daily research: fetch from arxiv, Medium, LinkedIn, X (@karpathy) and write a report to researchReview/reports/YYYY-MM-DD.md once per day. Requires research.enabled."
+        },
+        "vibeswitch.sonar.projectKey": {
+          "type": "string",
+          "default": "",
+          "description": "SonarCloud project key (e.g. org_repo) for research/dashboard measures. Leave empty to disable."
+        },
+        "vibeswitch.sonar.branch": {
+          "type": "string",
+          "default": "",
+          "description": "Optional SonarCloud branch (e.g. main, dev) for branch-specific measures."
+        },
+        "vibeswitch.eslint.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run ESLint on workspace for research/dashboard metrics (errors, warnings). Uses project config when present."
+        },
+        "vibeswitch.eslint.patterns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["**/*.js", "**/*.ts", "**/*.jsx", "**/*.tsx"],
+          "description": "Glob patterns for files to lint (e.g. **/*.js). Used when ESLint is enabled."
+        },
+        "vibeswitch.eslint.timeoutMs": {
+          "type": "number",
+          "default": 30000,
+          "minimum": 5000,
+          "description": "Max time for one ESLint run (ms). On timeout, metrics are reported unavailable."
+        },
+        "vibeswitch.projectProgress.plan.enabled": { "type": "boolean", "default": true, "description": "Measure deviation from plan (PLAN.md checkboxes)." },
+        "vibeswitch.projectProgress.plan.path": { "type": "string", "default": "PLAN.md", "description": "Path to plan file relative to workspace." },
+        "vibeswitch.projectProgress.jira.enabled": { "type": "boolean", "default": false, "description": "Measure schedule deviation from Jira active sprint." },
+        "vibeswitch.projectProgress.jira.baseUrl": { "type": "string", "default": "", "description": "Jira Cloud base URL." },
+        "vibeswitch.projectProgress.jira.boardId": { "type": "string", "default": "", "description": "Jira board ID." },
+        "vibeswitch.projectProgress.jira.email": { "type": "string", "default": "", "description": "Jira email for Basic auth; token in secret." },
+        "vibeswitch.projectProgress.jira.storyPointsField": { "type": "string", "default": "customfield_10016", "description": "Story points custom field ID." },
+        "vibeswitch.projectProgress.acceptanceTests.enabled": { "type": "boolean", "default": true, "description": "Measure deviation from acceptance tests." },
+        "vibeswitch.projectProgress.acceptanceTests.command": { "type": "string", "default": "npm test", "description": "Command to run tests." },
+        "vibeswitch.projectProgress.acceptanceTests.timeoutMs": { "type": "number", "default": 60000, "minimum": 5000, "description": "Test run timeout (ms)." },
         "vibeswitch.dashboardChat.includeKeyFiles": {
           "type": "boolean",
           "default": true,
@@ -396,7 +433,11 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "chokidar": "^3.6.0"
+    "chokidar": "^3.6.0",
+    "sql.js": "^1.10.0"
+  },
+  "optionalDependencies": {
+    "eslint": "^9.0.0"
   },
   "devDependencies": {
     "@types/vscode": "^1.80.0",

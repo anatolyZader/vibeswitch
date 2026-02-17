@@ -3,6 +3,7 @@
  * Creates and wires all adapters, services, and domain services
  */
 
+const path = require('path');
 const vscode = require('vscode');
 const AwarenessEngine = require('./business_modules/awareness/app/awarenessEngine');
 
@@ -138,6 +139,221 @@ function compose(context, state, container) {
         state.tokenUsageClient = tokenUsageClient;
     } catch (err) {
         adapters.loggerAdapter?.error?.('compositionRoot: Failed to compose token usage client', err);
+    }
+
+    // SonarCloud API client (research/dashboard measures)
+    try {
+        const vscodeApi = require('vscode');
+        const { createSonarCloudClient } = require('./business_modules/awareness/app/usage/sonarCloudApiClient');
+        const getSonarToken = async () => {
+            try {
+                const t = await context.secretStorage.get('vibeswitch.sonarToken');
+                return typeof t === 'string' ? t : null;
+            } catch (_) {
+                return null;
+            }
+        };
+        const getSonarProjectKey = async () => {
+            const cfg = vscodeApi.workspace.getConfiguration('vibeswitch');
+            const key = cfg.get('sonar.projectKey', '') || '';
+            return typeof key === 'string' ? key.trim() : null;
+        };
+        const getSonarBranch = async () => {
+            const cfg = vscodeApi.workspace.getConfiguration('vibeswitch');
+            const branch = cfg.get('sonar.branch', '') || '';
+            return typeof branch === 'string' ? branch.trim() || undefined : undefined;
+        };
+        const sonarClient = createSonarCloudClient({
+            getToken: getSonarToken,
+            getProjectKey: getSonarProjectKey,
+            getBranch: getSonarBranch,
+            loggerPort: adapters.loggerAdapter
+        });
+        state.sonarClient = sonarClient;
+    } catch (err) {
+        adapters.loggerAdapter?.error?.('compositionRoot: Failed to compose Sonar client', err);
+    }
+
+    // ESLint measures (research/dashboard): run ESLint on workspace, aggregate errors/warnings
+    try {
+        const cfgEslint = vscode.workspace.getConfiguration('vibeswitch');
+        const eslintEnabled = cfgEslint.get('eslint.enabled', true);
+        const workspaceFolders = vscode.workspace.workspaceFolders || [];
+        const workspaceRoot = workspaceFolders[0] ? workspaceFolders[0].uri.fsPath : '';
+        if (eslintEnabled && workspaceRoot) {
+            const { createEslintMeasuresClient } = require('./business_modules/awareness/app/usage/eslintMeasuresClient');
+            const getWorkspaceRoot = () => {
+                const folders = vscode.workspace.workspaceFolders || [];
+                return folders[0] ? folders[0].uri.fsPath : '';
+            };
+            const timeoutMs = Math.max(5000, cfgEslint.get('eslint.timeoutMs', 30000));
+            const patterns = cfgEslint.get('eslint.patterns', ['**/*.js', '**/*.ts', '**/*.jsx', '**/*.tsx']);
+            const patternsArr = Array.isArray(patterns) ? patterns : (typeof patterns === 'string' ? [patterns] : ['**/*.js', '**/*.ts', '**/*.jsx', '**/*.tsx']);
+            state.eslintClient = createEslintMeasuresClient({
+                getWorkspaceRoot,
+                timeoutMs,
+                patterns: patternsArr,
+                loggerPort: adapters.loggerAdapter
+            });
+        } else {
+            state.eslintClient = null;
+        }
+    } catch (err) {
+        adapters.loggerAdapter?.error?.('compositionRoot: Failed to compose ESLint client', err);
+        state.eslintClient = null;
+    }
+
+    // Project progress (plan, schedule, acceptance tests) - research and dashboard
+    try {
+        const cfgProg = vscode.workspace.getConfiguration('vibeswitch');
+        const getWorkspaceRoot = () => {
+            const folders = vscode.workspace.workspaceFolders || [];
+            return folders[0] ? folders[0].uri.fsPath : '';
+        };
+        let planDeviationClient = null;
+        const planEnabled = cfgProg.get('projectProgress.plan.enabled', true);
+        if (planEnabled) {
+            const { createPlanDeviationClient } = require('./business_modules/awareness/app/usage/planDeviationClient');
+            const getPlanPath = () => (cfgProg.get('projectProgress.plan.path', '') || 'PLAN.md').trim() || 'PLAN.md';
+            planDeviationClient = createPlanDeviationClient({
+                getWorkspaceRoot,
+                getPlanPath,
+                loggerPort: adapters.loggerAdapter
+            });
+        }
+        state.planDeviationClient = planDeviationClient;
+        let jiraSprintDeviationClient = null;
+        const jiraEnabled = cfgProg.get('projectProgress.jira.enabled', false);
+        if (jiraEnabled) {
+            const baseUrl = (cfgProg.get('projectProgress.jira.baseUrl', '') || '').trim();
+            const boardId = cfgProg.get('projectProgress.jira.boardId', '');
+            const email = (cfgProg.get('projectProgress.jira.email', '') || '').trim();
+            if (baseUrl && boardId) {
+                const { createJiraSprintDeviationClient } = require('./business_modules/awareness/app/usage/jiraSprintDeviationClient');
+                const getAuthHeader = async () => {
+                    const token = await context.secretStorage.get('vibeswitch.projectProgress.jira.apiToken').catch(() => null);
+                    if (!email || !token || typeof token !== 'string') return null;
+                    const buf = Buffer.from(email + ':' + token, 'utf8');
+                    return 'Basic ' + buf.toString('base64');
+                };
+                jiraSprintDeviationClient = createJiraSprintDeviationClient({
+                    getBaseUrl: () => baseUrl,
+                    getBoardId: () => String(boardId),
+                    getAuthHeader,
+                    getStoryPointsField: () => (cfgProg.get('projectProgress.jira.storyPointsField', '') || 'customfield_10016').trim() || 'customfield_10016',
+                    loggerPort: adapters.loggerAdapter
+                });
+            }
+        }
+        state.jiraSprintDeviationClient = jiraSprintDeviationClient;
+        let acceptanceTestsDeviationClient = null;
+        const atEnabled = cfgProg.get('projectProgress.acceptanceTests.enabled', true);
+        if (atEnabled) {
+            const { createAcceptanceTestsDeviationClient } = require('./business_modules/awareness/app/usage/acceptanceTestsDeviationClient');
+            const getAtCommand = () => (cfgProg.get('projectProgress.acceptanceTests.command', '') || 'npm test').trim() || 'npm test';
+            const getAtTimeoutMs = () => Math.max(5000, cfgProg.get('projectProgress.acceptanceTests.timeoutMs', 60000));
+            acceptanceTestsDeviationClient = createAcceptanceTestsDeviationClient({
+                getWorkspaceRoot,
+                getCommand: getAtCommand,
+                getTimeoutMs: getAtTimeoutMs,
+                loggerPort: adapters.loggerAdapter
+            });
+        }
+        state.acceptanceTestsDeviationClient = acceptanceTestsDeviationClient;
+        const { createProjectProgressService } = require('./business_modules/awareness/app/usage/projectProgressService');
+        state.projectProgressClient = createProjectProgressService({
+            planDeviationClient: planDeviationClient || undefined,
+            jiraSprintDeviationClient: jiraSprintDeviationClient || undefined,
+            acceptanceTestsDeviationClient: acceptanceTestsDeviationClient || undefined,
+            loggerPort: adapters.loggerAdapter
+        });
+    } catch (err) {
+        adapters.loggerAdapter?.error?.('compositionRoot: Failed to compose project progress', err);
+        state.planDeviationClient = null;
+        state.projectProgressClient = null;
+    }
+
+    // Research module: gather objective data (Sonar, token, extension metrics) and send to external agent (Fastify/Cloud Run).
+    // Analysis is performed by the external Claude code agent, not in the extension.
+    try {
+        const cfg = vscode.workspace.getConfiguration('vibeswitch');
+        const researchEnabled = cfg.get('research.enabled', false);
+        const agentUrl = (cfg.get('research.agentUrl', '') || '').trim();
+        const pollIntervalMs = Math.max(60000, cfg.get('research.pollIntervalMs', 300000));
+        if (researchEnabled && agentUrl) {
+            const { createResearchDataService } = require('./business_modules/research');
+            const { DEFAULT_DB_PATH } = require('./business_modules/research/infrastructure/ResearchStore');
+            const getAgentUrl = () => (vscode.workspace.getConfiguration('vibeswitch').get('research.agentUrl', '') || '').trim();
+            const getDbPath = () => DEFAULT_DB_PATH;
+            const getResearchApiKey = async () => {
+                try {
+                    const t = await context.secretStorage.get('vibeswitch.research.agentApiKey');
+                    return typeof t === 'string' ? t : null;
+                } catch (_) {
+                    return null;
+                }
+            };
+            state.researchService = createResearchDataService({
+                state,
+                getAgentUrl,
+                getDbPath,
+                getApiKey: getResearchApiKey,
+                pollIntervalMs,
+                loggerPort: adapters.loggerAdapter
+            });
+        } else {
+            state.researchService = null;
+        }
+    } catch (err) {
+        adapters.loggerAdapter?.error?.('compositionRoot: Failed to compose research module', err);
+        state.researchService = null;
+    }
+
+    // Daily research: fetch from arxiv, Medium, LinkedIn, X and write report to researchReview/reports (once per day).
+    try {
+        const cfg = vscode.workspace.getConfiguration('vibeswitch');
+        const researchEnabled = cfg.get('research.enabled', false);
+        const dailyEnabled = cfg.get('research.daily.enabled', false);
+        if (researchEnabled && dailyEnabled && context.extensionPath) {
+            const { createDailyResearchRunner } = require('./business_modules/research/researchReview/dailyResearchRunner');
+            const getReportsDir = () => path.join(context.extensionPath, 'business_modules', 'research', 'researchReview', 'reports');
+            const getXBearerToken = async () => {
+                try {
+                    const t = await context.secretStorage.get('vibeswitch.research.xBearerToken');
+                    return typeof t === 'string' ? t : null;
+                } catch (_) {
+                    return null;
+                }
+            };
+            const runner = createDailyResearchRunner({
+                getReportsDir,
+                getXBearerToken,
+                loggerPort: adapters.loggerAdapter
+            });
+            const DAILY_MS = 24 * 60 * 60 * 1000;
+            let dailyIntervalId = null;
+            state.dailyResearchRunner = {
+                start() {
+                    if (dailyIntervalId != null) return;
+                    const run = () => {
+                        runner.run().catch(() => {});
+                    };
+                    setTimeout(run, 15000);
+                    dailyIntervalId = setInterval(run, DAILY_MS);
+                },
+                stop() {
+                    if (dailyIntervalId != null) {
+                        clearInterval(dailyIntervalId);
+                        dailyIntervalId = null;
+                    }
+                }
+            };
+        } else {
+            state.dailyResearchRunner = null;
+        }
+    } catch (err) {
+        adapters.loggerAdapter?.error?.('compositionRoot: Failed to compose daily research', err);
+        state.dailyResearchRunner = null;
     }
     
     // Store adapters in DI container

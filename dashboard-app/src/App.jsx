@@ -5,6 +5,8 @@ const FilesSection = require('./FilesSection').default;
 const OutputSection = require('./OutputSection').default;
 const ChatSection = require('./ChatSection').default;
 const ResearchSection = require('./ResearchSection').default;
+const ProjectProcessSection = require('./ProjectProcessSection').default;
+const CodeQualitySection = require('./CodeQualitySection').default;
 
 const defaultPayload = {
   currentMode: 'dev',
@@ -15,7 +17,10 @@ const defaultPayload = {
   tokenUsage: { totalInput: 0, totalOutput: 0, totalTokens: 0, usageApiAvailable: false },
   capabilities: { git: false, ast: false, tasksObserved: false, usageApiAvailable: false },
   sessionView: [],
-  moduleView: { modules: {} }
+  moduleView: { modules: {} },
+  projectProgressMeasures: null,
+  sonarMeasures: null,
+  eslintMeasures: null
 };
 
 function getInitialPayload() {
@@ -74,6 +79,14 @@ function App({ vscode }) {
       <section className="dashboard-section dashboard-meters">
         <h2>Meters</h2>
         <MetersSection payload={payload} />
+      </section>
+      <section className="dashboard-section dashboard-project-process">
+        <h2>Project process</h2>
+        <ProjectProcessSection payload={payload} />
+      </section>
+      <section className="dashboard-section dashboard-code-quality">
+        <h2>Code Quality</h2>
+        <CodeQualitySection payload={payload} />
       </section>
       <section className="dashboard-section dashboard-token-usage">
         <h2>Token usage</h2>

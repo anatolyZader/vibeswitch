@@ -25,9 +25,7 @@ const vscode = require('vscode');
 
 // Import modules
 const awarenessMeter = require('./ui/awarenessMeterDisplay');
-const modeSwitcher = require('./ui/modeSwitcherDisplay');
 const commandHandlersFactory = require('./vsCommandsFactory');
-const modeService = require('./business_modules/mode/app/modeService');
 const UnreviewedFileDecor = require('./ui/fileColoringDisplay');
 const safe = require('./safe');
 
@@ -93,29 +91,19 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
         );
     };
     
-    // Switch mode in status bar - shows/omits awareness meter based on mode
-    // Called when mode changes to update mode indicator and show/hide awareness meter
-    // NOTE: File colors are updated separately via updateFileColorsForMode()
-    const switchModeInStatusBar = (forceMode = null) => {
-        // Only update if mode is explicitly provided or already set
-        if (forceMode !== null) {
-            state.setMode(forceMode);
+    // Refresh single status bar item (Report; click opens dashboard)
+    const switchModeInStatusBar = () => {
+        if (state.statusBarItem) {
+            const showInStatusBar = vscode.workspace.getConfiguration('vibeswitch').get('showInStatusBar', true);
+            state.statusBarItem.text = 'Report';
+            state.statusBarItem.tooltip = 'Open VibeSwitch dashboard';
+            if (showInStatusBar) {
+                state.statusBarItem.show();
+            } else {
+                state.statusBarItem.hide();
+            }
         }
-        
-        const currentMode = state.getMode();
-        
-        // If no mode set at all, show neutral state (don't detect)
-        if (!currentMode) {
-            modeSwitcher.updateStatusBar(state.statusBarItem, null, state.outputChannel);
-            updateAwarenessMeter(); // This will hide the meter if no mode
-            return;
-        }
-        
-        // Update mode indicator in status bar
-        modeSwitcher.updateStatusBar(state.statusBarItem, currentMode, state.outputChannel);
-        // Update awareness meter (shows in both 'dev' and 'vibe' modes)
         updateAwarenessMeter();
-        // NOTE: File colors are updated separately - not mixed with status bar updates
     };
 
     // ============================================================================
@@ -159,8 +147,8 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
         // Store updateFileColorsInExplorer in state so modules can access it
         state.updateFileColorsInExplorer = updateFileColorsInExplorer;
         
-        // Pass current mode to classifier for mode-specific thresholds
-        const currentMode = state.getMode() || 'dev';
+        // Fixed mode for classifier (no mode switching)
+        const currentMode = state.getMode() || 'vibe';
         const recordOptions = {};
         try {
             const cfg = vscode.workspace.getConfiguration('vibeswitch');
@@ -228,52 +216,9 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
     };
 
     // ============================================================================
-    // STEP 5: Initialize mode switching helper (depends on UI helpers)
+    // STEP 5: Mode switching removed - stub for backward compat
     // ============================================================================
-    // Boundary: Command handler - errors handled at boundary
-    const switchToMode = async (mode) => {
-        try {
-            const currentMode = state.getMode();
-            log(`VibeSwitch: Switching to ${mode} mode (current: ${currentMode})`);
-            
-            // Set mode IMMEDIATELY before any file operations
-            // This prevents any detection from seeing the wrong mode
-            const previousMode = currentMode;
-            state.setMode(mode);
-            
-            // Update UI immediately with the new mode (shows/omits awareness meter)
-            switchModeInStatusBar(mode);
-            // Update file colors separately based on mode change
-            updateFileColorsForMode();
-            
-            await modeService(mode, {
-                currentMode: previousMode, // Pass previous mode for stats
-                onModeSwitched: (newMode) => {
-                    // Don't change currentMode here - we already set it
-                    log(`VibeSwitch: Mode switched callback called with: ${newMode} (already set to ${state.getMode()})`);
-                },
-                usageStats: state.usageStats,
-                vscodeAdapter: container.getAdapter('awareness', 'vscodeAdapter') // Pass adapter for Ports and Adapters pattern
-            });
-            
-            // Verify file was written correctly, but DON'T detect mode from file
-            // We trust what we just set
-            log(`VibeSwitch: Successfully switched to ${mode} mode (mode locked, no re-detection)`);
-            
-            // Final UI update to ensure consistency (shows/omits awareness meter)
-            switchModeInStatusBar(mode);
-            // Update file colors separately to ensure they reflect the new mode
-            updateFileColorsForMode();
-        } catch (error) {
-            // Boundary: Command handler - show user-facing error
-            log(`ERROR in switchToMode: ${error.message}`, true, true);
-            // Use adapter if available, fallback to direct vscode
-            const vscodeAdapter = container.getAdapter('awareness', 'vscodeAdapter');
-            const showError = (vscodeAdapter && vscodeAdapter.showErrorMessage) ? vscodeAdapter.showErrorMessage.bind(vscodeAdapter) : vscode.window.showErrorMessage;
-            showError(`Failed to switch mode: ${error.message}`);
-            throw error; // Re-throw so caller knows it failed
-        }
-    };
+    const switchToMode = async () => { /* no-op */ };
 
     // ============================================================================
     // STEP 6: Initialize command handlers (depends on all above helpers)

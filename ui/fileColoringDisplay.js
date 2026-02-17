@@ -146,12 +146,7 @@ class UnreviewedFileDecor {
         this.debug(`[FileDecorations] provideFileDecoration called ${this.debugCallCount} times`, logKey);
 
         try {
-            // Only decorate in DEV mode
-            const currentMode = this.getCurrentMode ? this.getCurrentMode() : null;
-            if (currentMode !== 'dev') {
-                return undefined; // VS Code expects undefined for no decoration
-            }
-
+            // Mode switching removed: no mode check
             if (!this.awarenessEngine) {
                 return undefined; // VS Code expects undefined for no decoration
             }

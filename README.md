@@ -2,59 +2,24 @@
 
 **Stay Aware, Stay in Control: Steer Your AI Speed**
 
-VibeSwitch is a VS Code / Cursor extension that lets you switch between two AI collaboration modes:
-
-- **VIBE** — Fast, autonomous: file edits and most shell/MCP actions allowed.
-- **DEV** — Slow, aware: built-in file edits blocked (or auto-reverted); MCP file edits only via approval token; shell and MCP restricted to allowlist / vibeswitch-only.
-
-See [DEV vs VIBE mode restrictions](docs/2026-01-26_15-30-dev-vs-vibe-mode-restrictions.md) for the full matrix.
+VibeSwitch is a VS Code / Cursor extension focused on **measuring developer behavior** and **objective code quality**: awareness scoring, AI suggestion tracking, research (Sonar/ESLint, plan and test adherence), and optional long-running agent loops. It does not switch or enforce VIBE/DEV modes.
 
 ## Install
 
 - **From VSIX:** Install the packaged `.vsix` (e.g. **Extensions: Install from VSIX...**).
 - **From source:** Clone the repo, run `npm install`, then use **Develop: Install Extension** from the workspace or package with `npm run package`. Before release, run **`npm run test:mvp`** (stable suites); see [Pre-publish checklist](docs/PRE-PUBLISH-CHECKLIST.md).
 
-## First-run setup
+## Optional setup
 
-Capability enforcement (hooks and MCP) requires scripts and a shared module under `~/.vibeswitch/`:
-
-1. **Prerequisite:** [jq](https://stedolan.github.io/jq/) must be installed (used by hook scripts).
-2. On first activation, if the capability self-test fails, you’ll be prompted: **Setup VibeSwitch?** Choose **Setup** to copy hook scripts and `canonical.js` to `~/.vibeswitch/hooks/` and `~/.vibeswitch/lib/`.
-3. Or run **VibeSwitch: Setup Capability Scripts (hooks and canonical.js)** from the Command Palette anytime.
-4. Run **VibeSwitch: Run Capability Self-Test** to verify. It checks that hook scripts exist and are executable, and that `jq` is available.
-
-## Switching mode
-
-- **Command Palette:** **VibeSwitch: Switch AI Collaboration Mode** (or **Switch to VIBE Mode** / **Switch to DEV Mode**).
-- **Status bar:** Click the mode indicator (e.g. VIBE / DEV) on the right.
-- **Keybinding:** `Ctrl+Shift+M` (Windows/Linux) or `Cmd+Shift+M` (macOS).
-
-Mode is persisted and reflected in the status bar and in `.cursor/rules.md` (or rules.dev.md / rules.vibe.md) for Cursor.
-
-## MCP server (DEV mode file edits)
-
-In DEV mode, the agent cannot use built-in Write/StrReplace/Edit; it must use the VibeSwitch MCP tools:
-
-1. **Add the MCP server in Cursor:**
-   - **Option A:** Run **VibeSwitch: Register MCP Server** from the Command Palette. This writes the VibeSwitch MCP server into Cursor’s global MCP config (`~/.cursor/mcp.json`). Restart Cursor or reload the window if needed.
-   - **Option B:** Add the MCP server manually in Cursor MCP / settings:
-     - **Command:** `node`
-     - **Args:** path to the MCP server entry point, e.g. `<extensionPath>/mcp/mode-enforcement/index.js`  
-       (Replace `<extensionPath>` with your VibeSwitch extension install path, e.g. under `.vscode/extensions/` or Cursor’s extensions directory.)
-     - **Server name:** use a fixed name, e.g. `vibeswitch`.
-
-2. **Create `~/.vibeswitch/state/mcp-server.json`** so the shell hook can verify the server:
-   ```json
-   { "serverName": "vibeswitch" }
-   ```
-   The `serverName` must match the name Cursor uses for this MCP server in the hook payload.
-
-3. After setup, the agent can call `mcp__vibeswitch__submit_patch` and, after your approval, `mcp__vibeswitch__apply_patch` with the token.
+- For agent loops, copy `.cursor/hooks/grind.js` to `~/.vibeswitch/hooks/` (or use it from the workspace). No hooks or enforcement are required for core features.
 
 ## Configuration
 
-- **vibeswitch.showInStatusBar** — Show mode and awareness meter in the status bar (default: `true`).
-- **vibeswitch.autoRevertUnapprovedEdits** — In DEV mode, auto-revert git-tracked files when built-in edits are detected (default: `false`). Defaults to `false` to avoid unexpected reverts; set to `true` to enforce automatic revert of unapproved built-in edits in DEV mode. See [DEV vs VIBE](docs/2026-01-26_15-30-dev-vs-vibe-mode-restrictions.md).
+- **vibeswitch.showInStatusBar** — Show VibeSwitch label and awareness meter in the status bar (default: `true`).
+
+## Long-running agent loops (stop hook)
+
+You can use Cursor’s **stop** hook to run the agent in a loop until a goal is met (e.g. tests pass). Add a `stop` entry to `.cursor/hooks.json` that runs `node .cursor/hooks/grind.js` (or copy that script to `~/.vibeswitch/hooks/` and point the command there). See [Agent loop and stop hook](docs/AGENT-LOOP-STOP-HOOK.md) for setup and the grind script.
 
 ## Awareness and stats
 

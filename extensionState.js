@@ -27,19 +27,11 @@ class ExtensionState {
     }
     
     /**
-     * Update current mode
-     * Also syncs to ModeManager (if available) for mode enforcement
-     * @param {string} mode - Mode value ('vibe' or 'dev')
+     * Update current mode (no-op; mode switching removed; kept for backward compat)
+     * @param {string} mode - Mode value (ignored)
      */
     setMode(mode) {
-        this.currentMode = mode;
-        
-        // Sync to ModeManager for capability enforcement (best-effort, don't block)
-        if (this.modeEnforcement && this.modeEnforcement.modeManager) {
-            this.modeEnforcement.modeManager.setMode(mode).catch(err => {
-                console.error('ExtensionState: Failed to sync mode to ModeManager:', err.message);
-            });
-        }
+        if (mode) this.currentMode = mode;
     }
     
     /**

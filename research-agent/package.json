@@ -1,0 +1,16 @@
+{
+  "name": "vibeswitch-research-agent",
+  "version": "0.1.0",
+  "description": "Fastify service that receives VibeSwitch research data and runs Claude code agent for analysis (Cloud Run)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "fastify": "^4.24.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -7,13 +7,10 @@ const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
-const modeSwitcher = require('./ui/modeSwitcherDisplay');
 const userStatsUI = require('./ui/statsDashboardDisplay');
 const { mapDomainStateToViewModel, getUnreviewedFilesForDisplay, getUnopenedAndUnreviewedForDisplay } = require('./ui/awarenessMeterDisplay');
 const { triggerFlashNow } = require('./ui/frameFlash');
 const dashboardDisplay = require('./ui/dashboardDisplay');
-const modeDetection = require('./business_modules/mode/app/modeDetection');
-
 /**
  * Create command handlers with dependency injection
  * Uses adapter if available (for testing/mocking)
@@ -47,28 +44,6 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
     }
     const openTextDocument = (vscodeAdapter && vscodeAdapter.openTextDocument) ? vscodeAdapter.openTextDocument.bind(vscodeAdapter) : vscode.workspace.openTextDocument;
     return {
-        'vibeswitch.switchMode': async () => {
-            try {
-                log(`VibeSwitch: switchMode command triggered, currentMode=${state.currentMode}`);
-                modeSwitcher.showModePicker(
-                    state.currentMode,
-                    state.usageStats,
-                    async (mode) => {
-                        log(`VibeSwitch: Mode selected in picker: ${mode}`);
-                        await switchToMode(mode);
-                    },
-                    async () => await userStatsUI.showUsageStatistics(state.usageStats)
-                );
-            } catch (error) {
-                log(`ERROR in switchMode command: ${error.message}`, true, true);
-                console.error('VibeSwitch: Error in switchMode command:', error);
-                showErrorMessage(`Failed to show mode picker: ${error.message}`);
-            }
-        },
-
-        'vibeswitch.toVibe': () => switchToMode('vibe'),
-        'vibeswitch.toDev': () => switchToMode('dev'),
-
         'vibeswitch.showStats': () => userStatsUI.showUsageStatistics(state.usageStats),
         'vibeswitch.resetStats': () => userStatsUI.resetUsageStatistics(state.usageStats),
         'vibeswitch.exportStats': () => userStatsUI.exportUsageStatistics(state.usageStats),
@@ -86,10 +61,7 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
                 return;
             }
             state.statusBarItem.show();
-            if (state.currentMode === 'dev' && state.awarenessBarItem) {
-                state.awarenessBarItem.show();
-            }
-            showInformationMessage('VibeSwitch status bar items shown');
+            showInformationMessage('VibeSwitch status bar shown');
             log('Status bar items manually shown via command');
         },
 
@@ -129,15 +101,8 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
         },
 
         'vibeswitch.openDashboard': async () => {
-            let mode = state.getMode ? state.getMode() : state.currentMode;
-            log(`VibeSwitch: [DEBUG] openDashboard called, state.getMode()=${state.getMode?.()}, state.currentMode=${state.currentMode}, mode=${mode}`);
-            if (!mode) {
-                const detected = modeDetection(true);
-                const normalized = detected && (detected === 'vibe' || detected === 'dev') ? detected : 'vibe';
-                if (state.setMode) state.setMode(normalized);
-                mode = normalized;
-                log(`VibeSwitch: Dashboard opened with null state mode; used detected mode: ${mode}`);
-            }
+            const mode = state.getMode ? state.getMode() : state.currentMode || 'vibe';
+            log(`VibeSwitch: [DEBUG] openDashboard called, mode=${mode}`);
             await dashboardDisplay.openDashboard(state.awarenessEngine, mode, state.dashboardContentProvider, state);
         },
 
@@ -164,6 +129,91 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
                 }
             } catch (err) {
                 showErrorMessage('Failed to save token: ' + (err && err.message));
+            }
+        },
+
+        'vibeswitch.setSonarToken': async () => {
+            const ctx = state.extensionContext;
+            if (!ctx || !ctx.secretStorage) {
+                showErrorMessage('Extension context not available.');
+                return;
+            }
+            const token = await vscode.window.showInputBox({
+                title: 'SonarCloud token',
+                prompt: 'Paste your SonarCloud User Token for research/dashboard measures. Leave empty to clear.',
+                password: true,
+                ignoreFocusOut: true
+            });
+            if (token === undefined) return;
+            try {
+                if (token === '') {
+                    await ctx.secretStorage.delete('vibeswitch.sonarToken');
+                    showInformationMessage('SonarCloud token cleared.');
+                } else {
+                    await ctx.secretStorage.store('vibeswitch.sonarToken', token);
+                    showInformationMessage('SonarCloud token saved. Set project key if needed; open dashboard to see Sonar measures.');
+                }
+            } catch (err) {
+                showErrorMessage('Failed to save token: ' + (err && err.message));
+            }
+        },
+
+        'vibeswitch.setSonarProjectKey': async () => {
+            const cfg = vscode.workspace.getConfiguration('vibeswitch');
+            const current = cfg.get('sonar.projectKey', '') || '';
+            const projectKey = await vscode.window.showInputBox({
+                title: 'Sonar project key',
+                prompt: 'SonarCloud project key (e.g. org_repo). Leave empty to clear.',
+                value: current,
+                ignoreFocusOut: true
+            });
+            if (projectKey === undefined) return;
+            try {
+                await cfg.update('sonar.projectKey', (projectKey && projectKey.trim()) || '', vscode.ConfigurationTarget.Global);
+                showInformationMessage(projectKey && projectKey.trim() ? 'Sonar project key saved.' : 'Sonar project key cleared.');
+            } catch (err) {
+                showErrorMessage('Failed to save project key: ' + (err && err.message));
+            }
+        },
+
+        'vibeswitch.clearSonarConfig': async () => {
+            const ctx = state.extensionContext;
+            const cfg = vscode.workspace.getConfiguration('vibeswitch');
+            try {
+                if (ctx && ctx.secretStorage) {
+                    await ctx.secretStorage.delete('vibeswitch.sonarToken');
+                }
+                await cfg.update('sonar.projectKey', '', vscode.ConfigurationTarget.Global);
+                await cfg.update('sonar.branch', '', vscode.ConfigurationTarget.Global);
+                showInformationMessage('Sonar configuration cleared.');
+            } catch (err) {
+                showErrorMessage('Failed to clear Sonar config: ' + (err && err.message));
+            }
+        },
+
+        'vibeswitch.setResearchAgentApiKey': async () => {
+            const ctx = state.extensionContext;
+            if (!ctx || !ctx.secretStorage) {
+                showErrorMessage('Extension context not available.');
+                return;
+            }
+            const token = await vscode.window.showInputBox({
+                title: 'Research agent API key',
+                prompt: 'Optional API key sent as Bearer token when posting to the research agent (ingest). Leave empty to clear.',
+                password: true,
+                ignoreFocusOut: true
+            });
+            if (token === undefined) return;
+            try {
+                if (token === '') {
+                    await ctx.secretStorage.delete('vibeswitch.research.agentApiKey');
+                    showInformationMessage('Research agent API key cleared.');
+                } else {
+                    await ctx.secretStorage.store('vibeswitch.research.agentApiKey', token);
+                    showInformationMessage('Research agent API key saved.');
+                }
+            } catch (err) {
+                showErrorMessage('Failed to save API key: ' + (err && err.message));
             }
         },
 
@@ -469,7 +519,7 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
                 showInformationMessage(`Detected ${detected} file(s) in testing folder. Check decorations!`);
                 if (updateFileColorsInExplorer) {
                     updateFileColorsInExplorer();
-                } else if (state.fileDecorationProvider && state.currentMode === 'dev') {
+                } else if (state.fileDecorationProvider) {
                     state.fileDecorationProvider.refresh();
                 }
             } else {
@@ -586,12 +636,6 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
                 showWarningMessage('Awareness Engine: Not initialized');
                 return;
             }
-            
-            if (state.currentMode !== 'dev') {
-                showInformationMessage('Unreviewed files are only tracked in DEV mode');
-                return;
-            }
-            
             const scoreData = state.awarenessEngine.getScore();
             const allItems = [];
             
@@ -637,99 +681,6 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
                     showErrorMessage(`Failed to open file: ${error.message}`);
                     log(`Error opening file ${selected.filePath}: ${error.message}`);
                 }
-            }
-        },
-
-        'vibeswitch.showAlertLog': async () => {
-            const os = require('os');
-            const auditLogPath = path.join(os.homedir(), '.vibeswitch', 'state', 'audit.log');
-            try {
-                const doc = await openTextDocument(auditLogPath);
-                await showTextDocument(doc);
-                showInformationMessage('Capability audit log opened');
-            } catch (error) {
-                showWarningMessage(`No audit log found at ${auditLogPath}`);
-            }
-        },
-
-        'vibeswitch.capabilitySelfTest': async () => {
-            if (!state.modeEnforcement || !state.modeEnforcement.selfTest) {
-                showWarningMessage('Mode enforcement not initialized');
-                return;
-            }
-            const result = state.modeEnforcement.selfTest.run();
-            let message = '=== Capability Self-Test ===\n\n';
-            message += `Status: ${result.passed ? 'PASSED ✅' : 'FAILED ❌'}\n\n`;
-            if (result.errors.length > 0) {
-                message += 'Errors:\n';
-                result.errors.forEach(e => message += `  ❌ ${e}\n`);
-            }
-            if (result.warnings.length > 0) {
-                message += '\nWarnings:\n';
-                result.warnings.forEach(w => message += `  ⚠️ ${w}\n`);
-            }
-            state.outputChannel?.appendLine(message);
-            state.outputChannel?.show(true);
-            if (result.passed) {
-                showInformationMessage('Capability self-test passed ✅');
-            } else {
-                showErrorMessage(`Capability self-test failed: ${result.errors[0]}`);
-            }
-        },
-
-        'vibeswitch.setupCapability': async () => {
-            // #region agent log
-            fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'vsCommandsFactory.js:setupCapability',message:'command_invoked',data:{hasExtensionPath:!!state.extensionContext?.extensionPath},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
-            // #endregion
-            const capabilitySetup = require('./business_modules/mode-enforcement/app/capabilitySetup');
-            const extensionPath = state.extensionContext?.extensionPath;
-            if (!extensionPath) {
-                showErrorMessage('Extension context not available');
-                return;
-            }
-            const result = capabilitySetup.runSetup(extensionPath);
-            // #region agent log
-            fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'vsCommandsFactory.js:setupCapability',message:'after_runSetup',data:{success:result.success,copiedCount:result.copied?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
-            // #endregion
-            let message = '=== Setup Capability Scripts ===\n\n';
-            if (result.copied.length > 0) {
-                message += 'Copied:\n';
-                result.copied.forEach(f => message += `  ${f}\n`);
-            }
-            if (result.errors.length > 0) {
-                message += '\nErrors:\n';
-                result.errors.forEach(e => message += `  ${e}\n`);
-            }
-            message += `\nStatus: ${result.success ? 'OK' : 'FAILED'}\n`;
-            state.outputChannel?.appendLine(message);
-            state.outputChannel?.show(true);
-            if (result.success) {
-                showInformationMessage('VibeSwitch capability scripts installed. Run Capability Self-Test to verify.');
-                if (state.modeEnforcement?.selfTest) {
-                    const testResult = state.modeEnforcement.selfTest.run();
-                    if (testResult.passed) {
-                        showInformationMessage('Capability self-test passed.');
-                    } else {
-                        showWarningMessage(`Self-test still failing: ${testResult.errors[0]}. Ensure jq is installed.`);
-                    }
-                }
-            } else {
-                showErrorMessage(`Setup failed: ${result.errors[0]}`);
-            }
-        },
-
-        'vibeswitch.registerMcpServer': async () => {
-            const mcpRegistration = require('./business_modules/mode-enforcement/app/mcpRegistration');
-            const extensionPath = state.extensionContext?.extensionPath;
-            if (!extensionPath) {
-                showErrorMessage('Extension context not available');
-                return;
-            }
-            const result = mcpRegistration.registerMcpServer(extensionPath);
-            if (result.success) {
-                showInformationMessage('VibeSwitch: MCP server registered. Restart Cursor or reload window if needed.');
-            } else {
-                showErrorMessage(`VibeSwitch: Register MCP failed: ${result.error}`);
             }
         },
 

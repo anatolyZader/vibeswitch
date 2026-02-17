@@ -35,7 +35,6 @@ extension.js
 ```javascript
 const vscode = require('vscode');                    // VS Code API
 const { createLogger, setDisableLogging, getLogger } = require('./logger');
-const modeDetection = require('./business_modules/mode/app/modeDetection');
 const AwarenessEngine = require('./business_modules/awareness/app/awarenessEngine');
 const AwarenessController = require('./business_modules/awareness/input/awarenessController');
 const DIContainer = require('./diContainer');
@@ -46,7 +45,6 @@ const safe = require('./safe');
 **What each import does:**
 - **vscode**: VS Code extension API for UI, commands, events
 - **logger**: Centralized logging system
-- **modeDetection**: Detects current mode from `.cursor/rules.md`
 - **AwarenessEngine**: Core orchestrator for awareness monitoring
 - **AwarenessController**: Input layer controller (handles VS Code events)
 - **DIContainer**: Dependency Injection container (holds all state)
@@ -87,9 +85,8 @@ const disableLogging = getDisableLogging(context);
 - `commandHandlers`: Object mapping command IDs to handler functions
   ```javascript
   {
-    'vibeswitch.switchMode': async () => { ... },
-    'vibeswitch.toVibe': () => { ... },
-    'vibeswitch.toDev': () => { ... },
+    'vibeswitch.openDashboard': async () => { ... },
+    'vibeswitch.showStats': async () => { ... },
     // ... etc
   }
   ```
@@ -110,8 +107,8 @@ const disableLogging = getDisableLogging(context);
 **Example:**
 ```javascript
 const commandHandlers = {
-  'vibeswitch.switchMode': async () => { /* handler */ },
-  'vibeswitch.toVibe': () => { /* handler */ }
+  'vibeswitch.openDashboard': async () => { /* handler */ },
+  'vibeswitch.showStats': async () => { /* handler */ }
 };
 registerCommands(context, commandHandlers, log);
 // Commands are now available in VS Code command palette
@@ -516,13 +513,13 @@ log = helperLog || log;
 
 **What helpers are created?**
 - `log`: Logging function
-- `switchModeInStatusBar`: Updates status bar for mode changes
-- `updateFileColorsForMode`: Updates file decorations for mode
+- `switchModeInStatusBar`: Updates status bar to fixed "VibeSwitch" label and refreshes meter
+- `updateFileColorsForMode`: Updates file decorations (no mode switching)
 - `commandHandlers`: Object with all command handlers
 - `updateAwarenessMeter`: Updates awareness meter UI
 - `startAwarenessMonitor`: Starts monitoring
 - `stopAwarenessMonitor`: Stops monitoring
-- `switchToMode`: Mode switching logic
+- `switchToMode`: Legacy no-op (mode switching removed)
 
 **How closures work:**
 ```javascript
@@ -597,7 +594,7 @@ updateAwarenessMeter() updates UI
 // Create status bar items
 state.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
 state.awarenessBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
-state.statusBarItem.command = 'vibeswitch.switchMode';
+state.statusBarItem.command = 'vibeswitch.openDashboard';
 state.statusBarItem.show();
 
 // Register for cleanup
@@ -605,11 +602,11 @@ context.subscriptions.push(state.statusBarItem);
 context.subscriptions.push(state.awarenessBarItem);
 ```
 
-**Purpose**: Creates status bar items for mode indicator and awareness meter.
+**Purpose**: Creates status bar items for dashboard and awareness meter.
 
 **What are status bar items?**
-- **statusBarItem**: Shows current mode (VIBE/DEV) and allows switching
-- **awarenessBarItem**: Shows awareness score (only in DEV mode)
+- **statusBarItem**: Shows "VibeSwitch" label; click opens dashboard (no mode switching)
+- **awarenessBarItem**: Shows awareness score
 
 **Priority:**
 - `100`: Mode indicator (higher priority, always visible)
@@ -631,9 +628,7 @@ registerCommands(context, commandHandlers, log);
 **Purpose**: Registers all VS Code commands defined in `commandHandlers`.
 
 **What commands are registered?**
-- `vibeswitch.switchMode`: Show mode picker
-- `vibeswitch.toVibe`: Switch to VIBE mode
-- `vibeswitch.toDev`: Switch to DEV mode
+- `vibeswitch.openDashboard`: Open VibeSwitch dashboard
 - `vibeswitch.showStats`: Show usage statistics
 - `vibeswitch.resetStats`: Reset statistics
 - `vibeswitch.exportStats`: Export statistics
@@ -652,29 +647,9 @@ registerCommands(context, commandHandlers, log);
 
 ---
 
-#### Step 13: Detect Initial Mode (Lines 307-314)
+#### Step 13: Set Initial Mode
 
-```javascript
-let initialMode = null;
-try {
-    initialMode = modeDetection();
-    log(`VibeSwitch: Detected initial mode from file: ${initialMode}`);
-} catch (error) {
-    log(`ERROR detecting initial mode: ${error.message}`, false, true);
-}
-```
-
-**Purpose**: Detects the current mode from `.cursor/rules.md` file.
-
-**How mode detection works:**
-1. Reads `.cursor/rules.md` file
-2. Parses mode from file content
-3. Returns `'vibe'` or `'dev'` or `null`
-
-**Why try/catch?**
-- File might not exist
-- File might be unreadable
-- Graceful degradation: continue with `null` mode if detection fails
+**Purpose**: The extension runs in a single mode; initial mode is set to `'vibe'` in extension state at startup (no file-based detection). Dashboard and commands use `state.getMode()` or fallback `'vibe'`.
 
 ---
 

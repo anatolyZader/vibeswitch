@@ -8,6 +8,8 @@ const vscode = require('vscode');
 const { flashCyanIfHighScore } = require('./frameFlash');
 const { getCircleState } = require('./dashboardContent');
 
+let _awarenessBarNotInitLogged = false;
+
 /**
  * Helper function: Generates a visual meter bar representation of the awareness score
  * 
@@ -174,8 +176,9 @@ function mapDomainStateToViewModel(scoreData, currentMode = 'dev') {
  */
 function updateAwarenessMeter(awarenessBarItem, awarenessEngine, currentMode, outputChannel = null) {
     if (!awarenessBarItem) {
-        if (outputChannel) {
-            outputChannel.appendLine('WARNING: awarenessBarItem not initialized');
+        if (outputChannel && !_awarenessBarNotInitLogged) {
+            _awarenessBarNotInitLogged = true;
+            outputChannel.appendLine('WARNING: awarenessBarItem not initialized (Report status bar is used instead; this message only once)');
         }
         return;
     }

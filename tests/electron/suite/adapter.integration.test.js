@@ -91,20 +91,6 @@ suite('Adapter integration', function () {
         assert.strictEqual(snapshot.flags && snapshot.flags.terminalBlocked, true, 'flags.terminalBlocked should be true after simulate (adapter correctness; scoring stays in golden/property tests)');
     });
 
-    test('mode switch changes currentMode and snapshot reflects it', async () => {
-        const before = await vscode.commands.executeCommand('vibeswitch._testGetDebugSnapshot');
-        if (before === undefined) return;
-        assert.ok(before.currentMode !== undefined, 'Snapshot should have currentMode');
-        const initialMode = before.currentMode;
-        await vscode.commands.executeCommand(initialMode === 'dev' ? 'vibeswitch.toVibe' : 'vibeswitch.toDev');
-        await new Promise((r) => setTimeout(r, 300));
-        const after = await vscode.commands.executeCommand('vibeswitch._testGetDebugSnapshot');
-        assert.ok(after !== undefined && after.currentMode !== undefined, 'Snapshot after mode switch should have currentMode');
-        assert.notStrictEqual(after.currentMode, initialMode, 'currentMode should change after toDev/toVibe');
-        assert.ok(after.meterViewModel, 'meterViewModel should be present');
-        await vscode.commands.executeCommand(initialMode === 'dev' ? 'vibeswitch.toDev' : 'vibeswitch.toVibe');
-    });
-
     test('_testCheckpointSave and _testCheckpointRestore return checkpoint shape', async () => {
         await vscode.commands.executeCommand('vibeswitch._testCheckpointSave');
         const checkpoint = await vscode.commands.executeCommand('vibeswitch._testCheckpointRestore');

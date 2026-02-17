@@ -7,7 +7,6 @@ const path = require('path');
 const fs = require('fs');
 const { buildDashboardMarkdown, buildDashboardWebviewHtml, normalizeBreakdownForDisplay } = require('./dashboardContent');
 const dashboardChat = require('../business_modules/dashboard-chat');
-const modeDetection = require('../business_modules/mode/app/modeDetection');
 
 const DASHBOARD_URI_SCHEME = 'vibeswitch-dashboard';
 const DASHBOARD_URI_AUTHORITY = 'awareness';
@@ -118,6 +117,36 @@ function buildReactDashboardHtml(webview, extensionUri, initialPayload = null) {
     .research-section .research-article-body{font-size:0.9rem;line-height:1.5;}
     .research-section .research-article-body p{margin:0.5rem 0;}
     .research-section .research-objective{opacity:0.85;font-style:italic;}
+    .code-quality-section{margin:0.5rem 0;}
+    .code-quality-unavailable{font-size:0.9rem;opacity:0.85;margin:0.5rem 0;}
+    .code-quality-block{margin:1rem 0;}
+    .code-quality-block:first-child{margin-top:0;}
+    .code-quality-block-title{font-size:0.9rem;margin:0 0 0.5rem 0;font-weight:600;}
+    .code-quality-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:0.5rem 1.5rem;}
+    .code-quality-row{display:flex;justify-content:space-between;align-items:baseline;gap:0.5rem;font-size:0.85rem;}
+    .code-quality-row-highlight .code-quality-value{color:var(--vscode-errorForeground,#e53935);font-weight:600;}
+    .code-quality-label{opacity:0.9;}
+    .code-quality-value{font-variant-numeric:tabular-nums;}
+    .code-quality-section{margin:0.5rem 0;}
+    .code-quality-unavailable{font-size:0.9rem;opacity:0.85;margin:0.5rem 0;}
+    .code-quality-block{margin:1rem 0;}
+    .code-quality-block:first-child{margin-top:0;}
+    .code-quality-block-title{font-size:0.9rem;margin:0 0 0.5rem 0;font-weight:600;}
+    .code-quality-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:0.5rem 1.5rem;}
+    .code-quality-row{display:flex;justify-content:space-between;align-items:baseline;gap:0.5rem;font-size:0.85rem;}
+    .code-quality-row-highlight .code-quality-value{color:var(--vscode-errorForeground,#e53935);font-weight:600;}
+    .code-quality-label{opacity:0.9;}
+    .code-quality-value{font-variant-numeric:tabular-nums;}
+    .code-quality-section{margin:0.5rem 0;}
+    .code-quality-unavailable{font-size:0.9rem;opacity:0.85;font-style:italic;margin:0.25rem 0;}
+    .code-quality-block{margin:1rem 0;}
+    .code-quality-block:first-child{margin-top:0;}
+    .code-quality-block-title{font-size:0.9rem;margin:0 0 0.5rem 0;font-weight:600;}
+    .code-quality-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:0.5rem 1.5rem;}
+    .code-quality-row{display:flex;justify-content:space-between;align-items:baseline;gap:0.5rem;font-size:0.85rem;}
+    .code-quality-row-highlight .code-quality-value{color:var(--vscode-errorForeground,#e53935);font-weight:600;}
+    .code-quality-label{opacity:0.9;}
+    .code-quality-value{font-weight:500;}
     .research-section .research-analysis-block{margin:1rem 0;}
     .research-section .research-finding{margin:0.5rem 0;padding:0.5rem 0;border-left:3px solid var(--vscode-widget-border);padding-left:0.75rem;}
     .research-section .research-module-summary ul.compact{margin:0.25rem 0;padding-left:1.25rem;font-size:0.85rem;}
@@ -174,10 +203,22 @@ async function buildDashboardPayload(awarenessEngine, state) {
         if (state && state.tokenUsageClient && typeof state.tokenUsageClient.fetchTokenUsage === 'function') {
             tokenUsage = await state.tokenUsageClient.fetchTokenUsage().catch(() => null);
         }
+        let sonarMeasures = null;
+        if (state && state.sonarClient && typeof state.sonarClient.fetchMeasures === 'function') {
+            sonarMeasures = await state.sonarClient.fetchMeasures().catch(() => null);
+        }
+        let eslintMeasures = null;
+        if (state && state.eslintClient && typeof state.eslintClient.fetchMeasures === 'function') {
+            eslintMeasures = await state.eslintClient.fetchMeasures().catch(() => null);
+        }
+        var projectProgressMeasures = null;
+        if (state && state.projectProgressClient && typeof state.projectProgressClient.fetchMeasures === 'function') {
+            projectProgressMeasures = await state.projectProgressClient.fetchMeasures().catch(() => null);
+        }
     } catch (_) {
         return null;
     }
-    const currentMode = state && state.getMode ? state.getMode() : (state && state.currentMode) || 'dev';
+    const currentMode = state && state.getMode ? state.getMode() : (state && state.currentMode) || 'vibe';
     const capabilities = {
         git: true,
         ast: true,
@@ -194,7 +235,10 @@ async function buildDashboardPayload(awarenessEngine, state) {
         tokenUsage: tokenUsage || { totalInput: 0, totalOutput: 0, totalTokens: 0, usageApiAvailable: false },
         capabilities,
         sessionView,
-        moduleView
+        moduleView,
+        sonarMeasures: sonarMeasures || null,
+        eslintMeasures: eslintMeasures || null,
+        projectProgressMeasures: projectProgressMeasures || null
     };
 }
 
@@ -239,6 +283,18 @@ async function openDashboard(awarenessEngine, currentMode, contentProvider, stat
         if (state && state.tokenUsageClient && typeof state.tokenUsageClient.fetchTokenUsage === 'function') {
             tokenUsage = await state.tokenUsageClient.fetchTokenUsage().catch(() => null);
         }
+        var sonarMeasures = null;
+        if (state && state.sonarClient && typeof state.sonarClient.fetchMeasures === 'function') {
+            sonarMeasures = await state.sonarClient.fetchMeasures().catch(() => null);
+        }
+        var eslintMeasures = null;
+        if (state && state.eslintClient && typeof state.eslintClient.fetchMeasures === 'function') {
+            eslintMeasures = await state.eslintClient.fetchMeasures().catch(() => null);
+        }
+        var projectProgressMeasures = null;
+        if (state && state.projectProgressClient && typeof state.projectProgressClient.fetchMeasures === 'function') {
+            projectProgressMeasures = await state.projectProgressClient.fetchMeasures().catch(() => null);
+        }
     } catch (err) {
         vscode.window.showErrorMessage(`VibeSwitch: Failed to get score: ${err.message}`);
         return;
@@ -251,10 +307,7 @@ async function openDashboard(awarenessEngine, currentMode, contentProvider, stat
         usageApiAvailable: tokenUsage ? tokenUsage.usageApiAvailable === true : false
     };
     const flatBreakdown = normalizeBreakdownForDisplay(antipatternBreakdown);
-    const resolvedMode = currentMode || (() => {
-        const detected = modeDetection(true);
-        return (detected === 'vibe' || detected === 'dev') ? detected : 'dev';
-    })();
+    const resolvedMode = currentMode || 'vibe';
     if (state && state.outputChannel) {
         const u = scoreData?.unopenedFiles;
         const r = scoreData?.unreviewedSuggestions;
@@ -268,7 +321,10 @@ async function openDashboard(awarenessEngine, currentMode, contentProvider, stat
         antipatternBreakdown: flatBreakdown,
         events,
         tokenUsage: tokenUsage || { totalInput: 0, totalOutput: 0, totalTokens: 0, usageApiAvailable: false },
-        capabilities
+        capabilities,
+        sonarMeasures: sonarMeasures || null,
+        eslintMeasures: eslintMeasures || null,
+        projectProgressMeasures: projectProgressMeasures || null
     };
 
     const extensionContext = state && state.extensionContext;
