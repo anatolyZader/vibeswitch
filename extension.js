@@ -303,6 +303,23 @@ async function activate(context) {
         // Restore window border and clear frame-flash timeout on deactivate
         const { disposeFrameFlash } = require('./ui/frameFlash');
         context.subscriptions.push({ dispose: disposeFrameFlash });
+
+        // Create Report status bar item early (before any await) so it appears even if later steps fail
+        const showInStatusBar = vscode.workspace.getConfiguration('vibeswitch').get('showInStatusBar', true);
+        state.awarenessBarItem = vscode.window.createStatusBarItem(
+            'vibeswitch.reportButton',
+            vscode.StatusBarAlignment.Right,
+            1000
+        );
+        state.awarenessBarItem.name = 'VibeSwitch Report';
+        state.awarenessBarItem.command = 'vibeswitch.openDashboard';
+        state.awarenessBarItem.text = 'REPORT';
+        state.awarenessBarItem.tooltip = 'Open VibeSwitch dashboard';
+        context.subscriptions.push(state.awarenessBarItem);
+        if (showInStatusBar) {
+            state.awarenessBarItem.show();
+        }
+        log('VibeSwitch: Report status bar item created' + (showInStatusBar ? ' and shown' : ' (hidden by showInStatusBar config)'));
         
         // Set callbacks for UI updates and UsageStats integration
         awarenessEngine.setCallbacks({
@@ -352,33 +369,22 @@ async function activate(context) {
             log('VibeSwitch: Research module started');
         }
         
-        // Initialize status bar items using direct VS Code API with explicit IDs
-        // Use Right alignment with high priority to appear prominently
+        // Create mode indicator status bar item
         state.statusBarItem = vscode.window.createStatusBarItem(
             'vibeswitch.modeIndicator',
-            vscode.StatusBarAlignment.Right,
-            1000  // High priority to appear early (leftmost on right side)
-        );
-        state.awarenessBarItem = vscode.window.createStatusBarItem(
-            'vibeswitch.awarenessMeter',
             vscode.StatusBarAlignment.Right,
             999
         );
         state.statusBarItem.name = 'VibeSwitch Mode';
-        state.awarenessBarItem.name = 'VibeSwitch Awareness';
         state.statusBarItem.command = 'vibeswitch.switchMode';
-        state.awarenessBarItem.command = 'vibeswitch.openDashboard';
-        
-        // Register status bar items for cleanup
         context.subscriptions.push(state.statusBarItem);
-        context.subscriptions.push(state.awarenessBarItem);
         
         // Set initial text to ensure status bar is visible (will be updated by switchModeInStatusBar)
         state.statusBarItem.text = '$(zap) INIT';
         state.statusBarItem.tooltip = 'VibeSwitch: Initializing...';
         state.statusBarItem.show();
         
-        log('VibeSwitch: Status bar item created and shown');
+        log('VibeSwitch: Mode indicator status bar item created and shown');
         
         // Initialize file decorations early (needed for file coloring regardless of mode)
         // This ensures file decorations are available even if monitor doesn't start
@@ -427,10 +433,35 @@ async function activate(context) {
         if (startAwarenessMonitor) {
             await startAwarenessMonitor();
         }
-        // Ensure awareness meter is updated
+        // Ensure awareness meter is updated (updates tooltip with detailed info)
         if (updateAwarenessMeter) {
             updateAwarenessMeter();
         }
+
+        // Ensure Report status bar item is visible (in case it was hidden earlier in activation)
+        if (state.awarenessBarItem && vscode.workspace.getConfiguration('vibeswitch').get('showInStatusBar', true)) {
+            state.awarenessBarItem.show();
+        }
+
+        // Re-show Report item after workbench settles (multiple attempts in case layout/host is slow)
+        const showReportIfEnabled = () => {
+            if (state.awarenessBarItem && vscode.workspace.getConfiguration('vibeswitch').get('showInStatusBar', true)) {
+                state.awarenessBarItem.show();
+            }
+        };
+        [200, 800, 2000].forEach((ms) => {
+            const t = setTimeout(showReportIfEnabled, ms);
+            context.subscriptions.push({ dispose: () => clearTimeout(t) });
+        });
+
+        // When user toggles "Show in status bar", show or hide the Report item without reload
+        context.subscriptions.push(
+            vscode.workspace.onDidChangeConfiguration((e) => {
+                if (!e.affectsConfiguration('vibeswitch.showInStatusBar') || !state.awarenessBarItem) return;
+                const show = vscode.workspace.getConfiguration('vibeswitch').get('showInStatusBar', true);
+                if (show) state.awarenessBarItem.show(); else state.awarenessBarItem.hide();
+            })
+        );
         
         log('VibeSwitch: File watcher disabled - mode only changes on explicit user action');
         
@@ -457,6 +488,11 @@ async function activate(context) {
             }
         }
         console.error('VibeSwitch activation detail:', detail);
+
+        // Ensure Report status bar is visible so user can still open dashboard
+        if (state.awarenessBarItem && vscode.workspace.getConfiguration('vibeswitch').get('showInStatusBar', true)) {
+            state.awarenessBarItem.show();
+        }
 
         // Show user-facing error message
         try {
