@@ -6,22 +6,11 @@ const {
     applyVSCodeLoggingSettings,
     createLogWrapperFunc
 } = require('./logger');
-const modeDetection = require('./business_modules/mode/app/modeDetection');
 const ExtensionState = require('./extensionState');
 const DIContainer = require('./diContainer');
 const initializeHelpers = require('./initializeHelpers');
 const safe = require('./safe');
 const compositionRoot = require('./compositionRoot');
-const { getGlobalKey, setGlobalKeySync } = require('./cross_cut_modules/storage-uri/globalKeysStorage');
-const {
-    ModeManager,
-    HooksJsonGuard,
-    CapabilitySelfTest,
-    WorkspaceAllowlist,
-    AlertFileEditDetector,
-    KeypairManager,
-    ApprovalManager
-} = require('./business_modules/mode-enforcement');
 
 /**
  * Register all VS Code commands
@@ -133,122 +122,6 @@ async function activate(context) {
         // Create log wrapper function for extension-level code
         log = createLogWrapperFunc();
         
-        // ========== MODE-ENFORCEMENT INITIALIZATION ==========
-        // Initialize early before any other components
-        
-        // 1. Mode Manager - source of truth in disk (globalStorageUri), mirror to filesystem
-        const modeManager = new ModeManager(context);
-        modeManager.syncToFileSystem();  // Ensure filesystem is in sync on startup
-        log('VibeSwitch: ModeManager initialized');
-        
-        // 2. Workspace Allowlist - sync current workspaces
-        const workspaceAllowlist = new WorkspaceAllowlist();
-        if (vscode.workspace.workspaceFolders) {
-            workspaceAllowlist.syncFromWorkspace(vscode.workspace.workspaceFolders);
-        }
-        log('VibeSwitch: WorkspaceAllowlist synced');
-        
-        // 3. Sync hooks and lib from extension to ~/.vibeswitch (so Cursor runs latest hook code)
-        const capabilitySetup = require('./business_modules/mode-enforcement/app/capabilitySetup');
-        capabilitySetup.runSetup(context.extensionPath);
-
-        // 4. Capability Self-Test - verify setup integrity
-        const selfTest = new CapabilitySelfTest();
-        let testResult = selfTest.run();
-        // #region agent log
-        fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'extension.js:selftest',message:'selftest_result',data:{passed:testResult.passed,errors:testResult.errors,warningCount:testResult.warnings?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
-        // #endregion
-        if (!testResult.passed) {
-            log(`VibeSwitch: Capability self-test FAILED: ${testResult.errors.join(', ')}`, true, true);
-            vscode.window.showWarningMessage(
-                `VibeSwitch: Setup verification failed: ${testResult.errors[0]}. Capability enforcement may not work correctly.`
-            );
-            const setupPromptShown = getGlobalKey(context, 'vibeswitch.setupPromptShown', false);
-            // #region agent log
-            fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'extension.js:setup_prompt',message:'first_run_setup',data:{setupPromptShown},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H5'})}).catch(()=>{});
-            // #endregion
-            if (!setupPromptShown) {
-                setGlobalKeySync(context, 'vibeswitch.setupPromptShown', true);
-                vscode.window.showInformationMessage(
-                    'VibeSwitch: Copy hook scripts and canonical.js to ~/.vibeswitch?',
-                    'Setup',
-                    'Later'
-                ).then(choice => {
-                    // #region agent log
-                    fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'extension.js:setup_choice',message:'user_choice',data:{choice:choice||'dismissed'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H5'})}).catch(()=>{});
-                    // #endregion
-                    if (choice === 'Setup') {
-                        const capabilitySetup = require('./business_modules/mode-enforcement/app/capabilitySetup');
-                        const setupResult = capabilitySetup.runSetup(context.extensionPath);
-                        // #region agent log
-                        fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'extension.js:setup_done',message:'setup_after_prompt',data:{success:setupResult.success,copied:setupResult.copied?.length,errors:setupResult.errors?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
-                        // #endregion
-                        if (setupResult.success) {
-                            testResult = selfTest.run();
-                            if (testResult.passed) {
-                                vscode.window.showInformationMessage('VibeSwitch: Setup complete. Capability self-test passed.');
-                            } else {
-                                vscode.window.showWarningMessage(`VibeSwitch: Scripts copied. Self-test still failing: ${testResult.errors[0]}. Ensure jq is installed.`);
-                            }
-                        } else {
-                            vscode.window.showErrorMessage(`VibeSwitch: Setup failed: ${setupResult.errors[0]}`);
-                        }
-                    }
-                });
-            }
-        } else {
-            log('VibeSwitch: Capability self-test passed');
-        }
-        if (testResult.warnings.length > 0) {
-            log(`VibeSwitch: Warnings: ${testResult.warnings.join(', ')}`);
-        }
-        
-        // Start periodic self-test
-        selfTest.startPeriodic((result) => {
-            log(`VibeSwitch: Periodic self-test FAILED: ${result.errors.join(', ')}`, true, false);
-        });
-        context.subscriptions.push({ dispose: () => selfTest.dispose() });
-        
-        // 5. HooksJsonGuard - watch and protect hooks.json
-        const hooksGuard = new HooksJsonGuard(context, modeManager);
-        if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
-            hooksGuard.start(vscode.workspace.workspaceFolders[0].uri.fsPath);
-        }
-        context.subscriptions.push({ dispose: () => hooksGuard.dispose() });
-        log('VibeSwitch: HooksJsonGuard started');
-        
-        // 6. AlertFileEditDetector - monitor for unapproved edits with auto-revert
-        const autoRevertEnabled = vscode.workspace.getConfiguration('vibeswitch').get('autoRevertUnapprovedEdits', false);
-        const alertDetector = new AlertFileEditDetector(modeManager, { autoRevert: autoRevertEnabled });
-        alertDetector.createBadge(context);
-        alertDetector.start();
-        context.subscriptions.push({ dispose: () => alertDetector.dispose() });
-        log(`VibeSwitch: AlertFileEditDetector started (autoRevert: ${autoRevertEnabled})`);
-        
-        // 7. KeypairManager - Ed25519 keypair for token signing
-        const keypairManager = new KeypairManager(context);
-        await keypairManager.initialize();
-        log('VibeSwitch: KeypairManager initialized');
-        
-        // 8. ApprovalManager - MCP patch request approval workflow
-        const approvalManager = new ApprovalManager(context, keypairManager, modeManager);
-        approvalManager.start();
-        context.subscriptions.push({ dispose: () => approvalManager.dispose() });
-        log('VibeSwitch: ApprovalManager started');
-        
-        // Store mode-enforcement components in state for later access
-        state.modeEnforcement = {
-            modeManager,
-            workspaceAllowlist,
-            selfTest,
-            hooksGuard,
-            alertDetector,
-            keypairManager,
-            approvalManager
-        };
-        
-        // ========== END MODE-ENFORCEMENT ==========
-        
         // ========== MULTI-AGENT ARCHITECTURE INITIALIZATION ==========
         // Initialize agents integration if enabled
         let agentsIntegration = null;
@@ -281,8 +154,6 @@ async function activate(context) {
         const loggingDisabled = !isLoggingEnabled(context);
         const helpers = initializeHelpers(state, container, loggingDisabled);
         const { 
-            switchModeInStatusBar, 
-            updateFileColorsForMode, 
             commandHandlers,
             updateReportButton,
             startAwarenessMonitor,
@@ -369,24 +240,7 @@ async function activate(context) {
             log('VibeSwitch: Research module started');
         }
         
-        // Create mode indicator status bar item
-        state.statusBarItem = vscode.window.createStatusBarItem(
-            'vibeswitch.modeIndicator',
-            vscode.StatusBarAlignment.Right,
-            999
-        );
-        state.statusBarItem.name = 'VibeSwitch Mode';
-        state.statusBarItem.command = 'vibeswitch.switchMode';
-        context.subscriptions.push(state.statusBarItem);
-        
-        // Set initial text to ensure status bar is visible (will be updated by switchModeInStatusBar)
-        state.statusBarItem.text = '$(zap) INIT';
-        state.statusBarItem.tooltip = 'VibeSwitch: Initializing...';
-        state.statusBarItem.show();
-        
-        log('VibeSwitch: Mode indicator status bar item created and shown');
-        
-        // Initialize file decorations early (needed for file coloring regardless of mode)
+        // Initialize file decorations early (needed for file coloring)
         // This ensures file decorations are available even if monitor doesn't start
         if (initFileDecorations) {
             initFileDecorations();
@@ -403,33 +257,7 @@ async function activate(context) {
         // Register all commands
         registerCommands(context, commandHandlers, log);
         
-        // Detect initial mode from file
-        let initialMode = null;
-        try {
-            const detectedMode = modeDetection();
-            initialMode = normalizeMode(detectedMode);
-            if (initialMode) {
-                log(`VibeSwitch: Detected initial mode from file: ${initialMode}`);
-            } else {
-                log(`VibeSwitch: No valid mode detected (got: ${detectedMode})`);
-            }
-        } catch (error) {
-            log(`ERROR detecting initial mode: ${error.message}`, true, false);
-        }
-        
-        // Update status bar and file colors
-        if (initialMode) {
-            switchModeInStatusBar(initialMode);
-            updateFileColorsForMode();
-        } else {
-            // Set default mode if detection failed
-            log('VibeSwitch: Using default mode (vibe)');
-            switchModeInStatusBar('vibe');
-            updateFileColorsForMode();
-        }
-        
-        // Start awareness monitor once - it runs continuously regardless of mode
-        // The monitor tracks AI suggestions and calculates awareness score in all modes
+        // Start awareness monitor once - it runs continuously
         if (startAwarenessMonitor) {
             await startAwarenessMonitor();
         }
@@ -462,8 +290,6 @@ async function activate(context) {
                 if (show) state.awarenessBarItem.show(); else state.awarenessBarItem.hide();
             })
         );
-        
-        log('VibeSwitch: File watcher disabled - mode only changes on explicit user action');
         
         // Setup usage stats listeners
         setupUsageStatsListeners(context, state);
@@ -508,17 +334,6 @@ async function activate(context) {
             }
         }
     }
-}
-
-/**
- * Normalize mode value to valid mode or null
- * @param {string|null|undefined} mode - Raw mode value
- * @returns {string|null} 'vibe', 'dev', or null if invalid
- */
-function normalizeMode(mode) {
-    if (!mode) return null;
-    const normalized = String(mode).trim().toLowerCase();
-    return (normalized === 'vibe' || normalized === 'dev') ? normalized : null;
 }
 
 // Deactivation function

@@ -6,12 +6,10 @@
 class ExtensionState {
     constructor() {
         // UI Components (created during activation)
-        this.statusBarItem = null;
-        this.awarenessBarItem = null;
+        this.awarenessBarItem = null; // Report button
         this.outputChannel = null;
         
         // Core Runtime State
-        this.currentMode = null;
         this.extensionContext = null;
         
         // Service References (created during activation)
@@ -19,35 +17,8 @@ class ExtensionState {
         this.awarenessEngine = null;
         this.fileDecorationProvider = null;
         
-        // Mode enforcement (set during activation)
-        this.modeEnforcement = null;
-        
         // Timers
-        this.meterUpdateTimer = null;
-    }
-    
-    /**
-     * Update current mode
-     * Also syncs to ModeManager (if available) for mode enforcement
-     * @param {string} mode - Mode value ('vibe' or 'dev')
-     */
-    setMode(mode) {
-        this.currentMode = mode;
-        
-        // Sync to ModeManager for capability enforcement (best-effort, don't block)
-        if (this.modeEnforcement && this.modeEnforcement.modeManager) {
-            this.modeEnforcement.modeManager.setMode(mode).catch(err => {
-                console.error('ExtensionState: Failed to sync mode to ModeManager:', err.message);
-            });
-        }
-    }
-    
-    /**
-     * Get current mode
-     * @returns {string|null} Current mode or null
-     */
-    getMode() {
-        return this.currentMode;
+        this.reportButtonUpdateTimer = null;
     }
     
     /**

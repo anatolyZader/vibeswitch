@@ -13,10 +13,10 @@ const vscode = require('vscode');
  * 
  * @param {vscode.StatusBarItem} reportButton - The report button status bar item
  * @param {Object} awarenessEngine - The awareness engine instance (optional)
- * @param {string|null} currentMode - Current mode ('vibe', 'dev', or null)
+ * @param {string|null} _currentMode - Unused (kept for compatibility, will be removed)
  * @param {vscode.OutputChannel} outputChannel - Optional output channel for logging
  */
-function updateReportButton(reportButton, awarenessEngine, currentMode, outputChannel = null) {
+function updateReportButton(reportButton, awarenessEngine, _currentMode, outputChannel = null) {
     if (!reportButton) {
         if (outputChannel) {
             outputChannel.appendLine('WARNING: reportButton not initialized');
@@ -35,8 +35,7 @@ function updateReportButton(reportButton, awarenessEngine, currentMode, outputCh
             const scoreData = awarenessEngine.getScore();
             if (scoreData && typeof scoreData.total === 'number') {
                 const score = Math.max(0, Math.min(100, scoreData.total));
-                const modeLabel = currentMode ? currentMode.toUpperCase() : 'NO MODE';
-                tooltip = `${modeLabel} · Risk: ${score}/100\n\nClick to open dashboard`;
+                tooltip = `Risk: ${score}/100\n\nClick to open dashboard`;
                 
                 // Set background color based on risk score
                 if (score >= 80) {

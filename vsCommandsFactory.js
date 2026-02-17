@@ -7,9 +7,7 @@ const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
-const modeSwitcher = require('./ui/modeSwitcherDisplay');
 const userStatsUI = require('./ui/statsDashboardDisplay');
-const { mapDomainStateToViewModel, getUnreviewedFilesForDisplay, getUnopenedAndUnreviewedForDisplay } = require('./ui/awarenessMeterDisplay');
 const { triggerFlashNow } = require('./ui/frameFlash');
 const dashboardDisplay = require('./ui/dashboardDisplay');
 
@@ -20,13 +18,12 @@ const dashboardDisplay = require('./ui/dashboardDisplay');
  * Enables testability without VS Code runtime
  * @param {Object} dependencies - Injected dependencies
  * @param {Function} dependencies.log - Logging function
- * @param {Function} dependencies.switchToMode - Mode switching function
  * @param {Function} dependencies.updateFileColorsInExplorer - Function to update file name colors in Explorer
  * @param {ExtensionState} dependencies.state - Extension runtime state
  * @param {DIContainer} dependencies.container - DI container for adapters and services
  * @returns {Object} Command handlers map
  */
-function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state, container }) {
+function commandHandlers({ log, updateFileColorsInExplorer, state, container }) {
     // Get vscodeAdapter from DI container for Ports and Adapters pattern
     const vscodeAdapter = container.getAdapter('awareness', 'vscodeAdapter');
     
@@ -46,28 +43,6 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
     }
     const openTextDocument = (vscodeAdapter && vscodeAdapter.openTextDocument) ? vscodeAdapter.openTextDocument.bind(vscodeAdapter) : vscode.workspace.openTextDocument;
     return {
-        'vibeswitch.switchMode': async () => {
-            try {
-                log(`VibeSwitch: switchMode command triggered, currentMode=${state.currentMode}`);
-                modeSwitcher.showModePicker(
-                    state.currentMode,
-                    state.usageStats,
-                    async (mode) => {
-                        log(`VibeSwitch: Mode selected in picker: ${mode}`);
-                        await switchToMode(mode);
-                    },
-                    async () => await userStatsUI.showUsageStatistics(state.usageStats)
-                );
-            } catch (error) {
-                log(`ERROR in switchMode command: ${error.message}`, true, true);
-                console.error('VibeSwitch: Error in switchMode command:', error);
-                showErrorMessage(`Failed to show mode picker: ${error.message}`);
-            }
-        },
-
-        'vibeswitch.toVibe': () => switchToMode('vibe'),
-        'vibeswitch.toDev': () => switchToMode('dev'),
-
         'vibeswitch.showStats': () => userStatsUI.showUsageStatistics(state.usageStats),
         'vibeswitch.resetStats': () => userStatsUI.resetUsageStatistics(state.usageStats),
         'vibeswitch.exportStats': () => userStatsUI.exportUsageStatistics(state.usageStats),
