@@ -90,9 +90,6 @@ function setupUsageStatsListeners(context, state) {
 // const context = createExtensionContext();
 // await extensionModule.activate(context);  // ← YOUR FUNCTION IS CALLED HERE
 async function activate(context) {
-    // #region agent log
-    fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'extension.js:activate',message:'activate_start',data:{hasContext:!!context,extensionPath:context?.extensionPath?.slice(-40)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
     // Validate context parameter
     if (!context) {
         console.error('VibeSwitch: ERROR - activate() called with null/undefined context');
@@ -103,30 +100,40 @@ async function activate(context) {
     const state = new ExtensionState();
     const container = new DIContainer();
     state.extensionContext = context;
-    // #region agent log
-    fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'extension.js:activate',message:'storage_uris',data:{hasStorageUri:!!context?.storageUri,hasGlobalStorageUri:!!context?.globalStorageUri,storagePath:context?.storageUri?.fsPath?.slice(-50),globalPath:context?.globalStorageUri?.fsPath?.slice(-50)},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
-    
+
     // Initialize logger early for error reporting
     let log = null;
     
     try {
+        // Create Report status bar item FIRST (before output channel, logger, or any require) so it always appears.
+        // Logs showed activation never reached this block when it was later—host can block or throw during init.
+        const showInStatusBar = vscode.workspace.getConfiguration('vibeswitch').get('showInStatusBar', true);
+        state.statusBarItem = vscode.window.createStatusBarItem(
+            'vibeswitch.report',
+            vscode.StatusBarAlignment.Right,
+            50
+        );
+        state.statusBarItem.name = 'VibeSwitch Report';
+        state.statusBarItem.command = 'vibeswitch.openDashboard';
+        state.statusBarItem.text = 'REPORT';
+        state.statusBarItem.tooltip = 'Open VibeSwitch dashboard';
+        context.subscriptions.push(state.statusBarItem);
+        if (showInStatusBar) {
+            try {
+                state.statusBarItem.show();
+            } catch (_) {}
+        }
+
         // Initialize output channel using direct VS Code API (extension-level concern, not module-specific)
         state.outputChannel = vscode.window.createOutputChannel('VibeSwitch');
-        // context.subscriptions is an array of disposables (e.g., event listeners, output channels, status bar items).
-        // When the extension deactivates, VS Code calls dispose() on each item in this array.
-        // Pushing state.outputChannel ensures it's cleaned up automatically.
         context.subscriptions.push(state.outputChannel);
         
         initializeLogger(state.outputChannel);
-        // Apply logging settings from VS Code configuration (disableLogging/debugLogging)
         applyVSCodeLoggingSettings(context);
         
-        // Create log wrapper function for extension-level code
         log = createLogWrapperFunc();
-        
-        // Fixed mode for awareness/dashboard (no mode switching)
         state.currentMode = 'vibe';
+        log('VibeSwitch: Status bar item (Report) created' + (showInStatusBar ? ' and shown' : ' (hidden by showInStatusBar)'));
         
         // ========== MULTI-AGENT ARCHITECTURE INITIALIZATION ==========
         // Initialize agents integration if enabled
@@ -183,22 +190,6 @@ async function activate(context) {
         const { disposeFrameFlash } = require('./ui/frameFlash');
         context.subscriptions.push({ dispose: disposeFrameFlash });
 
-        // Create Report status bar item early (before any await) so it appears even if later steps fail
-        const showInStatusBar = vscode.workspace.getConfiguration('vibeswitch').get('showInStatusBar', true);
-        state.statusBarItem = vscode.window.createStatusBarItem(
-            vscode.StatusBarAlignment.Right,
-            1000
-        );
-        state.statusBarItem.name = 'VibeSwitch Report';
-        state.statusBarItem.command = 'vibeswitch.openDashboard';
-        state.statusBarItem.text = 'Report';
-        state.statusBarItem.tooltip = 'Open VibeSwitch dashboard';
-        context.subscriptions.push(state.statusBarItem);
-        if (showInStatusBar) {
-            state.statusBarItem.show();
-        }
-        log('VibeSwitch: Status bar item (Report) created' + (showInStatusBar ? ' and shown' : ' (hidden by showInStatusBar)'));
-        
         // Set callbacks for UI updates and UsageStats integration
         const { refreshDashboardIfOpen } = require('./ui/dashboardDisplay');
         awarenessEngine.setCallbacks({
@@ -257,22 +248,17 @@ async function activate(context) {
         // Register all commands
         registerCommands(context, commandHandlers, log);
         
-        // Refresh status bar (single Report item)
+        // Re-show Report button only (no tooltip update – avoids workbench hiding it)
         if (switchModeInStatusBar) {
             switchModeInStatusBar();
         }
         
         // Start awareness monitor once
-        // The monitor tracks AI suggestions and calculates awareness score in all modes
         if (startAwarenessMonitor) {
             await startAwarenessMonitor();
         }
-        // Ensure awareness meter is updated
-        if (updateAwarenessMeter) {
-            updateAwarenessMeter();
-        }
 
-        // Ensure Report status bar item is visible (in case it was hidden earlier in activation)
+        // Ensure Report status bar item is visible
         if (state.statusBarItem && vscode.workspace.getConfiguration('vibeswitch').get('showInStatusBar', true)) {
             state.statusBarItem.show();
         }

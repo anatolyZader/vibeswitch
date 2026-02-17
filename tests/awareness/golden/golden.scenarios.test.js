@@ -4,7 +4,7 @@ const ScoreService = require('../../../business_modules/awareness/app/scoring/sc
 const DebtService = require('../../../business_modules/awareness/app/debt/debtService');
 const SuggestionAggregate = require('../../../business_modules/awareness/domain/aggregates/suggestionAggregate');
 const ReplayRunner = require('../../helpers/replayRunner');
-const { getScoreMeter, getScoreEmoji, mapDomainStateToViewModel } = require('../../../ui/awarenessMeterDisplay');
+const { getScoreMeter, getScoreEmoji, mapDomainStateToViewModel } = require('../../../ui/awarenessViewModel');
 const { scenarios, baseTs } = require('./goldenScenarios');
 
 const CORE_SCENARIOS_FOR_BREAKDOWN = [

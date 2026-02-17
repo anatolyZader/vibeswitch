@@ -6,7 +6,7 @@ const ScoreService = require('../../../business_modules/awareness/app/scoring/sc
 const DebtService = require('../../../business_modules/awareness/app/debt/debtService');
 const SuggestionAggregate = require('../../../business_modules/awareness/domain/aggregates/suggestionAggregate');
 const ReplayRunner = require('../../helpers/replayRunner');
-const { getScoreMeter, getScoreEmoji } = require('../../../ui/awarenessMeterDisplay');
+const { getScoreMeter, getScoreEmoji } = require('../../../ui/awarenessViewModel');
 const { generateBulkScenario } = require('../generators/suggestionEventGenerator');
 
 function createServices() {

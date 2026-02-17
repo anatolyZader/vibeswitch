@@ -8,7 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
 const userStatsUI = require('./ui/statsDashboardDisplay');
-const { mapDomainStateToViewModel, getUnreviewedFilesForDisplay, getUnopenedAndUnreviewedForDisplay } = require('./ui/awarenessMeterDisplay');
+const { mapDomainStateToViewModel, getUnreviewedFilesForDisplay, getUnopenedAndUnreviewedForDisplay } = require('./ui/awarenessViewModel');
 const { triggerFlashNow } = require('./ui/frameFlash');
 const dashboardDisplay = require('./ui/dashboardDisplay');
 /**

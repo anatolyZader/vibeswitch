@@ -24,7 +24,8 @@
     "feedback"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onCommand:vibeswitch.openDashboard"
   ],
   "main": "./out/extension.js",
   "contributes": {

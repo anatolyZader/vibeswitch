@@ -1,5 +1,4 @@
-const { getScoreMeter, getScoreEmoji, updateAwarenessMeter, mapDomainStateToViewModel } = require('../../ui/awarenessMeterDisplay');
-const vscode = require('vscode');
+const { getScoreMeter, getScoreEmoji, mapDomainStateToViewModel } = require('../../ui/awarenessViewModel');
 
 describe('getScoreMeter', () => {
     test('score 0 returns all empty segments', () => {
@@ -31,52 +30,6 @@ describe('getScoreEmoji', () => {
     test('80-100 returns red', () => {
         expect(getScoreEmoji(80)).toBe('\uD83D\uDD34');
         expect(getScoreEmoji(100)).toBe('\uD83D\uDD34');
-    });
-});
-
-describe('updateAwarenessMeter mocked', () => {
-    let barItem;
-    let mockEngine;
-    beforeEach(() => {
-        barItem = { text: '', tooltip: '', backgroundColor: undefined, show: jest.fn(), hide: jest.fn() };
-        vscode.workspace.workspaceFolders = [{ uri: { fsPath: '/test' } }];
-        vscode.workspace.getConfiguration = jest.fn(() => ({ get: jest.fn((k, d) => (k === 'showInStatusBar' ? true : d)) }));
-    });
-    test('with engine returning scoreData sets text to colored circle (no emoji/meter in bar)', () => {
-        mockEngine = {
-            getScore: jest.fn(() => ({
-                total: 25,
-                components: { review: 20, blindAcceptance: 5, adaptation: 10, debt: 0 },
-                suggestions: { total: 5, pendingFiles: [] },
-                debt: { unreviewedFiles: 0, files: [] },
-                unopenedFiles: { count: 0, files: [] },
-                unreviewedSuggestions: { count: 0, files: [] },
-                debug: { recentWindowCount: 3, monitoringActive: true, lastActivity: 'now', totalTrackedCount: 5 }
-            })),
-            getScoreBreakdown: jest.fn(() => ({})),
-            getAntipatternBreakdown: jest.fn(() => ({}))
-        };
-        updateAwarenessMeter(barItem, mockEngine, 'dev');
-        expect(barItem.text).toBe('REPORT');
-        expect(barItem.tooltip).toMatch(/Risk: 25\/100/);
-    });
-    test('tooltip contains mode and score', () => {
-        mockEngine = {
-            getScore: jest.fn(() => ({
-                total: 50,
-                components: { review: 15, blindAcceptance: 10, adaptation: 10, debt: 5 },
-                suggestions: { total: 5, pendingFiles: [] },
-                debt: { unreviewedFiles: 0, files: [] },
-                unopenedFiles: { count: 0, files: [] },
-                unreviewedSuggestions: { count: 0, files: [] },
-                debug: { recentWindowCount: 3, monitoringActive: true, lastActivity: 'now', totalTrackedCount: 5 }
-            })),
-            getScoreBreakdown: jest.fn(() => ({})),
-            getAntipatternBreakdown: jest.fn(() => ({}))
-        };
-        updateAwarenessMeter(barItem, mockEngine, 'dev');
-        expect(barItem.tooltip).toContain('DEV');
-        expect(barItem.tooltip).toMatch(/\d+\/100/);
     });
 });
 

@@ -24,7 +24,7 @@
 const vscode = require('vscode');
 
 // Import modules
-const awarenessMeter = require('./ui/awarenessMeterDisplay');
+// Report button: created once in extension.js, never updated (avoids flash/disappear)
 const commandHandlersFactory = require('./vsCommandsFactory');
 const UnreviewedFileDecor = require('./ui/fileColoringDisplay');
 const safe = require('./safe');
@@ -80,30 +80,17 @@ module.exports = function initializeHelpers(state, container, disableLogging = f
         // }
     };
     
-    // Update awareness meter - called after score calculation
-    // Internal helper - errors propagate to caller (boundary)
+    // Report button is created once in extension.js and never updated here, to avoid
+    // Cursor/workbench hiding it when tooltip is updated (flashing/disappearing).
+    // Dashboard still refreshes on score update via refreshDashboardIfOpen.
     const updateAwarenessMeter = () => {
-        awarenessMeter.updateAwarenessMeter(
-            state.awarenessBarItem, 
-            state.awarenessEngine, 
-            state.getMode(), 
-            state.outputChannel
-        );
+        // No-op for status bar; keeps command "Refresh Awareness Meter" harmless
     };
     
-    // Refresh single status bar item (Report; click opens dashboard)
     const switchModeInStatusBar = () => {
-        if (state.statusBarItem) {
-            const showInStatusBar = vscode.workspace.getConfiguration('vibeswitch').get('showInStatusBar', true);
-            state.statusBarItem.text = 'Report';
-            state.statusBarItem.tooltip = 'Open VibeSwitch dashboard';
-            if (showInStatusBar) {
-                state.statusBarItem.show();
-            } else {
-                state.statusBarItem.hide();
-            }
+        if (state.statusBarItem && vscode.workspace.getConfiguration('vibeswitch').get('showInStatusBar', true)) {
+            state.statusBarItem.show();
         }
-        updateAwarenessMeter();
     };
 
     // ============================================================================
