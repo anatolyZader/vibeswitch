@@ -273,7 +273,21 @@ This is a **pure Node.js (CommonJS) VS Code extension** - NO TypeScript.
 
 **ENFORCEMENT**: If you cannot show the failing test first, STOP and ask me for permission to proceed without TDD.
 
-#### Core TDD Workflow
+**Full plan**: See `docs/TDD-PLAN-AND-WORKFLOW.md` for the detailed TDD plan, example prompts, and checklist.
+
+#### Phased TDD Workflow (Use Consistently)
+- **Phase A — Red (tests first):** Write tests from expected input/output and behavior. Do NOT create mock implementations or stubs for functionality that does not exist yet. Do NOT write the real implementation in this phase.
+- **Phase B — Confirm red:** Run tests and confirm they fail for the right reason. Do NOT write implementation code at this stage.
+- **Phase C — Commit tests:** User commits the test file(s) when satisfied (e.g. "test: add tests for X (TDD red phase)").
+- **Phase D — Green (implement):** Implement only the code that makes the tests pass. Do NOT modify the tests. Run tests and iterate until all specified tests pass.
+- **Phase E — Commit implementation:** User commits the implementation when all tests pass.
+- **Phase F — Refactor (optional):** Refactor for clarity/performance with tests staying green; commit separately if non-trivial.
+
+When the user says they are doing TDD or points to the TDD plan:
+- In **Red phase**: Only add or change test code; no stubs or real implementation for the behavior under test.
+- In **Green phase**: Only add or change implementation code; do not change test code unless the user explicitly asks to fix a broken test.
+
+#### Core TDD Workflow (Summary)
 - **Always follow: RED → GREEN → REFACTOR**
 - If a request changes behavior, you MUST:
   1. Propose/confirm acceptance criteria
