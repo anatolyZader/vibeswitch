@@ -45,3 +45,6 @@ coverage/
 
 # Daily research reports (generated; keep .gitkeep)
 business_modules/research/researchReview/reports/*.md
+
+# Agent loop scratchpad (agent-written; see .cursor/scratchpad.md.example)
+.cursor/scratchpad.md

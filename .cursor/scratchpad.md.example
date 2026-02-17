@@ -1,0 +1,1 @@
+Write DONE here when the goal (e.g. all tests pass) is met. The stop hook reads this file; when it contains DONE, the agent loop stops.

@@ -4,6 +4,23 @@ You are operating in **VIBE MODE** - an autonomous, self-directed operational mo
 
 **This mode mimics: cursor.chat.defaultMode="agent", cursor.agent.requireApproval=false, cursor.agent.autoApplyEdits=true, cursor.ai.autoApply=true**
 
+## Approval policy (VIBE) — minimize re-approval requests
+
+- **Do not request approval for:** single-file edits, multi-file edits, creating/editing files, running tests, running `npm run package`, non-destructive shell commands (e.g. `git status`, `git diff`, `npm test`, `npm run lint`).
+- **Request approval only for:** deletions of non-generated files, deployments, destructive migrations, or other irreversible operations. Only pause for critical/irreversible actions.
+- **Apply edits automatically** as needed to complete the task. Keep changes focused; do not refactor unrelated code.
+
+**Approval levels reference (this project uses VIBE behavior):**
+
+| Action | VIBE (current) |
+|--------|----------------|
+| Read/search | allowed, no approval |
+| Edit 1 or more files | auto-apply, no approval |
+| Create/delete file | auto-apply; ask only if destructive |
+| Run non-mutating commands | allowed |
+| Run mutating commands (e.g. package) | allowed after change |
+| Destructive/irreversible (delete, deploy, migrate) | ask first |
+
 ## Core Behavior (Mimicking Cursor Settings)
 
 ### Agent Mode (not "ask" mode)
@@ -38,12 +55,22 @@ You are operating in **VIBE MODE** - an autonomous, self-directed operational mo
 
 ---
 
+## Verification policy (VIBE)
+
+- If tests exist and could be affected, run `npm test`.
+- If no tests exist, provide a deterministic manual verification checklist (exact steps).
+
+## Grind loop (stop hook)
+
+When the stop hook (grind) is enabled in `.cursor/hooks.json`, the agent runs in a loop until the goal is met or max iterations are reached.
+
+- **When the goal for the current task is met** (e.g. all tests pass, UI matches requirements), write `DONE` into `.cursor/scratchpad.md` so the stop hook stops the loop.
+- If the user asks to "run until tests pass" or similar: run tests, and write `DONE` into `.cursor/scratchpad.md` only when they all pass; otherwise the hook will send a followup and the agent should fix and re-run.
+
 ## 📦 Packaging Rule (MANDATORY)
 
 - After **each significant / meaningful code change**, you MUST **re-package the extension** automatically.
-- Run: `npm run package` (uses project's vsce from package.json)
-- If tests exist / were affected, run: `npm test` before packaging.
-- Always report the **generated `.vsix` path** in your response (so I can install it).
+- Steps: 1) run `npm test` if present/relevant, 2) run `npm run package`, 3) report the generated `.vsix` path in your response (so I can install it).
 
 ---
 
@@ -136,6 +163,7 @@ function existingFunction() {
 ### Safety Rules (Hard Constraints)
 - **Never change production behavior unless explicitly instructed** - Preserve existing functionality
 - **Never introduce breaking changes implicitly** - Breaking changes must be explicit and intentional
+- **Do not run destructive commands without asking first** - Deletions, deployments, destructive migrations: ask before executing
 - **Do not reduce the system's safety or observability** - Keep validation/logging/error handling, but prefer centralized and consistent mechanisms over duplication
 - **Never assume test coverage exists** - Add tests if modifying critical paths
 

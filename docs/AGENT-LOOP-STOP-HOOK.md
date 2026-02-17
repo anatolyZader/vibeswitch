@@ -1,4 +1,4 @@
-[[[,,]]# Long-Running Agent Loops (Stop Hook)
+# Long-Running Agent Loops (Stop Hook)
 
 Cursor supports a **stop** hook that runs when the agent finishes a turn. By returning a `followup_message`, you can make the agent loop until a goal is met (e.g. tests pass, UI matches a mockup).
 
@@ -14,13 +14,20 @@ VibeSwitch no longer enforces or modifies `.cursor/hooks.json`. You can add or e
 
 ## Enabling the stop hook
 
-1. **Add the `stop` key** to `.cursor/hooks.json` in your workspace, for example:
+1. **Add the `stop` key** to `.cursor/hooks.json` in your workspace. A `timeout` (e.g. 10 seconds) is recommended so the hook does not hang if the script stalls.
+
+2. **Copy-paste ready `hooks.json`** (full file; merge with any existing hooks you have):
 
    ```json
-   "stop": [{ "command": "node .cursor/hooks/grind.js", "timeout": 10 }]
+   {
+     "version": 1,
+     "hooks": {
+       "stop": [{ "command": "node .cursor/hooks/grind.js", "timeout": 10 }]
+     }
+   }
    ```
 
-2. **Ensure the script exists** in one of these places:
+3. **Ensure the script exists** in one of these places:
    - **Workspace:** `.cursor/hooks/grind.js` (recommended for project-specific loops).
    - **Global:** Copy `.cursor/hooks/grind.js` to `~/.vibeswitch/hooks/` (or another path) and point the command at it, e.g. `node ~/.vibeswitch/hooks/grind.js`.
 
@@ -45,4 +52,12 @@ Example: run the agent until tests pass by having the agent run tests and write 
    - When all tests pass, write `DONE` into `.cursor/scratchpad.md`.
 4. The stop hook will keep sending a followup until the scratchpad contains `DONE` or the max iterations are reached.
 
-No Bun dependency is required; the script runs with Node.
+**Node (default):** No Bun dependency is required; the script runs with Node (`.cursor/hooks/grind.js`).
+
+**Bun / TypeScript (optional):** If you have [Bun](https://bun.sh) on your PATH, you can use the TypeScript variant instead. Add a `stop` entry with:
+
+```json
+"stop": [{ "command": "bun run .cursor/hooks/grind.ts", "timeout": 10 }]
+```
+
+The repo includes `.cursor/hooks/grind.ts` with the same contract; it uses `GRIND_MAX_ITERATIONS` and `GRIND_SCRATCHPAD` the same way as the Node script.
