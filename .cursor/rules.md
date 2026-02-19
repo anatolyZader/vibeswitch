@@ -48,6 +48,53 @@ You're in **VIBE MODE**. Autonomous, low-friction, get-it-done. No need to ask b
 
 ---
 
+## Workflow orchestration & task management
+
+### Plan mode default
+- Enter plan mode for any non-trivial task (3+ steps or architectural decisions).
+- If something goes sideways, STOP and re-plan immediately — don't keep pushing.
+- Use plan mode for verification steps, not just building.
+- Write detailed specs upfront to reduce ambiguity.
+
+### Subagent strategy
+- Use subagents to keep main context focused (research, exploration, parallel analysis).
+- For complex problems, offload work to subagents; one task per subagent for focus.
+
+### Self-improvement loop
+- After any correction from the user: update `tasks/lessons.md` with the pattern (create `tasks/` and file if missing).
+- Write rules for yourself that prevent the same mistake; iterate until mistake rate drops.
+- Review lessons at session start when relevant to the project.
+
+### Verification before done
+- Never mark a task complete without proving it works.
+- When relevant, diff behavior between main and your changes.
+- Ask: "Would a staff engineer approve this?" Run tests, check logs, demonstrate correctness.
+
+### Demand elegance (balanced)
+- For non-trivial changes: pause and ask "is there a more elegant way?"
+- If a fix feels hacky: consider "knowing everything I know now, implement the elegant solution."
+- Skip for simple, obvious fixes — don't over-engineer. Challenge your own work before presenting.
+
+### Autonomous bug fixing
+- When given a bug report: fix it. Don't ask for hand-holding.
+- Use logs, errors, failing tests — then resolve them. Zero context switching required from the user.
+- Fix failing CI tests without being told how.
+
+### Task management sequence
+1. **Plan first** — Write plan to `tasks/todo.md` with checkable items (create `tasks/` if missing).
+2. **Verify plan** — Check in before starting implementation.
+3. **Track progress** — Mark items complete as you go.
+4. **Explain changes** — High-level summary at each step.
+5. **Document results** — Add review section to `tasks/todo.md`.
+6. **Capture lessons** — Update `tasks/lessons.md` after corrections.
+
+### Core principles (workflow)
+- **Simplicity first** — Make every change as simple as possible; impact minimal code.
+- **No laziness** — Find root causes; no temporary fixes; senior developer standards.
+- **Minimal impact** — Touch only what's necessary; avoid introducing bugs.
+
+---
+
 ## Verification policy (VIBE)
 
 - If tests exist and could be affected, run `npm test`.
@@ -285,6 +332,17 @@ This is a **pure Node.js (CommonJS) VS Code extension** - NO TypeScript.
 **ENFORCEMENT**: If you cannot show the failing test first, STOP and ask me for permission to proceed without TDD.
 
 **Full plan**: See `docs/TDD-PLAN-AND-WORKFLOW.md` for the detailed TDD plan, example prompts, and checklist.
+
+#### Spec-first TDD
+
+When the user provides a spec file (e.g. in `docs/specs/`) or says "from spec" / "tests from spec":
+
+1. **Read the spec file** (path given by user or inferred from `docs/specs/`). A good spec defines not only functional requirements but **how they will be tested**: edge cases, input-output pairs, and success criteria.
+2. **Write tests** that cover **all** input/output pairs, edge cases, error cases, and any **success criteria** listed in the spec. Use existing test layout and patterns (`docs/TDD-PLAN-AND-WORKFLOW.md` §4–5, `tests/`). Do **not** write implementation or mocks in this phase (Red only).
+3. **Run the tests** and confirm they fail for the right reason.
+4. **After the user commits the tests**, implement to make all tests pass without changing the tests; iterate until green.
+
+See `docs/2026-02-19_17-38-spec-first-tdd-workflow.md` (or latest `docs/*-spec-first-tdd-workflow.md`) for the full three-step workflow.
 
 #### Phased TDD Workflow (Use Consistently)
 - **Phase A — Red (tests first):** Write tests from expected input/output and behavior. Do NOT create mock implementations or stubs for functionality that does not exist yet. Do NOT write the real implementation in this phase.
