@@ -91,6 +91,16 @@
         "category": "VibeSwitch"
       },
       {
+        "command": "vibeswitch.openAgentLoopScratchpad",
+        "title": "Open Agent Loop Scratchpad",
+        "category": "VibeSwitch"
+      },
+      {
+        "command": "vibeswitch.installGrindHook",
+        "title": "Install Grind Script to VibeSwitch Hooks",
+        "category": "VibeSwitch"
+      },
+      {
         "command": "vibeswitch.setCursorUsageToken",
         "title": "Set Cursor Usage Token (for dashboard token count)",
         "category": "VibeSwitch"

@@ -106,6 +106,68 @@ function commandHandlers({ log, switchToMode, updateFileColorsInExplorer, state,
             await dashboardDisplay.openDashboard(state.awarenessEngine, mode, state.dashboardContentProvider, state);
         },
 
+        'vibeswitch.openAgentLoopScratchpad': async () => {
+            const folders = workspaceFolders || [];
+            const workspaceRoot = folders[0] ? folders[0].uri.fsPath : '';
+            if (!workspaceRoot) {
+                showErrorMessage('Open a workspace folder first to use the agent loop scratchpad.');
+                return;
+            }
+            const scratchpadPath = path.join(workspaceRoot, '.cursor', 'scratchpad.md');
+            const examplePath = path.join(workspaceRoot, '.cursor', 'scratchpad.md.example');
+            try {
+                if (!fs.existsSync(scratchpadPath)) {
+                    const dir = path.dirname(scratchpadPath);
+                    if (!fs.existsSync(dir)) {
+                        fs.mkdirSync(dir, { recursive: true });
+                    }
+                    const defaultContent = fs.existsSync(examplePath)
+                        ? fs.readFileSync(examplePath, 'utf8')
+                        : 'Write DONE here when the goal (e.g. all tests pass) is met. The stop hook reads this file; when it contains DONE, the agent loop stops.';
+                    fs.writeFileSync(scratchpadPath, defaultContent, 'utf8');
+                }
+                const doc = await vscode.workspace.openTextDocument(scratchpadPath);
+                await showTextDocument(doc);
+                showInformationMessage('Write DONE in the scratchpad when your goal is met; the stop hook will then end the loop.');
+            } catch (err) {
+                log(`VibeSwitch: Error opening agent loop scratchpad: ${err.message}`, true, false);
+                showErrorMessage('Failed to open scratchpad: ' + (err && err.message));
+            }
+        },
+
+        'vibeswitch.installGrindHook': async () => {
+            const ctx = state.extensionContext;
+            if (!ctx || !ctx.extensionPath) {
+                showErrorMessage('Extension context not available.');
+                return;
+            }
+            const home = process.env.HOME || process.env.USERPROFILE || process.env.HOMEPATH || '';
+            if (!home) {
+                showErrorMessage('Could not determine home directory (HOME/USERPROFILE).');
+                return;
+            }
+            const hooksDir = path.join(home, '.vibeswitch', 'hooks');
+            const srcGrind = path.join(ctx.extensionPath, '.cursor', 'hooks', 'grind.js');
+            const destGrind = path.join(hooksDir, 'grind.js');
+            try {
+                if (!fs.existsSync(srcGrind)) {
+                    showErrorMessage('Grind script not found in extension. Reinstall the extension.');
+                    return;
+                }
+                if (!fs.existsSync(hooksDir)) {
+                    fs.mkdirSync(hooksDir, { recursive: true });
+                }
+                fs.copyFileSync(srcGrind, destGrind);
+                log(`VibeSwitch: Installed grind.js to ${destGrind}`);
+                showInformationMessage(
+                    `Grind script installed to ${destGrind}. Add to .cursor/hooks.json: "stop": [{ "command": "node ${destGrind}", "timeout": 10 }]`
+                );
+            } catch (err) {
+                log(`VibeSwitch: Error installing grind hook: ${err.message}`, true, false);
+                showErrorMessage('Failed to install grind script: ' + (err && err.message));
+            }
+        },
+
         'vibeswitch.setCursorUsageToken': async () => {
             const ctx = state.extensionContext;
             if (!ctx || !ctx.secretStorage) {

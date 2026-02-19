@@ -12,6 +12,11 @@ Cursor supports a **stop** hook that runs when the agent finishes a turn. By ret
 
 VibeSwitch no longer enforces or modifies `.cursor/hooks.json`. You can add or edit a `stop` entry in `.cursor/hooks.json` freely.
 
+## Extension commands (VibeSwitch)
+
+- **VibeSwitch: Open Agent Loop Scratchpad** — Creates `.cursor/scratchpad.md` from the example if missing, opens it, and reminds you to write `DONE` when the goal is met. Use this to start or continue a grind loop.
+- **VibeSwitch: Install Grind Script to VibeSwitch Hooks** — Copies `.cursor/hooks/grind.js` to `~/.vibeswitch/hooks/grind.js` so you can reference it from any workspace (e.g. in `hooks.json`: `"command": "node ~/.vibeswitch/hooks/grind.js"`).
+
 ## Enabling the stop hook
 
 1. **Add the `stop` key** to `.cursor/hooks.json` in your workspace. A `timeout` (e.g. 10 seconds) is recommended so the hook does not hang if the script stalls.
@@ -42,6 +47,35 @@ The repo includes a Node script that implements the “grind until done” patte
   - `GRIND_SCRATCHPAD` — Path to the scratchpad file (default `.cursor/scratchpad.md`).
 
 Example: run the agent until tests pass by having the agent run tests and write `DONE` into `.cursor/scratchpad.md` when they succeed; the grind script will then stop the loop.
+
+## How to verify it's working
+
+1. **Check configuration**
+   - `.cursor/hooks.json` has `"stop": [{ "command": "node .cursor/hooks/grind.js", "timeout": 10 }]` (or your path).
+   - `.cursor/hooks/grind.js` exists and is readable.
+
+2. **Test the script by hand** (from repo root):
+   ```bash
+   echo '{"conversation_id":"test","status":"completed","loop_count":0}' | node .cursor/hooks/grind.js
+   ```
+   - **Expected:** One line of JSON on stdout. If `.cursor/scratchpad.md` does **not** contain `DONE`, you should see `{"followup_message":"[Iteration 1/5] Continue working..."}`. If it **does** contain `DONE`, you should see `{}`.
+
+3. **Run the test suite for the hook**
+   ```bash
+   npm test -- tests/cursor/hooks/grind.test.js
+   ```
+   All tests should pass (invalid input, status, loop_count, scratchpad with/without DONE).
+
+4. **Observe the loop in Cursor**
+   - Start a task that will take several turns (e.g. “Run tests and fix failures until all pass; when they pass, write DONE in .cursor/scratchpad.md”).
+   - **Loop is working if:** After the agent finishes a turn, Cursor starts another turn automatically with a follow-up message like “[Iteration 2/5] Continue working...”.
+   - **Loop stopped correctly if:** After you or the agent writes `DONE` in `.cursor/scratchpad.md`, the next time the agent finishes a turn, no new turn is started (conversation stays stopped).
+   - **Max iterations:** After 5 turns by default (or `GRIND_MAX_ITERATIONS`), the loop stops even without `DONE`.
+
+5. **Quick “smoke” loop**
+   - Ensure `.cursor/scratchpad.md` does **not** contain `DONE`.
+   - In Agent/Chat, ask: “Say ‘one’ and stop.”
+   - When the agent stops, Cursor should automatically start a new turn with the grind follow-up. That confirms the stop hook ran and returned `followup_message`.
 
 ## Example: grind until tests pass
 

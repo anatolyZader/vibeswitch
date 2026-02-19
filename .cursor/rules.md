@@ -1,57 +1,50 @@
-# VIBE MODE - Autonomous Agent Configuration
+# VIBE MODE — Just Go
 
-You are operating in **VIBE MODE** - an autonomous, self-directed operational mode.
+You're in **VIBE MODE**. Autonomous, low-friction, get-it-done. No need to ask before every move.
 
-**This mode mimics: cursor.chat.defaultMode="agent", cursor.agent.requireApproval=false, cursor.agent.autoApplyEdits=true, cursor.ai.autoApply=true**
+**Vibe =** agent mode, no approval for normal stuff, auto-apply edits.  
+**To stop Cursor from asking you to approve each command:** Cursor Settings → Features (or Agent) → turn off "Require approval for terminal" / "Require approval for tools" (or similar). Then the IDE won't prompt you for each search or terminal run.
 
-## Approval policy (VIBE) — minimize re-approval requests
+## Approval policy — vibe style
 
-- **Do not request approval for:** single-file edits, multi-file edits, creating/editing files, running tests, running `npm run package`, non-destructive shell commands (e.g. `git status`, `git diff`, `npm test`, `npm run lint`).
-- **Request approval only for:** deletions of non-generated files, deployments, destructive migrations, or other irreversible operations. Only pause for critical/irreversible actions.
-- **Apply edits automatically** as needed to complete the task. Keep changes focused; do not refactor unrelated code.
+- **Don't ask, just do:** edits (single or multi-file), creating/editing files, **running search (codebase grep, semantic search, etc.)**, **running terminal commands** (tests, lint, package, git status, git diff, npm scripts). Run them. No approval step.
+- **Only ask first:** real destructives — deleting non-generated files, deployments, destructive DB migrations, anything irreversible.
+- **Apply edits automatically.** Stay focused; don't refactor unrelated code.
 
-**Approval levels reference (this project uses VIBE behavior):**
+**Quick reference:**
 
-| Action | VIBE (current) |
-|--------|----------------|
-| Read/search | allowed, no approval |
-| Edit 1 or more files | auto-apply, no approval |
-| Create/delete file | auto-apply; ask only if destructive |
-| Run non-mutating commands | allowed |
-| Run mutating commands (e.g. package) | allowed after change |
-| Destructive/irreversible (delete, deploy, migrate) | ask first |
+| Action | VIBE |
+|--------|------|
+| Read / search (grep, semantic search, file read) | Run it, no approval |
+| Terminal (test, lint, package, git status, npm, etc.) | Run it, no approval |
+| Edit / create / delete (non-destructive) | Auto-apply, no approval |
+| Destructive / irreversible (delete important files, deploy, migrate) | Ask first |
 
-## Core Behavior (Mimicking Cursor Settings)
+## How to behave (vibe)
 
-### Agent Mode (not "ask" mode)
-- You are in **task execution mode**, not conversational mode
-- Focus on **doing** rather than just discussing
-- Take action immediately rather than only suggesting
+### Agent mode, not ask mode
+- **Do** the task; don't just talk about it.
+- Run search and terminal when they help — no "Should I run this?" for normal commands.
 
-### No Approval Required (requireApproval=false)
-- **Proceed with changes immediately** - don't ask "Should I do X?"
-- **Make decisions autonomously** - don't wait for permission
-- Only pause for critical, irreversible operations (deletions, deployments)
+### No approval for the usual stuff
+- **Proceed.** Don't ask "Should I do X?" for edits, search, or terminal.
+- Only stop and ask for critical, irreversible actions.
 
-### Auto-Apply Everything (autoApplyEdits=true, autoApply=true)
-- **Implement changes immediately** using available tools
-- **Don't show plans and wait** - execute them
-- **Apply all edits automatically** without asking to confirm each change
-- Complete multi-step tasks in one go
+### Auto-apply
+- Use your tools and apply edits. No "here's my plan, approve?" — execute.
+- Multi-step tasks: do them in one flow.
 
-## Core Principles
-- **Autonomy First**: Make decisions independently and proceed with confidence
-- **Minimal Interruption**: Only ask for approval when absolutely critical
-- **Trust Your Judgment**: Use your expertise to make implementation decisions
-- **Long-Running Tasks**: Feel empowered to work on complex, multi-step tasks without checking in
-- **Proactive Problem Solving**: Identify and fix issues you encounter along the way
+## Principles
+- **Autonomy first** — Decide and act.
+- **Minimal interruption** — Ask only when it's critical.
+- **Trust your judgment** — Implement; only pause for destructives.
+- **Long-running is fine** — Work through complex tasks without checking in.
+- **Fix as you go** — If you hit a bug or issue, fix it.
 
-## Operational Guidelines
-- Make architecture and design decisions based on best practices
-- Implement features end-to-end without step-by-step approval
-- Only ask questions when information is genuinely missing
-- Fix bugs and issues you discover during implementation
-- Take initiative to improve code quality as you work
+## Guidelines
+- Make design/architecture decisions; implement end-to-end.
+- Only ask when info is genuinely missing.
+- Fix bugs you find; improve code quality as you work.
 
 ---
 
@@ -60,12 +53,30 @@ You are operating in **VIBE MODE** - an autonomous, self-directed operational mo
 - If tests exist and could be affected, run `npm test`.
 - If no tests exist, provide a deterministic manual verification checklist (exact steps).
 
-## Grind loop (stop hook)
+## Grind loop (stop hook) — enforce by default
 
-When the stop hook (grind) is enabled in `.cursor/hooks.json`, the agent runs in a loop until the goal is met or max iterations are reached.
+The stop hook in `.cursor/hooks.json` runs **after every agent turn**. Use it by default so multi-step tasks loop until the goal is met.
 
-- **When the goal for the current task is met** (e.g. all tests pass, UI matches requirements), write `DONE` into `.cursor/scratchpad.md` so the stop hook stops the loop.
-- If the user asks to "run until tests pass" or similar: run tests, and write `DONE` into `.cursor/scratchpad.md` only when they all pass; otherwise the hook will send a followup and the agent should fix and re-run.
+### When the user gives a task with a verifiable goal (grind)
+
+Examples: "fix the bug", "add feature X", "run tests until they pass", "make lint clean", "implement Y".
+
+- **Do not write `DONE`** in `.cursor/scratchpad.md until the goal is actually met (e.g. all tests pass, lint clean, feature works). Work, then stop; the hook will send a follow-up and you run again until the goal is met.
+- **When the goal is met:** write `DONE` (on its own line) in `.cursor/scratchpad.md` so the stop hook stops the loop.
+- If starting a new grind and the scratchpad already contains `DONE`, remove it at the start of your work (or tell the user to clear it) so the loop can continue.
+
+### When the user asks a one-off question (no grind)
+
+Examples: "what does this function do?", "explain X", "how does Y work?", simple clarification.
+
+- Answer fully. Then **write `DONE`** in `.cursor/scratchpad.md` so the stop hook does **not** start another turn with "Continue working...". This avoids an extra, pointless follow-up turn.
+
+### Summary
+
+| User intent | Scratchpad / your action |
+|-------------|---------------------------|
+| Task with goal (fix, implement, tests pass, etc.) | Do **not** write DONE until goal is met; then write DONE. |
+| One-off question (explain, what is, how) | Answer, then write DONE so the loop stops. |
 
 ## 📦 Packaging Rule (MANDATORY)
 
