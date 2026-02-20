@@ -9,6 +9,7 @@ In Cursor chat, type **`/spec`** followed by a short description of the desired 
 - `/spec validate email addresses: valid format returns true, invalid returns false, empty string false`
 - `/spec function that normalizes path segments and resolves .. and . for the current OS`
 - `/spec module to compute session duration from start and end timestamps; handle same-day and overnight`
+- `/spec new business module for notifications: send in-app and email` → creates spec **and** creates the four-layer module structure (see “When the description is a business module” below).
 
 ## Instruction (for the agent)
 
@@ -32,4 +33,16 @@ The user has invoked the **/spec** command. The rest of their message (or the im
 
 **If the description is ambiguous:** Make reasonable assumptions and state them briefly in the spec (e.g. in the one-line summary or Contract). The user can refine when they peruse.
 
-**Reference:** Template and principle: `docs/specs/SPEC-TEMPLATE.md`. Workflow: `docs/2026-02-20_07-36-spec-first-tdd-and-agent-workflow.md` (or latest `docs/*-spec-first-tdd-and-agent-workflow.md`).
+---
+
+## When the description is a business module
+
+If the user’s description indicates they want to **build a business module** (e.g. “new module for X”, “business module that …”, “add a module to handle …”, “feature in business_modules”), you MUST also apply the **create-business-module** workflow:
+
+1. **Still create the spec first** (as above), with **Contract → Location** set to a path under `business_modules/<moduleName>/` (e.g. `business_modules/<moduleName>/app/<moduleName>Service.js` or domain/ports as appropriate).
+2. **Then follow the create-business-module skill**: read `.cursor/skills/create-business-module/SKILL.md` and execute its workflow — create the four layers (input/, app/, domain/, infrastructure/adapters/), use correct naming, mirror tests under `tests/business_modules/<moduleName>/`, and wire the module in `compositionRoot.js`. Use the spec’s Contract and Test file hint for exact paths.
+3. **Verification:** Before marking done, complete the skill’s verification checklist (four layers, naming, tests mirror layout, no cross-module imports, domain purity).
+
+So for a business-module request: **spec first** (so behavior is defined and testable), then **create the module structure and wire it** using the create-business-module skill. The user can still run `/tdd` on the spec afterward to generate tests and implement.
+
+**Reference:** Template and principle: `docs/specs/SPEC-TEMPLATE.md`. Workflow: `docs/2026-02-20_07-36-spec-first-tdd-and-agent-workflow.md` (or latest `docs/*-spec-first-tdd-and-agent-workflow.md`). Module structure: `.cursor/skills/create-business-module/SKILL.md`, `.cursor/rules/module-structure.mdc`.

@@ -149,6 +149,18 @@ You are a **senior software engineer**. You prioritize correctness, clarity, mai
 - **Do not bypass domain or application boundaries** - Maintain separation of concerns
 - **Treat infrastructure concerns as implementation details** - Keep them isolated
 
+### Module structure (file layout and layers) — MANDATORY
+When creating or extending a **business module**, follow the canonical structure so all modules stay consistent. Full rule: `.cursor/rules/module-structure.mdc`.
+
+- **Per-module layout**: `business_modules/<moduleName>/` must contain exactly four layers:
+  - **input/** — Controllers, event listeners, command handlers (thin; call app only).
+  - **app/** — Application services, engines; may have subdirs (e.g. `classification/`, `scoring/`, `usage/`).
+  - **domain/** — `entities/`, `aggregates/`, `ports/`, `services/` (no app/infra imports).
+  - **infrastructure/adapters/** — Adapters implementing domain ports.
+- **Naming**: `<module>Controller.js` / `<module>EventListener.js` in input; `<module>Service.js` in app; `I<Module><Port>.js` in domain/ports; `<module><Thing>Adapter.js` in infrastructure. File names: camelCase.
+- **Tests**: Mirror under `tests/business_modules/<moduleName>/` (e.g. `app/foo.js` → `tests/.../app/foo.test.js`).
+- **New module**: Create all four layer folders and add files in the correct layer; wire in `compositionRoot.js`; no direct imports between business modules.
+
 ### Domain-Driven Design / Hexagonal Architecture Rules
 - **Domain layer must not depend on infrastructure** - Keep domain logic pure and testable
 - **Application layer may orchestrate but not implement business logic** - Application coordinates, domain implements

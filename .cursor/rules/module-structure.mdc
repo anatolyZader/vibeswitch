@@ -1,0 +1,72 @@
+---
+description: Enforce 4-layer module structure and file layout for business_modules
+globs: business_modules/**/*
+alwaysApply: true
+---
+
+# Module Structure (MANDATORY)
+
+When creating or extending a **business module**, follow this structure and naming so the agent and codebase stay consistent.
+
+## 1. Directory layout per module
+
+Every business module lives under `business_modules/<moduleName>/` with exactly four layers:
+
+```
+business_modules/<moduleName>/
+├── index.js                    # Optional: barrel or entry for the module
+├── input/                      # INPUT LAYER — entry points only
+│   └── <module>EventListener.js   # or <module>Controller.js, command/event handlers
+├── app/                        # APPLICATION LAYER — orchestration, no raw business rules
+│   ├── <module>Engine.js       # Optional: main orchestrator for the module
+│   ├── <module>Service.js      # Main application service
+│   └── <subdomain>/            # Optional subdirs for large modules (e.g. classification/, scoring/)
+│       └── ...
+├── domain/                     # DOMAIN LAYER — entities, value objects, ports (interfaces)
+│   ├── entities/
+│   ├── aggregates/
+│   ├── ports/                  # I<Module><Port>.js
+│   └── services/               # Domain services (pure logic)
+└── infrastructure/             # INFRASTRUCTURE LAYER — adapters implementing ports
+    └── adapters/
+        └── <module><Thing>Adapter.js
+```
+
+- **Input**: VS Code commands, event listeners, HTTP handlers — thin; they call app layer only.
+- **App**: Services and engines; orchestrate domain and call ports; no direct DB/FS/VS Code.
+- **Domain**: Entities, aggregates, ports (interfaces); no imports from app or infrastructure.
+- **Infrastructure**: Adapters (VSCode, persistence, external APIs); implement domain ports.
+
+## 2. File and type naming
+
+| Layer        | Location              | Naming pattern (examples) |
+|-------------|------------------------|----------------------------|
+| Input       | `input/`               | `<module>EventListener.js`, `<module>Controller.js` |
+| App         | `app/` or `app/<subdomain>/` | `<module>Service.js`, `<module>Engine.js` |
+| Domain      | `domain/entities/`, `domain/ports/` | Entities: PascalCase. Ports: `I<Module><Port>.js` (e.g. `IAwarenessVSCodePort.js`) |
+| Infrastructure | `infrastructure/adapters/` | `<module><Thing>Adapter.js` (e.g. `awarenessVSCodeAdapter.js`) |
+
+- Use **camelCase** for file names (e.g. `awarenessEngine.js`, `planDeviationClient.js`).
+- **Port interfaces**: `I` + Module name + Port name (e.g. `IAwarenessPersistencePort.js`).
+
+## 3. Test layout (mirror structure)
+
+Place tests under `tests/business_modules/<moduleName>/` mirroring the source tree:
+
+- `business_modules/<module>/app/foo.js` → `tests/business_modules/<module>/app/foo.test.js`
+- `business_modules/<module>/domain/entities/Bar.js` → `tests/business_modules/<module>/domain/entities/Bar.test.js`
+- `business_modules/<module>/infrastructure/adapters/bazAdapter.js` → `tests/business_modules/<module>/infrastructure/adapters/bazAdapter.test.js`
+
+Use `__tests__/` subdirs only when you group multiple test files for one area (e.g. `app/scoring/__tests__/`).
+
+## 4. Rules when adding new code
+
+- **New module**: Create the four folders (`input/`, `app/`, `domain/`, `infrastructure/adapters/`) and add at least one file per layer you use.
+- **New feature in existing module**: Add files in the correct layer; use existing subdirs (e.g. `app/usage/`, `app/scoring/`) when they fit.
+- **Cross-cutting code**: Put it in `cross-cut-modules/`, not inside a single business module. Keep it stateless and pure where possible.
+- **Composition**: Wire new modules in `compositionRoot.js`; resolve services via the DI container from the input layer; do not import one business module from another — use ports/events or composition root.
+
+## 5. References
+
+- Layer roles and boundaries: `.cursor/rules.md` (Architecture Rules, DDD/Hexagonal).
+- Detailed rationale: `docs/ARCHITECTURE-COMPARISON.md`, `docs/APP-DIRECTORY-ORGANIZATION-RATIONALE.md`.
