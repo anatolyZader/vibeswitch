@@ -355,7 +355,19 @@ function compose(context, state, container) {
         adapters.loggerAdapter?.error?.('compositionRoot: Failed to compose daily research', err);
         state.dailyResearchRunner = null;
     }
-    
+
+    // Report module: publish research results to Medium, LinkedIn, X (scaffold wired for TDD).
+    try {
+        const ReportService = require('./business_modules/report/app/reportService');
+        const { createReportController } = require('./business_modules/report/input/reportController');
+        state.reportService = new ReportService({ publishAdapters: {} });
+        state.reportController = createReportController({ reportService: state.reportService });
+    } catch (err) {
+        adapters.loggerAdapter?.error?.('compositionRoot: Failed to compose report module', err);
+        state.reportService = null;
+        state.reportController = null;
+    }
+
     // Store adapters in DI container
     container.setAdapter('awareness', 'vscodeAdapter', adapters.vscodeAdapter);
     container.setAdapter('awareness', 'persistenceAdapter', adapters.persistenceAdapter);
