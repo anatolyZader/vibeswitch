@@ -14,6 +14,15 @@ One-line summary of what is being specified.
 
 ---
 
+## Business module (optional)
+
+Only present when the spec targets a module under `business_modules/`. The `/tdd` command uses this to create the module scaffold if it does not exist.
+
+- **Module name:** `<moduleName>` (e.g. `report`, `notifications`)
+- **Domain elements:** (optional) Entities, value objects, events, or ports mentioned in the spec (e.g. `IReportPublishPort`, `ReportService`) so the agent can align the create-business-module scaffold.
+
+---
+
 ## Input / Output (and behavior)
 
 List explicit input → output pairs. The agent will generate one test per pair (or per logical group).
@@ -70,9 +79,33 @@ Define what “done” and “correct” mean so the agent can generate tests th
 
 ---
 
+## Test levels (optional)
+
+Define which test levels the spec requires. The agent generates tests for each level listed.
+
+- **Unit (default):** One unit per test; boundaries (ports, I/O) mocked. Covers I/O table, edge cases, error cases. Always generated unless the spec says otherwise.
+- **Integration (optional):** Real implementations of some boundaries (e.g. real adapter + temp fs, or real adapter + mock HTTP server). Covers "component + real port" flows. Only generated if the spec lists integration scope and paths.
+- **E2E (optional):** Full path (e.g. input → app → real adapters, or extension command). Only if the spec explicitly requires it; rare for a single module.
+
+Example when using integration:
+
+- **Unit:** All input/output, edge, and error cases; mocked ports.
+- **Integration:** (Optional.) List what to test with real boundaries, e.g.:
+  - Service + real IReportContentSourcePort impl (e.g. temp file); assert read then publish flow.
+  - Service + real IReportPublishPort adapters with injected fetch (no real network).
+- **E2E:** (Optional.) Full flow, e.g. command → controller → service → real adapters; only if needed.
+
+---
+
 ## Test file hint (optional)
 
-Path where the agent should place the test file, e.g.:
+Path(s) where the agent should place tests. Can be level-aware:
+
+- **Unit:** e.g. `tests/lib/validateEmail.test.js`, `tests/business_modules/<module>/app/service.test.js`
+- **Integration:** (if Test levels include Integration) e.g. `tests/business_modules/<module>/app/service.integration.test.js` — one-line scope (e.g. "Service + real ReportFsContentSourceAdapter + temp file; reportPath → read → publish").
+- **E2E:** (if Test levels include E2E) path and scope.
+
+Simple case (unit only):
 
 - `tests/lib/validateEmail.test.js`
 - `tests/business_modules/<module>/domain/__tests__/feature.test.js`

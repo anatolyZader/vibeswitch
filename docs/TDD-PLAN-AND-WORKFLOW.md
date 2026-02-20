@@ -19,17 +19,18 @@ Use this workflow for **every** new feature or behavior. Do not skip phases.
 
 ### Phase A: Write tests first (Red)
 
-1. **You (or the Agent) write tests** based on expected input/output and behavior.
-2. **Be explicit** that you’re doing TDD so the Agent:
+1. **You (or the Agent) write tests** based on expected input/output and behavior. When using a spec: write tests for **every test level** declared in the spec (unit, and integration/e2e if the spec lists them). Place tests per the spec Test file hint per level.
+2. **Evaluate coverage (LLM):** When using a spec, compare the written tests to the spec (I/O table, edge cases, error cases, success criteria, test levels). Report gaps; add any missing tests until coverage is acceptable. This stays inside Red; no commit yet.
+3. **Be explicit** that you’re doing TDD so the Agent:
    - Does **not** create mock implementations or stubs for functionality that doesn’t exist yet.
    - Does **not** write the real implementation in this phase.
-3. Follow existing test patterns (see §4).
-4. Tests should target a **specific unit/function/component** with a clear contract (e.g. `validateEmail(str) → boolean`).
+4. Follow existing test patterns (see §4).
+5. Tests should target a **specific unit/function/component** with a clear contract (e.g. `validateEmail(str) → boolean`), or (for integration) a flow with real port implementations.
 
 ### Phase B: Run tests and confirm they fail
 
-1. **Run the test suite** (e.g. `npm test` or a focused run).
-2. **Confirm the new tests fail** for the right reason (e.g. “function not defined” or “expected true, received undefined”).
+1. **Run the full set of tests** (unit + integration, and e2e if present), e.g. `npm test` or a focused run.
+2. **Confirm all new tests fail** for the right reason (e.g. “function not defined” or “expected true, received undefined”).
 3. **Do not write implementation code in this phase.** If tests pass already, the behavior may already exist or the tests are wrong—fix the tests or scope.
 
 ### Phase C: Commit the tests
@@ -39,7 +40,7 @@ Use this workflow for **every** new feature or behavior. Do not skip phases.
 
 ### Phase D: Implement to pass (Green)
 
-1. **Ask the Agent to implement** the code that makes the tests pass.
+1. **Ask the Agent to implement** the code that makes **all** written tests pass (unit and integration, and e2e if present).
 2. **Instruct:** “Do not modify the tests. Keep iterating until all tests pass.”
 3. Agent runs tests, sees failures, fixes implementation, repeats until green.
 4. Implementation may be minimal (e.g. return a constant first) then generalized—that’s fine.
@@ -108,9 +109,15 @@ Implement [the feature/function] to pass all tests in [path/to/test file]. Do no
 - **Jest config:** `jest.config.js` — `testMatch: ['**/tests/**/*.test.js']`.  
   Dashboard tests: `npm run test:dashboard`.
 
+**Test levels (unit, integration, e2e):**
+
+- **Unit:** Default; one unit per test, mocks at boundaries; fast. File: `*.test.js`.
+- **Integration:** Multiple components + real implementations of some ports (e.g. real adapter, temp fs or mock HTTP); still in-process, no real external services. File: `*.integration.test.js`. Use when the spec lists Integration in Test levels.
+- **E2E:** Full path (e.g. extension host, or command to controller to service to adapters); optional and spec-driven. File: `*.e2e.test.js` or electron suite. See the spec Test levels / Test file hint for which levels a feature uses.
+
 **Naming:**
 
-- File: `*.test.js` (e.g. `validateEmail.test.js`, `pathSafety.test.js`).
+- File: `*.test.js` (unit), `*.integration.test.js` (integration), `*.e2e.test.js` (e2e). E.g. `validateEmail.test.js`, `reportService.integration.test.js`.
 - Describe: feature or module (e.g. `describe('validateEmail', () => { ... })`).
 - Cases: one behavior per `test()`/`it()` with clear expectation (e.g. `'returns true for valid email'`).
 
@@ -160,6 +167,7 @@ When the user says they’re doing TDD or points to this doc:
 | Watch mode          | `npm run test:watch`             |
 | Coverage            | `npm run test:coverage`          |
 | MVP subset          | `npm run test:mvp`               |
+| Unit only (optional)| `npm run test:unit` (if configured; excludes `*.integration.test.js` and e2e for faster feedback) |
 
 ---
 

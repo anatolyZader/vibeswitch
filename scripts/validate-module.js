@@ -28,15 +28,26 @@ function requiredDirsExist(moduleName) {
     const moduleRoot = path.join(businessModulesRoot, moduleName);
     const required = ['input', 'app', 'domain', 'infrastructure'];
     const missing = [];
+    const empty = [];
     for (const dir of required) {
         const p = path.join(moduleRoot, dir);
         if (!fs.existsSync(p) || !fs.statSync(p).isDirectory()) {
             missing.push(dir);
+        } else {
+            const jsInLayer = listJsFiles(p);
+            if (jsInLayer.length === 0) {
+                empty.push(dir);
+            }
         }
     }
     if (missing.length) {
         console.error(`[validate-module] Required directories missing for ${moduleName}: ${missing.join(', ')}`);
         console.error(`  Expected under: business_modules/${moduleName}/`);
+        return false;
+    }
+    if (empty.length) {
+        console.error(`[validate-module] Required directories must contain at least one .js file: ${empty.join(', ')}`);
+        console.error(`  Each layer (input, app, domain, infrastructure) must have at least one layer entry file.`);
         return false;
     }
     return true;
@@ -131,9 +142,12 @@ function wiringInCompositionRoot(moduleName) {
         return false;
     }
     const content = fs.readFileSync(compositionRootPath, 'utf8');
-    const needle = `business_modules/${moduleName}`;
-    if (!content.includes(needle)) {
-        console.error(`[validate-module] Module ${moduleName} must be wired in compositionRoot.js (expected require of "${needle}/..." or similar)`);
+    const escaped = moduleName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const requireRe = new RegExp(
+        "require\\s*\\(\\s*['\"][^'\"]*business_modules/" + escaped + "[^'\"]*['\"]\\s*\\)"
+    );
+    if (!requireRe.test(content)) {
+        console.error(`[validate-module] Module ${moduleName} must be wired in compositionRoot.js (expected a require(...) line containing "business_modules/${moduleName}/...")`);
         return false;
     }
     return true;

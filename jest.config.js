@@ -32,7 +32,8 @@ module.exports = {
         '/tests/extension.test.js',
         '/tests/business_modules/awareness/app/awarenessService.adapters.test.js',
         '/tests/business_modules/awareness/domain/entities/agentSuggestionHandler.batch.test.js', // Module removed during refactoring
-        '/tests/business_modules/awareness/domain/entities/sessionTracker.reviewSession.test.js' // Module removed during refactoring
+        '/tests/business_modules/awareness/domain/entities/sessionTracker.reviewSession.test.js', // Module removed during refactoring
+        ...(process.env.JEST_UNIT_ONLY ? ['integration\\.test\\.js', 'e2e\\.test\\.js'] : [])
     ],
     // Use fake timers per test, not globally
     fakeTimers: {

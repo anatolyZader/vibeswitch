@@ -18,6 +18,7 @@ business_modules/<moduleName>/
 ├── input/                      # INPUT LAYER — entry points only
 │   └── <module>EventListener.js   # or <module>Controller.js, command/event handlers
 ├── app/                        # APPLICATION LAYER — orchestration, no raw business rules
+│   ├── <module>Controller.js   # Optional: accept request/message, extract data, call Service
 │   ├── <module>Engine.js       # Optional: main orchestrator for the module
 │   ├── <module>Service.js      # Main application service
 │   └── <subdomain>/            # Optional subdirs for large modules (e.g. classification/, scoring/)
@@ -34,8 +35,8 @@ business_modules/<moduleName>/
         └── <module><Thing>Adapter.js
 ```
 
-- **Input**: VS Code commands, event listeners, HTTP handlers — thin; they call app layer only.
-- **App**: Services and engines; orchestrate domain and call ports; no direct DB/FS/VS Code.
+- **Input**: Receive the initial message only (HTTP, events, commands). Routers declare routes; Fastify plugin decorates with methods. Handlers resolve app Controller or Service from DI and delegate; no extraction or business logic in input.
+- **App**: Controller (optional) accepts request/message, extracts data, calls Service. Services and engines orchestrate domain and call ports; no direct DB/FS/VS Code.
 - **Domain**: Entities, aggregates, ports (interfaces); no imports from app or infrastructure.
 - **Infrastructure**: Adapters (VSCode, persistence, external APIs); implement domain ports.
 
@@ -44,7 +45,7 @@ business_modules/<moduleName>/
 | Layer        | Location              | Naming pattern (examples) |
 |-------------|------------------------|----------------------------|
 | Input       | `input/`               | `<module>EventListener.js`, `<module>Controller.js` |
-| App         | `app/` or `app/<subdomain>/` | `<module>Service.js`, `<module>Engine.js` |
+| App         | `app/` or `app/<subdomain>/` | `<module>Service.js`, `<module>Controller.js` (optional), `<module>Engine.js` |
 | Domain      | `domain/entities/`, `domain/value_objects/`, `domain/events/`, `domain/ports/` | Entities/value objects/events: PascalCase. Ports: `I<Module><Port>.js` (e.g. `IAwarenessVSCodePort.js`) |
 | Infrastructure | `infrastructure/adapters/` | `<module><Thing>Adapter.js` (e.g. `awarenessVSCodeAdapter.js`) |
 

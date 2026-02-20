@@ -356,11 +356,13 @@ function compose(context, state, container) {
         state.dailyResearchRunner = null;
     }
 
-    // Report module: publish research results to Medium, LinkedIn, X (scaffold wired for TDD).
+    // Report module: publish research results to Medium, LinkedIn, X.
     try {
         const ReportService = require('./business_modules/report/app/reportService');
         const { createReportController } = require('./business_modules/report/input/reportController');
-        state.reportService = new ReportService({ publishAdapters: {} });
+        const ReportFsContentSourceAdapter = require('./business_modules/report/infrastructure/adapters/reportFsContentSourceAdapter');
+        const readReportPathPort = new ReportFsContentSourceAdapter();
+        state.reportService = new ReportService({ publishAdapters: {}, readReportPathPort });
         state.reportController = createReportController({ reportService: state.reportService });
     } catch (err) {
         adapters.loggerAdapter?.error?.('compositionRoot: Failed to compose report module', err);

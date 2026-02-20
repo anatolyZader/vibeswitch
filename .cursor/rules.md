@@ -349,10 +349,10 @@ This is a **pure Node.js (CommonJS) VS Code extension** - NO TypeScript.
 
 When the user provides a spec file (e.g. in `docs/specs/`) or says "from spec" / "tests from spec":
 
-1. **Read the spec file** (path given by user or inferred from `docs/specs/`). A good spec defines not only functional requirements but **how they will be tested**: edge cases, input-output pairs, and success criteria.
-2. **Write tests** that cover **all** input/output pairs, edge cases, error cases, and any **success criteria** listed in the spec. Use existing test layout and patterns (`docs/TDD-PLAN-AND-WORKFLOW.md` §4–5, `tests/`). Do **not** write implementation or mocks in this phase (Red only).
-3. **Run the tests** and confirm they fail for the right reason.
-4. **After the user commits the tests**, implement to make all tests pass without changing the tests; iterate until green.
+1. **Read the spec file** (path given by user or inferred from `docs/specs/`). A good spec defines not only functional requirements but **how they will be tested**: edge cases, input-output pairs, success criteria, and optionally **test levels** (unit, integration, e2e).
+2. **Write tests** that cover **all** input/output pairs, edge cases, error cases, and any **success criteria** listed in the spec, and **for every test level** (unit, integration, e2e) the spec declares. Use existing test layout and patterns (`docs/TDD-PLAN-AND-WORKFLOW.md` §4–5, `tests/`). Do **not** write implementation or mocks in this phase (Red only).
+3. **Evaluate coverage (LLM):** Compare written tests to the spec; report gaps and add any missing tests until coverage is acceptable. Then run the tests and confirm they fail for the right reason.
+4. **After the user commits the tests**, implement to make all tests pass (all levels) without changing the tests; iterate until green.
 
 See `docs/2026-02-19_17-38-spec-first-tdd-workflow.md` (or latest `docs/*-spec-first-tdd-workflow.md`) for the full three-step workflow.
 
