@@ -442,7 +442,8 @@
     "lint": "echo 'No linter configured yet'",
     "create-md": "node scripts/create-md.js",
     "judge-spec-coverage": "node scripts/judge-spec-coverage.js",
-    "suggest-spec-cases": "node scripts/suggest-spec-cases.js"
+    "suggest-spec-cases": "node scripts/suggest-spec-cases.js",
+    "validate:module": "node scripts/validate-module.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

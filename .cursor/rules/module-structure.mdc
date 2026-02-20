@@ -6,7 +6,7 @@ alwaysApply: true
 
 # Module Structure (MANDATORY)
 
-When creating or extending a **business module**, follow this structure and naming so the agent and codebase stay consistent.
+When creating or extending a **business module**, follow this structure and naming so the agent and codebase stay consistent. The canonical layout is documented as the **module structure schema** in `.cursor/skills/create-business-module/SKILL.md` (directory tree, per-layer contract, naming rules, dependency flow); use that schema — no need to re-analyze `eventstorm/gitModuleExample.js`.
 
 ## 1. Directory layout per module
 
@@ -24,6 +24,8 @@ business_modules/<moduleName>/
 │       └── ...
 ├── domain/                     # DOMAIN LAYER — entities, value objects, ports (interfaces)
 │   ├── entities/
+│   ├── value_objects/
+│   ├── events/
 │   ├── aggregates/
 │   ├── ports/                  # I<Module><Port>.js
 │   └── services/               # Domain services (pure logic)
@@ -43,7 +45,7 @@ business_modules/<moduleName>/
 |-------------|------------------------|----------------------------|
 | Input       | `input/`               | `<module>EventListener.js`, `<module>Controller.js` |
 | App         | `app/` or `app/<subdomain>/` | `<module>Service.js`, `<module>Engine.js` |
-| Domain      | `domain/entities/`, `domain/ports/` | Entities: PascalCase. Ports: `I<Module><Port>.js` (e.g. `IAwarenessVSCodePort.js`) |
+| Domain      | `domain/entities/`, `domain/value_objects/`, `domain/events/`, `domain/ports/` | Entities/value objects/events: PascalCase. Ports: `I<Module><Port>.js` (e.g. `IAwarenessVSCodePort.js`) |
 | Infrastructure | `infrastructure/adapters/` | `<module><Thing>Adapter.js` (e.g. `awarenessVSCodeAdapter.js`) |
 
 - Use **camelCase** for file names (e.g. `awarenessEngine.js`, `planDeviationClient.js`).
