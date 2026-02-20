@@ -440,7 +440,9 @@
     "test:electron": "VIBESWITCH_INTEGRATION_TEST=1 node tests/electron/runTest.js",
     "package": "npm run build && vsce package",
     "lint": "echo 'No linter configured yet'",
-    "create-md": "node scripts/create-md.js"
+    "create-md": "node scripts/create-md.js",
+    "judge-spec-coverage": "node scripts/judge-spec-coverage.js",
+    "suggest-spec-cases": "node scripts/suggest-spec-cases.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

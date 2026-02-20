@@ -34,6 +34,32 @@ Naming: `spec-<feature>.md` or `YYYY-MM-DD_HH-MM-spec-<name>.md` (timestamp per 
    - **Not** write implementation or mocks (Red phase only).
 3. Run the tests and confirm they fail for the right reason (e.g. function not defined or wrong return value).
 
+### Judge coverage before TDD (optional)
+
+Before moving to the Green phase, you can have an LLM judge whether the tests adequately cover the spec. You can also use **suggest-spec-cases** to detect additional edge/corner cases and pass them into the judge.
+
+**Option A — Judge spec vs tests only:**
+
+```bash
+export OPENAI_API_KEY=your-key
+npm run judge-spec-coverage -- --spec docs/specs/spec-validateEmail.md --tests tests/lib/validateEmail.test.js
+```
+
+**Option B — Suggest edge/corner cases, then judge (including those):**
+
+```bash
+# 1. Suggest additional edge and corner cases from the spec (optional: --code path/to/impl.js)
+npm run suggest-spec-cases -- --spec docs/specs/spec-foo.md --output docs/specs/suggested-foo.md
+
+# 2. Judge coverage of spec + suggested cases
+npm run judge-spec-coverage -- --spec docs/specs/spec-foo.md --tests tests/ --suggested-cases docs/specs/suggested-foo.md --output report.md
+```
+
+- **Exit 0** (judge) — Coverage adequate; safe to proceed to implementation.
+- **Exit 1** (judge) — Gaps found; add or adjust tests, then re-run or proceed if you accept the gaps.
+
+See `scripts/judge-spec-coverage.js` and `scripts/suggest-spec-cases.js` for options and env vars (`SPEC_LLM_MODEL`, `OPENAI_API_KEY`).
+
 ---
 
 ## Step 3 — Agent does TDD
