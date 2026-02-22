@@ -9,7 +9,8 @@ const {
     AgentGateway,
     FindingsStore,
     AgentOrchestrator,
-    FindingsDiagnostics
+    FindingsDiagnostics,
+    AgentsGitWorkspaceAdapter
 } = require('../index');
 
 class AgentsExtensionIntegration {
@@ -49,10 +50,15 @@ class AgentsExtensionIntegration {
                 log
             });
 
+            const getWorkspaceRoot = () => {
+                const folders = vscode.workspace.workspaceFolders;
+                return folders && folders.length > 0 ? folders[0].uri.fsPath : null;
+            };
+            const workspacePort = new AgentsGitWorkspaceAdapter({ getWorkspaceRoot });
             this.orchestrator = new AgentOrchestrator({
                 gateway: this.gateway,
                 findingsStore: this.findingsStore,
-                context,
+                workspacePort,
                 log
             });
         } else {

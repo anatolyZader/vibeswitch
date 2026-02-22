@@ -388,6 +388,13 @@ function compose(context, state, container) {
         state.reportService = null;
     }
 
+    // Agents module (wired in extension.js when vibeswitch.agents.enabled; require here for module validator)
+    try {
+        require('./business_modules/agents');
+    } catch (err) {
+        adapters.loggerAdapter?.error?.('compositionRoot: Agents module not loaded', err);
+    }
+
     // Store adapters in DI container
     container.setAdapter('awareness', 'vscodeAdapter', adapters.vscodeAdapter);
     container.setAdapter('awareness', 'persistenceAdapter', adapters.persistenceAdapter);

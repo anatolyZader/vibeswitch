@@ -6,7 +6,7 @@ This document describes the production-grade multi-agent architecture that adds 
 
 ## Architecture Components
 
-### 1. Message Contracts (`business_modules/agents/domain/contracts/`)
+### 1. Message value objects (`business_modules/agents/domain/value_objects/`)
 
 - **jobRequest.js**: Schema for job requests sent to Cloud Run gateway
 - **finding.js**: Schema for findings returned by agents
@@ -61,7 +61,7 @@ Add to `package.json` configuration:
 
 ## Implementation Status
 
-✅ Message contracts
+✅ Message value objects
 ✅ FindingsStore
 ✅ AgentGateway (structure)
 ⏳ AgentOrchestrator (in progress)

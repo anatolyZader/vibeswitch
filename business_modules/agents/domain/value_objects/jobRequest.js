@@ -1,6 +1,6 @@
 /**
- * Job Request Contract
- * 
+ * Job Request (value object)
+ *
  * Schema for agent job requests sent from extension to Cloud Run gateway.
  * Versioned for backward compatibility.
  */

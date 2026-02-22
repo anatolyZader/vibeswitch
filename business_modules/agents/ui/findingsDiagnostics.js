@@ -2,6 +2,7 @@
  * Findings Diagnostics Provider
  * 
  * Integrates agent findings with VS Code Diagnostics/Problems panel.
+ * (IAgentsDiagnosticsPort and agentsVscodeDiagnosticsAdapter exist for future injection; this class still uses the collection directly so existing tests stay green without changes.)
  */
 
 const vscode = require('vscode');
@@ -110,7 +111,6 @@ class FindingsDiagnostics {
      * @private
      */
     _getFileUri(relativePath) {
-        const vscode = require('vscode');
         const folders = vscode.workspace.workspaceFolders;
         if (!folders || folders.length === 0) return null;
 

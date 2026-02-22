@@ -25,7 +25,7 @@ Read the spec file and `docs/TDD-PLAN-AND-WORKFLOW.md`. Identify Contract (name,
 
 Follow the tests-from-spec skill. Write tests that cover every input/output pair, edge case, and error case in the spec, and **for every test level** (unit, integration, e2e) **listed in the spec**. Place tests per the spec test file hint or `tests/business_modules/<module>/...`. Do **not** write implementation or mocks; tests must fail (e.g. function not defined or wrong return).
 
-**TDD invariant:** The set of tests is **fixed at the end of Red**. Do **not** add new tests during Green or Refactor. If you need to cover new behavior, that is a new TDD cycle: add tests first (Red), then implement (Green).
+**TDD invariant:** The set of tests is **fixed at the end of Red**. Do **not** add new tests during Green or Refactor. Do **not** fix or change existing tests during Green—only change production code. If you need to cover new behavior, that is a new TDD cycle: add tests first (Red), then implement (Green).
 
 ### 3b. Evaluate coverage (LLM)
 
@@ -37,7 +37,14 @@ Run the full set of tests (unit + integration, and e2e if any), e.g. `npm test -
 
 ### 5. After user commits tests — Green phase
 
-When the user says they have committed the tests, implement the code that makes **all** specified tests pass (all levels). **Do not add new tests.** Do not modify existing tests unless the user explicitly asks to fix a broken test. Run tests and iterate until all specified tests pass.
+When the user says they have committed the tests, implement the code that makes **all** specified tests pass (all levels).
+
+**Green = production code only.**
+
+- **Do not add new tests.** The test set is fixed at the end of Red.
+- **Do not fix, relax, or change existing tests** to make them pass. If a test fails, change the **implementation** (production code), not the test. Do not adjust assertions, expected values, mocks, or setup so the test passes; adjust behavior so the existing assertions are satisfied.
+- **Do not modify existing tests** unless the user **explicitly** asks you to fix a broken test (e.g. typo or wrong assertion that they want corrected).
+- Run tests and iterate until all specified tests pass. If a test cannot be made green by any reasonable production change, report that to the user instead of changing the test.
 
 ---
 

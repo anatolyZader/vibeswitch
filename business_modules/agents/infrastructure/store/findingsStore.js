@@ -2,19 +2,20 @@
  * Findings Store
  * 
  * Local cache for agent findings, organized by workspace/branch/commit.
- * Persists to VS Code workspace state for durability.
+ * Persists via IAgentsFindingsPersistencePort (adapter created from context internally).
  */
 
-const vscode = require('vscode');
-const path = require('path');
+const { createAgentsWorkspaceStatePersistenceAdapter } = require('../adapters/agentsWorkspaceStatePersistenceAdapter');
+
+const FINDINGS_STATE_KEY = 'vibeswitch.agents.findings';
 
 class FindingsStore {
     /**
-     * @param {vscode.ExtensionContext} context - VS Code extension context
+     * @param {import('vscode').ExtensionContext} context - VS Code extension context (used to create persistence adapter)
      * @param {Function} [log] - Optional logging function
      */
     constructor(context, log = null) {
-        this.context = context;
+        this._persistence = createAgentsWorkspaceStatePersistenceAdapter(context);
         this.log = log || (() => {});
         this._cache = new Map(); // In-memory cache: key -> findings[]
         this._loadFromState();
@@ -36,12 +37,15 @@ class FindingsStore {
         }
         
         const existing = this._cache.get(key);
-        
+
         // Remove old findings with same correlationId (replace)
         const filtered = existing.filter(f => f.correlationId !== correlationId);
-        
+
+        // Tag new findings with correlationId so they can be replaced in a future store
+        const tagged = findings.map(f => ({ ...f, correlationId }));
+
         // Add new findings
-        const updated = [...filtered, ...findings];
+        const updated = [...filtered, ...tagged];
         this._cache.set(key, updated);
         
         this._persistToState();
@@ -148,16 +152,13 @@ class FindingsStore {
     }
 
     /**
-     * Load findings from workspace state
+     * Load findings from persistence
      * @private
      */
     _loadFromState() {
         try {
-            const stored = this.context.workspaceState.get('vibeswitch.agents.findings', {});
+            const stored = this._persistence.get(FINDINGS_STATE_KEY, {});
             this._cache = new Map(Object.entries(stored));
-            // #region agent log
-            fetch('http://localhost:7242/ingest/13e78070-273b-4280-8000-8403b705f141',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'findingsStore.js:_load',message:'using_workspaceState_fallback',data:{cacheSize:this._cache.size},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
-            // #endregion
             this.log(`Loaded ${this._cache.size} finding groups from workspace state`);
         } catch (error) {
             this.log(`Error loading findings from state: ${error.message}`, true);
@@ -166,13 +167,13 @@ class FindingsStore {
     }
 
     /**
-     * Persist findings to workspace state
+     * Persist findings via port
      * @private
      */
     _persistToState() {
         try {
             const serializable = Object.fromEntries(this._cache);
-            this.context.workspaceState.update('vibeswitch.agents.findings', serializable);
+            this._persistence.set(FINDINGS_STATE_KEY, serializable);
         } catch (error) {
             this.log(`Error persisting findings to state: ${error.message}`, true);
         }

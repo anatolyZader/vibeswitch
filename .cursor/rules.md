@@ -366,7 +366,7 @@ See `docs/2026-02-19_17-38-spec-first-tdd-workflow.md` (or latest `docs/*-spec-f
 
 When the user says they are doing TDD or points to the TDD plan:
 - In **Red phase**: Only add or change test code; no stubs or real implementation for the behavior under test. The set of tests is **fixed** when Red is confirmed.
-- In **Green phase**: Only add or change implementation code. **Do not add new tests.** Do not change existing test code unless the user explicitly asks to fix a broken test. To cover new behavior, start a new TDD cycle (add tests first, then implement).
+- In **Green phase**: Only add or change implementation code. **Do not add new tests.** Do not fix, relax, or change existing tests to make them pass—if a test fails, change the production code, not the test. Do not change existing test code unless the user explicitly asks to fix a broken test. To cover new behavior, start a new TDD cycle (add tests first, then implement).
 
 #### Core TDD Workflow (Summary)
 - **Always follow: RED → GREEN → REFACTOR**

@@ -20,12 +20,22 @@ class EventEmitter {
 module.exports = {
     EventEmitter,
     Uri: {
-        parse: (uri) => ({ 
+        parse: (uri) => ({
             scheme: uri.startsWith('file://') ? 'file' : 'http',
             fsPath: uri.replace('file://', ''),
             toString: () => uri
-        })
+        }),
+        file: (path) => ({ fsPath: path, scheme: 'file', toString: () => `file://${path}` })
     },
+    languages: {
+        createDiagnosticCollection: jest.fn(() => ({ clear: jest.fn(), set: jest.fn(), dispose: jest.fn() }))
+    },
+    DiagnosticSeverity: { Error: 1, Warning: 2, Information: 3 },
+    Diagnostic: class Diagnostic {},
+    Range: class Range {},
+    Position: class Position {},
+    DiagnosticRelatedInformation: class DiagnosticRelatedInformation {},
+    Location: class Location {},
     window: {
         showErrorMessage: jest.fn(),
         showInformationMessage: jest.fn(),

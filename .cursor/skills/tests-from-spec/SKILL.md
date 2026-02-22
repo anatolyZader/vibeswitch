@@ -45,16 +45,17 @@ Generate tests for **every test level** declared in the spec (default: unit; add
 ### 4. Green phase (same run)
 
 - **Without pausing for the user to commit tests**, implement the code that makes **all** written tests pass (unit and integration, and e2e if present). Create only the production code required by the tests (e.g. create module scaffold when tests expect a module; add adapters when tests require them).
-- **Do not add new tests during or after Green.** The test set is fixed when Red is confirmed (step 3). Green only implements production code to pass those existing tests. Do **not** modify existing tests unless the user explicitly asked to fix a broken test.
-- Run tests and iterate until all specified tests pass. Run the module validator if the spec targets a business module (`npm run validate:module -- --module=<name>`).
+- **Do not add new tests during or after Green.** The test set is fixed when Red is confirmed (step 3).
+- **Do not fix or change existing tests to make them pass.** Green = production code only. If a test fails, change the **implementation**, not the test. Do not relax assertions, change expected values, adjust mocks or setup, or edit test code so the test passes; change production behavior so the existing test assertions are satisfied. Do **not** modify existing tests unless the user **explicitly** asks you to fix a broken test.
+- Run tests and iterate until all specified tests pass. If a test cannot be made green by any reasonable production change, report that to the user instead of changing the test. Run the module validator if the spec targets a business module (`npm run validate:module -- --module=<name>`).
 - **Exception:** If the user explicitly asks to stop after Red or to wait for test commit before implementing, then stop after step 3 and tell them to commit; implement only when they say they have committed.
 
 ## Summary
 
 | Phase   | Action |
 |---------|--------|
-| Red     | Read spec → write tests for all levels (unit + integration/e2e if specified) → evaluate coverage (LLM), add missing tests → run tests → confirm fail. No production implementation or stubs; only minimum so tests run (e.g. exports) if needed. **Tests are then fixed; no new tests in Green.** |
-| Green   | Implement to pass **existing** tests only; **do not add new tests**; do not change tests unless user asks to fix a broken test; iterate until green; run module validator if applicable. (Pause for commit only if the user explicitly asks to stop after Red.) |
+| Red     | Read spec → write tests for all levels (unit + integration/e2e if specified) → evaluate coverage (LLM), add missing tests → run tests → confirm fail. No production implementation or stubs; only minimum so tests run (e.g. exports) if needed. **Tests are then fixed; no new tests and no test edits in Green.** |
+| Green   | Implement to pass **existing** tests only; **do not add new tests**; **do not fix or change existing tests**—change production code only; iterate until green; run module validator if applicable. If a test cannot be made green by production changes, report to user. (Pause for commit only if the user explicitly asks to stop after Red.) |
 
 | Level       | Red: write …                                         | Green: …               |
 | ----------- | ---------------------------------------------------- | ---------------------- |

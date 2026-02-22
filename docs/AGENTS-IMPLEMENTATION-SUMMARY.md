@@ -2,7 +2,7 @@
 
 ## ✅ Completed Components
 
-### 1. Message Contracts (`business_modules/agents/domain/contracts/`)
+### 1. Message value objects (`business_modules/agents/domain/value_objects/`)
 - ✅ **jobRequest.js**: Complete schema for job requests
 - ⚠️ **finding.js**: Needs implementation (currently placeholder)
 - ⚠️ **agentResponse.js**: Needs implementation (currently placeholder)
@@ -50,8 +50,8 @@
 
 ### 1. Fill Empty Contract Files
 The following files exist but are empty and need implementation:
-- `business_modules/agents/domain/contracts/finding.js`
-- `business_modules/agents/domain/contracts/agentResponse.js`
+- `business_modules/agents/domain/value_objects/finding.js`
+- `business_modules/agents/domain/value_objects/agentResponse.js`
 - `business_modules/agents/infrastructure/gateway/agentGateway.js`
 
 ### 2. Extension Integration
