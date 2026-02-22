@@ -1,6 +1,6 @@
 ---
 name: create-business-module
-description: Create or extend a business module with the mandatory 4-layer structure (input, app, domain, infrastructure). Use when the user asks to create a new business module, add a new module, add a feature to a business module, or when creating new files under business_modules/.
+description: Create or extend a business module with the module structure (app, domain, infrastructure required; input optional when only in-process callers). Use when the user asks to create a new business module, add a new module, add a feature to a business module, or when creating new files under business_modules/.
 ---
 
 # Create Business Module
@@ -18,11 +18,11 @@ When creating a **new business module** or adding a **new feature/layer** to an 
 ```
 business_modules/<module>/
 ├── index.js                          # Optional barrel
-├── input/
-│   ├── <module>Controller.js         # Receive only: VS Code/CLI entry, or Fastify plugin that decorates with methods
-│   ├── <module>Router.js             # Optional: Fastify HTTP routes (when target is HTTP app, not VS Code)
-│   └── <module>PubsubListener.js     # Or <module>EventListener.js — message/event listener
-├── app/
+├── input/                             # Optional: only when module has a transport entry (HTTP, events, pub/sub, etc.)
+│   ├── <module>Input.js              # When simple accept/delegate from transport
+│   ├── <module>EventListener.js      # Or <module>PubsubListener.js — events / message bus
+│   └── <module>Router.js             # Fastify HTTP routes (when target is HTTP app)
+├── app/                               # When only in-process callers, app controller (or service) is the entry
 │   ├── <module>Service.js            # Main application service
 │   ├── <module>Controller.js         # Optional: accept message/request, extract data, call service (used by input)
 │   ├── <module>Engine.js              # Optional orchestrator
@@ -43,7 +43,7 @@ business_modules/<module>/
 
 | Layer | Files (examples) | Allowed imports | Responsibility |
 |-------|-------------------|-----------------|----------------|
-| **Input** | `<module>Controller.js`, `<module>Router.js`, `<module>PubsubListener.js` | DI container, framework (e.g. fastify); no domain/app internals | **Receive** the initial message only: HTTP routers declare routes; Fastify plugin **decorates** with handler methods. Handlers resolve app-layer Controller (or Service) from DI and delegate; map transport errors to HTTP/response. No extraction logic, no business logic. |
+| **Input** | `<module>Input.js` (simple), `<module>EventListener.js`, `<module>Router.js`, `<module>PubsubListener.js` | DI container, framework (e.g. fastify); no domain/app internals | **Receive** the initial message only. Name by **file type**. Handlers resolve app-layer Controller (or Service) from DI and delegate; no extraction, no business logic. |
 | **App** | `<module>Service.js`, optional `<module>Controller.js`, optional `<module>Engine.js` | Domain only (entities, value_objects, events, ports) | **Service:** Constructor receives **port implementations**; orchestrate domain and ports. **Controller:** Accept message/request, **extract** important data, call **Service** with that data. No direct DB/FS/HTTP. |
 | **Domain** | entities/, value_objects/, events/, ports/, services/ | Nothing from app or infrastructure | Pure domain: entities, value objects, domain events, port **interfaces** (abstract; throw in constructor if `new.target === I*`). No I/O. |
 | **Infrastructure** | `<module><Thing>Adapter.js` in `adapters/` | Domain ports only (to extend/implement) | Each adapter extends one domain port; implements its methods with real I/O (DB, HTTP, Pub/Sub, FS). |
@@ -52,7 +52,7 @@ business_modules/<module>/
 
 | Kind | Pattern | Example (module = git) |
 |------|---------|-------------------------|
-| Input | `<module>Controller.js` (receive/delegate or VS Code entry), `<module>Router.js` (HTTP only), `<module>EventListener.js` or `<module>PubsubListener.js` | gitController.js, aiRouter.js, gitPubsubListener.js |
+| Input | `<module>Input.js` (simple accept/delegate), `<module>EventListener.js`, `<module>Router.js`, `<module>PubsubListener.js` — by type | reportInput.js, gitEventListener.js, aiRouter.js |
 | App service | `<module>Service.js` | gitService.js |
 | App controller | `<module>Controller.js` | gitController.js (app layer: extract + call service) |
 | Domain entity | `domain/entities/<Entity>.js` | domain/entities/repository.js |
@@ -73,32 +73,35 @@ All file names: **camelCase**. Port interface names: **I** + **Module** (Pascal)
 
 ---
 
-## Input layer: file types and how to build them
+## Input layer: when to add it, and file types
 
-The **input layer only receives** the initial message (HTTP request, event, command). It does **not** extract business data or contain business logic—it delegates to the **app layer** (Controller or Service). Use the right input type for the runtime; build each file type **exactly** as below.
+**Add an input layer only when the module receives messages from a transport** (HTTP, events, pub/sub, CLI commands, webhooks, queue consumers, etc.). In that case, the input file receives by transport and delegates to the app controller or service; no extraction or business logic in input.
 
-### When to use which
+**When the module is only called in-process by other modules** (simple calls from composition root or other modules), **do not add an input layer**. The app controller (or service) is the entry point: it accepts the call, extracts data, and calls the service. Callers resolve the app controller or service from DI and call it directly.
 
-- **VS Code extension (e.g. VibeSwitch):** Use `<module>Controller.js` and/or `<module>EventListener.js`. Do **not** add `<module>Router.js` (no Fastify/HTTP).
-- **HTTP app (Fastify):** Use input `<module>Router.js` for routes/schemas and input `<module>Controller.js` as a Fastify plugin that decorates fastify with handler methods. Handlers resolve the app-layer Controller from request.diScope, call it with the request, and map errors to HTTP. Extraction and service calls live in the app-layer Controller.
+When you do add input, **name the file by type:** `<module>Input.js` (simple), `<module>EventListener.js`, `<module>Router.js`, or `<module>PubsubListener.js`.
 
-### 1. Input Controller (input/`<module>Controller.js`) — two variants
+### When to use which (only if you have a transport entry)
 
-**A. VS Code / CLI**  
-- **Role:** Thin entry; resolve app-layer Controller or Service from DI; expose methods that call it only. No extraction, no business logic.
-- **Shape:** Factory like `createReportController(deps)` returning an object whose methods call `deps.reportService.methodName(...)` or `deps.reportController.methodName(...)`.
+- **VS Code extension (e.g. VibeSwitch):** Use `<module>Input.js` (simple accept/delegate) and/or `<module>EventListener.js` when the module is triggered by commands or IDE events. Do **not** add `<module>Router.js` (no Fastify/HTTP).
+- **HTTP app (Fastify):** Use input `<module>Router.js` for routes/schemas and a Fastify plugin that decorates fastify with handler methods. Handlers resolve the app-layer Controller from request.diScope, call it with the request, and map errors to HTTP. Extraction and service calls live in the app-layer Controller.
 
-**B. Fastify decorator plugin**  
+### 1. Simple input (input/`<module>Input.js`)
+
+- **Role:** Simple file that accepts calls (e.g. command handler, API entry); resolve app-layer Controller from DI and delegate only. No extraction, no business logic.
+- **Shape:** Class named `<Module>Input` (e.g. `ReportInput`), constructor receives app controller (e.g. `{ reportController: appController }`), methods call `this.appController.methodName(...)`. Export: `module.exports = { ReportInput };`. Composition root: `new ReportInput({ reportController: appReportController })`.
+
+### 2. Input as Fastify decorator (when HTTP app)
+
 - **Role:** Receive the HTTP request only; decorate fastify with handler methods. Each handler: resolve app-layer `<module>Controller` from `request.diScope`, call `appController.methodName(request)`, return result, map errors to `fastify.httpErrors`. Do not put extraction or service calls here—that is in the app-layer Controller.
 - **Structure:** `'use strict';` and `const fp = require('fastify-plugin');` then `module.exports = fp(async function <module>Controller(fastify, options) { ... });` with one `fastify.decorate('<methodName>', async (request, reply) => { ... })` per operation. Inside each handler: `const c = await request.diScope.resolve('<module>Controller'); return c.methodName(request);` (with try/catch and fastify.httpErrors). Extraction of params/query/body belongs in app layer.
-- **Minimal Fastify decorator template (input layer):** Use `fp(async function <module>Controller(fastify, options) { ... })` and inside use `fastify.decorate('methodName', async (request, reply) => { const c = await request.diScope.resolve('<module>Controller'); if (!c) throw new Error('...'); return c.methodName(request); });` with try/catch and `fastify.httpErrors.internalServerError(...)`. The app-layer Controller (in app/, e.g. app/gitController.js) receives the request and does extraction (params, query, body, user, correlationId) and calls the Service.
 
-### 2. EventListener / PubsubListener (`<module>EventListener.js`, `<module>PubsubListener.js`)
+### 3. EventListener / PubsubListener (`<module>EventListener.js`, `<module>PubsubListener.js`)
 
 - **Role:** Subscribe to framework or message-bus events; call `<module>Service` methods only; map errors to logging or response. No business logic.
 - **Shape:** Register listeners (e.g. `vscode.onDid...`, or pub/sub subscribe); in each handler, resolve service from DI/context and call one service method. No domain or infra imports.
 
-### 3. Router — Fastify HTTP (`<module>Router.js`)
+### 4. Router — Fastify HTTP (`<module>Router.js`)
 
 - **Use only when** the target is an **HTTP app (Fastify)**. Do **not** create this file for a VS Code extension.
 - **Role:** Register HTTP routes and request/response schemas only. Handlers live on the fastify instance (e.g. `fastify.respondToPrompt`, `fastify.processPushedRepo`); they are wired in composition to the app service. The router file contains **no business logic** and **no direct service calls**—only `fastify.route({ ... })` and schema.
@@ -174,7 +177,7 @@ The Controller in the **app** layer (file: app/ and named like gitController.js)
 ### 1. New module — create layout
 
 - Create `business_modules/<moduleName>/` following the **module structure schema** above:
-  - `input/` — at least one of: `<module>Controller.js`, `<module>EventListener.js`, or `<module>PubsubListener.js`. Receive only; resolve app Controller or Service from DI and delegate. No extraction or business logic in input.
+  - `input/` — **only when the module has a transport entry** (HTTP, events, pub/sub, CLI, webhooks, etc.): at least one of `<module>Input.js`, `<module>EventListener.js`, `<module>Router.js`, `<module>PubsubListener.js`. Name by file type; receive only, delegate to app. **When the module is only called in-process by other modules, omit input/** — the app controller (or service) is the entry; callers use it directly.
   - `app/` — at least `<module>Service.js`. Optionally `<module>Controller.js` to accept request/message, extract data, and call Service. Service receives port implementations via constructor; orchestrates domain and ports only.
   - `domain/` — subdirs as needed: `entities/`, `value_objects/`, `events/`, `aggregates/`, `ports/`, `services/`. No imports from app or infrastructure.
   - `infrastructure/adapters/` — at least one adapter per port: `<module><Thing>Adapter.js`, each extending the corresponding `I<Module><Port>`.
@@ -208,7 +211,7 @@ npm run validate:module -- --module=<moduleName>
 
 The validator checks:
 
-- **Required dirs exist:** `input/`, `app/`, `domain/`, `infrastructure/` under `business_modules/<name>/`
+- **Required dirs exist:** `app/`, `domain/`, `infrastructure/` under `business_modules/<name>/`; `input/` is optional (only when module has a transport entry; if present, must contain at least one .js file)
 - **Forbidden imports:** Domain must not import from infra, app, or input
 - **No cross-module imports:** Only composition in `compositionRoot.js`; no direct `require` from another business module (pub/sub or DI only)
 - **Required wiring:** `compositionRoot.js` must reference the module (e.g. `require('./business_modules/<name>/...')`)
@@ -224,7 +227,7 @@ Agents must not claim "validator passed" without showing this output; requiring 
 
 ### 6. Verification checklist (before marking done)
 
-- [ ] All four layer directories exist (for a new module) or new files are in the correct layer (for an extension).
+- [ ] Required layer directories exist (app, domain, infrastructure); input/ only when the module has a transport entry. New files are in the correct layer.
 - [ ] Layout and naming follow the **module structure schema** in this skill (directory tree, per-layer contract, naming rules, dependency flow).
 - [ ] Input only receives and delegates (resolve app Controller or Service from DI; no extraction in input); app Controller (if present) extracts data and calls Service; app Service receives ports via constructor; domain has no app/infra imports; adapters extend domain ports.
 - [ ] Tests mirror the source tree under `tests/business_modules/<moduleName>/`.

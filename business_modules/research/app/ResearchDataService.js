@@ -1,7 +1,7 @@
 /**
- * Research Data Service - Gathers objective code quality data (Sonar, ESLint, token usage, extension metrics),
- * persists it to local SQLite (ResearchStore), and sends current + history from the store to the external
- * research agent. No calculations or analysis are done in the extension; the agent performs analysis.
+ * Research Data Service - Gathers objective code quality data, persists via IResearchPersistencePort,
+ * sends to agent via IResearchAgentPort. Supports injection of ports (opts.persistencePort, opts.agentPort)
+ * or legacy opts.getDbPath/getAgentUrl for backward compatibility.
  */
 
 const { createResearchAgentClient } = require('../infrastructure/ResearchAgentClient');
@@ -82,8 +82,9 @@ async function gatherResearchPayload(state) {
 }
 
 /**
- * Create the research data service: gathers payload, persists to SQLite, then sends current + history from store to agent.
- * @param {Object} opts - { state, getAgentUrl: () => string, getApiKey?: () => Promise<string|null>, getDbPath?: () => string, pollIntervalMs?: number, lastDays?: number, lastN?: number, loggerPort?: { error } }
+ * Create the research data service. Uses opts.persistencePort and opts.agentPort when provided (ports pattern);
+ * otherwise falls back to getDbPath/getAgentUrl (creates adapters internally).
+ * @param {Object} opts - { state, getAgentUrl?, getApiKey?, getDbPath?, pollIntervalMs?, lastDays?, lastN?, loggerPort?, persistencePort?, agentPort? }
  * @returns {{ start: () => void, stop: () => void, gatherResearchPayload: typeof gatherResearchPayload }}
  */
 function createResearchDataService(opts) {
@@ -95,15 +96,26 @@ function createResearchDataService(opts) {
     const lastDays = (opts && opts.lastDays) != null ? opts.lastDays : DEFAULT_LAST_DAYS;
     const lastN = (opts && opts.lastN) != null ? opts.lastN : DEFAULT_LAST_N;
     const logger = opts && opts.loggerPort ? opts.loggerPort : null;
+    const persistencePort = opts && opts.persistencePort;
+    const agentPort = opts && opts.agentPort;
 
     let intervalId = null;
     let storePromise = null;
 
     function getStore() {
-        if (!storePromise && getDbPath) {
+        if (!storePromise && getDbPath && !persistencePort) {
             storePromise = createResearchStore(getDbPath(), { loggerPort: logger });
         }
         return storePromise;
+    }
+
+    function getAgent() {
+        if (agentPort) return agentPort;
+        return createResearchAgentClient({
+            baseUrl: getAgentUrl(),
+            getApiKey,
+            loggerPort: logger
+        });
     }
 
     async function tick() {
@@ -111,27 +123,20 @@ function createResearchDataService(opts) {
         if (!baseUrl || !baseUrl.trim()) return;
         try {
             const payload = await gatherResearchPayload(state);
+            const hasPersistence = persistencePort || getDbPath;
+            const store = hasPersistence ? (persistencePort || await getStore()) : null;
 
-            const store = getDbPath ? await getStore() : null;
             if (store) {
                 await store.persist(payload);
                 const { current, history } = await store.getPayloadForAgent({ lastDays, lastN });
                 const payloadForAgent = { current, history };
-                const client = createResearchAgentClient({
-                    baseUrl,
-                    getApiKey,
-                    loggerPort: logger
-                });
+                const client = getAgent();
                 const result = await client.send(payloadForAgent);
                 if (!result.ok && logger && logger.error) {
                     logger.error('ResearchDataService: send failed', result.status || result.error);
                 }
             } else {
-                const client = createResearchAgentClient({
-                    baseUrl,
-                    getApiKey,
-                    loggerPort: logger
-                });
+                const client = getAgent();
                 const result = await client.send({ current: payload, history: [] });
                 if (!result.ok && logger && logger.error) {
                     logger.error('ResearchDataService: send failed', result.status || result.error);
@@ -153,7 +158,7 @@ function createResearchDataService(opts) {
             clearInterval(intervalId);
             intervalId = null;
         }
-        if (storePromise) {
+        if (!persistencePort && storePromise) {
             storePromise.then((s) => { if (s && s.close) s.close(); }).catch(() => {});
             storePromise = null;
         }

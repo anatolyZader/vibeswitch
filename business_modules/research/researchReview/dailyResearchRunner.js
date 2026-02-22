@@ -38,23 +38,48 @@ async function runFetchers(opts = {}) {
     return [...arxiv, ...medium, ...linkedIn, ...x];
 }
 
+function getFetcherOpts(opts) {
+    return {
+        fetchFn: opts.fetchFn,
+        getXBearerToken: opts.getXBearerToken,
+        getLinkedInApiKey: opts.getLinkedInApiKey,
+        xUsernames: opts.xUsernames,
+        arxivMaxResults: opts.arxivMaxResults,
+        mediumMaxItems: opts.mediumMaxItems,
+        xMaxPerUser: opts.xMaxPerUser
+    };
+}
+
+const VALID_DATE_STR = /^\d{4}-\d{2}-\d{2}$/;
+
+function normalizeDateStr(dateStr) {
+    const today = new Date().toISOString().slice(0, 10);
+    return (dateStr && VALID_DATE_STR.test(dateStr)) ? dateStr : today;
+}
+
 /**
  * Run daily research: fetch from all sources and write report to reportsDir.
+ * When opts.insightsFetcherPort is provided, use it instead of runFetchers.
+ * When opts.reportWriterPort is provided, use its generateReportMarkdown and writeReportFile instead of generateDailyReport.
  * @param {string} reportsDir - Absolute path to researchReview/reports
- * @param {{ dateStr?: string, fetchFn?: Function, getXBearerToken?: Function, getLinkedInApiKey?: Function, xUsernames?: string[], loggerPort?: { error?: Function } }}} [opts]
+ * @param {{ dateStr?: string, fetchFn?: Function, getXBearerToken?: Function, getLinkedInApiKey?: Function, xUsernames?: string[], arxivMaxResults?: number, mediumMaxItems?: number, xMaxPerUser?: number, loggerPort?: { error?: Function }, insightsFetcherPort?: { fetch: Function }, reportWriterPort?: { generateReportMarkdown: Function, writeReportFile: Function } }} [opts]
  * @returns {Promise<{ reportPath: string, itemCount: number }>}
  */
 async function runDailyResearch(reportsDir, opts = {}) {
     const logger = opts && opts.loggerPort;
     try {
-        const items = await runFetchers({
-            fetchFn: opts.fetchFn,
-            getXBearerToken: opts.getXBearerToken,
-            getLinkedInApiKey: opts.getLinkedInApiKey,
-            xUsernames: opts.xUsernames
-        });
-        const dateStr = opts.dateStr || new Date().toISOString().slice(0, 10);
-        const reportPath = generateDailyReport(items, reportsDir, dateStr, opts);
+        const items = opts.insightsFetcherPort
+            ? await opts.insightsFetcherPort.fetch(getFetcherOpts(opts))
+            : await runFetchers(getFetcherOpts(opts));
+        const dateStr = normalizeDateStr(opts.dateStr || new Date().toISOString().slice(0, 10));
+
+        let reportPath;
+        if (opts.reportWriterPort) {
+            const content = opts.reportWriterPort.generateReportMarkdown(items, dateStr);
+            reportPath = opts.reportWriterPort.writeReportFile(reportsDir, dateStr, content, opts);
+        } else {
+            reportPath = generateDailyReport(items, reportsDir, dateStr, opts);
+        }
         return { reportPath, itemCount: items.length };
     } catch (err) {
         if (logger && logger.error) logger.error('Daily research run failed', err);

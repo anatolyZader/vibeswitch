@@ -1,93 +1,77 @@
 /**
- * ReportService - Orchestrates publishing; no direct I/O (uses ports only).
- * Error style: never throw from publishReport for user input or adapter failures.
- * Return { [platform]: { success: false, error } } for validation and adapter errors.
+ * Report application service: publish report content to X, LinkedIn, Medium.
+ * Receives content in-memory or path; resolves content via IReportContentSourcePort when path given;
+ * publishes via IReportPublishPort per platform.
  */
 
-const KNOWN_PLATFORMS = ['medium', 'linkedin', 'x'];
-const X_MAX_LEN = 280;
+const KNOWN_PLATFORMS = ['x', 'linkedin', 'medium'];
 
-function truncateForX(text) {
-    if (typeof text !== 'string') return text;
-    if (text.length <= X_MAX_LEN) return text;
-    return text.slice(0, X_MAX_LEN - 1) + '…';
-}
+function createReportService(deps) {
+    const { contentSourcePort, publishAdapters } = deps || {};
 
-class ReportService {
-    constructor(deps) {
-        this.publishAdapters = (deps && deps.publishAdapters) || {};
-        /** @type {import('../domain/ports/IReportContentSourcePort')|null} */
-        this.readReportPathPort = (deps && deps.readReportPathPort) || null;
-    }
+    async function publishReport(input) {
+        const hasContent = input && typeof input.content === 'string';
+        const hasPath = input && typeof input.contentPath === 'string' && input.contentPath.length > 0;
+        if (!hasContent && !hasPath) {
+            return { ok: false, results: [], error: 'Missing content or contentPath' };
+        }
+        if (input && input.content !== undefined && typeof input.content !== 'string') {
+            return { ok: false, results: [], error: 'content must be a string' };
+        }
 
-    async publishReport(reportInput, options) {
-        const opts = options || {};
-        const platforms = opts.platforms != null ? opts.platforms : Object.keys(this.publishAdapters).filter(p => KNOWN_PLATFORMS.includes(p));
-        const result = {};
-
-        // Resolve content from reportPath or content
         let content;
-        if (reportInput.reportPath != null) {
-            if (typeof reportInput.reportPath !== 'string') {
-                for (const p of platforms) {
-                    result[p] = { success: false, error: 'Invalid reportPath: must be a string' };
-                }
-                return result;
-            }
-            if (!this.readReportPathPort) {
-                for (const p of platforms) {
-                    result[p] = { success: false, error: 'Report path provided but readReportPathPort not configured' };
-                }
-                return result;
-            }
-            try {
-                content = await this.readReportPathPort.read(reportInput.reportPath);
-            } catch (err) {
-                result.error = err.message || 'Report file not found';
-                result.reportPath = reportInput.reportPath;
-                return result;
-            }
-        } else if (reportInput.content != null) {
-            if (typeof reportInput.content !== 'string') {
-                for (const p of platforms) {
-                    result[p] = { success: false, error: 'Invalid content: must be a string' };
-                }
-                return result;
-            }
-            content = reportInput.content;
+        if (hasContent) {
+            content = input.content;
         } else {
-            for (const p of platforms) {
-                result[p] = { success: false, error: 'Missing content or reportPath' };
-            }
-            return result;
-        }
-
-        if (content === '') {
-            for (const p of platforms) {
-                result[p] = { success: false, error: 'Empty content' };
-            }
-            return result;
-        }
-
-        for (const platform of platforms) {
-            if (!KNOWN_PLATFORMS.includes(platform)) {
-                result[platform] = { success: false, error: 'Unknown platform' };
-                continue;
-            }
-            const adapter = this.publishAdapters[platform];
-            const contentForPlatform = platform === 'x' ? truncateForX(content) : content;
-            if (!adapter) {
-                result[platform] = { success: false, error: 'Missing credentials' };
-                continue;
-            }
             try {
-                const platformResult = await adapter.publish(contentForPlatform, opts);
-                result[platform] = platformResult;
+                content = await contentSourcePort.read(input.contentPath);
             } catch (err) {
-                result[platform] = { success: false, error: err.message || String(err) };
+                return {
+                    ok: false,
+                    results: [],
+                    error: (err && err.message) || String(err)
+                };
             }
         }
-        return result;
+
+        let platforms = Array.isArray(input.platforms) ? input.platforms : KNOWN_PLATFORMS;
+        platforms = [...new Set(platforms)].filter((p) => KNOWN_PLATFORMS.includes(p));
+
+        if (platforms.length === 0) {
+            return { ok: true, results: [] };
+        }
+
+        const results = [];
+        for (const platform of platforms) {
+            const adapter = publishAdapters && publishAdapters[platform];
+            if (!adapter) continue;
+            try {
+                const outcome = await adapter.publish(content, { platform });
+                results.push({
+                    platform,
+                    ok: !!outcome.ok,
+                    ...(outcome.publishedId != null && { publishedId: outcome.publishedId }),
+                    ...(outcome.error != null && { error: outcome.error })
+                });
+            } catch (err) {
+                results.push({
+                    platform,
+                    ok: false,
+                    error: (err && err.message) || String(err)
+                });
+            }
+        }
+
+        const ok = results.every((r) => r.ok);
+        const out = { ok, results };
+        if (!ok) {
+            const firstError = results.find((r) => r.error);
+            out.error = firstError ? firstError.error : 'Partial failure';
+        }
+        return out;
     }
+
+    return { publishReport };
 }
-module.exports = ReportService;
+
+module.exports = { createReportService };

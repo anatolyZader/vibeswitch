@@ -11,15 +11,34 @@ One-line summary of what is being specified.
 - **Name:** (e.g. function or module name)
 - **Signature / API:** (e.g. `functionName(arg: type) => returnType` or module exports)
 - **Location:** (e.g. `lib/validation.js` or `business_modules/<module>/app/service.js`)
+  - **Business modules:** Put the **controller in the app layer** (`app/<module>Controller.js`). It accepts the call, extracts data, and calls the service. **Input layer only when the module has a transport entry** (HTTP, events, pub/sub, CLI, webhooks, etc.): add a file in `input/` that receives by transport and delegates. **When the module is only called in-process by other modules**, no input layer is needed — the app controller (or service) is the entry point; callers resolve it from DI and call it directly. If you do add input, name by type: `input/<module>Input.js`, `input/<module>EventListener.js`, `input/<module>Router.js`, or `input/<module>PubsubListener.js`.
+
+---
+
+## Naming (optional)
+
+Conventions for names used in this spec (and in generated code). Fill only what applies; omit if using default conventions.
+
+- **Function / module / API:** (e.g. camelCase for functions and files, PascalCase for classes)
+- **Parameters and options:** (e.g. camelCase; `reportInput`, `platforms`)
+- **Business module (when applicable):** File names camelCase. **Controller in app:** `app/<module>Controller.js`. **Input (optional):** only when transport; name by type (`Input.js`, `EventListener.js`, `Router.js`, `PubsubListener.js`). Domain: PascalCase for entities, value objects, events. **Ports:** `I<Module><Port>.js`. **Adapters:** `<module><Thing>Adapter.js` in `infrastructure/adapters/`. See `.cursor/skills/create-business-module/SKILL.md` for the full naming table and examples.
 
 ---
 
 ## Business module (optional)
 
-Only present when the spec targets a module under `business_modules/`. The `/tdd` command uses this to create the module scaffold if it does not exist.
+Only present when the spec targets a module under `business_modules/`. The `/tdd` command uses this to create the module scaffold if it does not exist. **Build a rich DDD domain model**; include each kind only if applicable. You can open the spec after creation and refine the model. For the separation of responsibilities between this template, the create-business-module skill, and the module-structure rule, see `docs/MODULE-SPEC-SKILL-RULE-SEPARATION.md`.
 
 - **Module name:** `<moduleName>` (e.g. `report`, `notifications`)
-- **Domain elements:** (optional) Entities, value objects, events, or ports mentioned in the spec (e.g. `IReportPublishPort`, `ReportService`) so the agent can align the create-business-module scaffold.
+- **Layers (mandatory for modules):**
+  - **Input (optional):** Only when the module **receives messages from a transport** (HTTP, events, pub/sub, CLI, webhooks, etc.) — add a file in `input/` that receives and delegates only; name by type: `input/<module>Input.js`, `input/<module>EventListener.js`, `input/<module>Router.js`, or `input/<module>PubsubListener.js`. **When the module is only called in-process by other modules**, omit the input layer; the app controller (or service) is the entry — it accepts the call, extracts data, and calls the service.
+  - **App:** Put the **controller in the app layer** (`app/<module>Controller.js`). It accepts the request/message, extracts data, and calls the service. The main application service lives in `app/<module>Service.js`.
+- **Domain model (DDD)** — Fill only what applies; omit a bullet if not applicable:
+  - **Entities:** (optional) Objects with identity; list name and brief role (e.g. `Report` — a publishable report with id).
+  - **Aggregates / aggregate roots:** (optional) Consistency boundaries; list root entity and boundary (e.g. `Report` aggregate — report + publish outcomes).
+  - **Value objects:** (optional) Immutable concepts (e.g. `ReportInput`, `PlatformResult`, `PublishResult`, ids).
+  - **Domain events:** (optional) Things that happen (e.g. `ReportPublished` — content published to platform).
+  - **Ports:** (optional) Interfaces for I/O (e.g. `IReportPublishPort`, `IReportContentSourcePort`); list name and method contract.
 
 ---
 
@@ -43,13 +62,10 @@ For error cases: e.g. `null` → throws / returns error.
 
 ---
 
-## Edge cases
+## Edge cases and corner cases
 
-- Empty input
-- `null` / `undefined`
-- Boundaries (min/max length, numbers)
-- Unicode / special characters
-- Duplicates, empty collections
+- **Edge cases:** Empty input; `null` / `undefined`; boundaries (min/max length, numbers); Unicode / special characters; duplicates, empty collections.
+- **Corner cases:** Rare or combined conditions (e.g. empty collection with one invalid item, or multiple boundaries at once) that might expose gaps in handling.
 
 ---
 

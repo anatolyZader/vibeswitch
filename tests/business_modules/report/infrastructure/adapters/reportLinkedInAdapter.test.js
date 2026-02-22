@@ -1,23 +1,32 @@
-const ReportLinkedInAdapter = require('../../../../../business_modules/report/infrastructure/adapters/reportLinkedInAdapter');
-const IReportPublishPort = require('../../../../../business_modules/report/domain/ports/IReportPublishPort');
+/**
+ * ReportLinkedInAdapter unit tests — publish to LinkedIn. Mocked HTTP/secrets (TDD Red phase).
+ */
+const { ReportLinkedInAdapter } = require('../../../../../business_modules/report/infrastructure/adapters/reportLinkedInAdapter');
 
 describe('ReportLinkedInAdapter', () => {
-    test('implements IReportPublishPort (has publish method)', () => {
-        const adapter = new ReportLinkedInAdapter();
-        expect(adapter).toBeInstanceOf(IReportPublishPort);
-        expect(typeof adapter.publish).toBe('function');
+    test('publish(content) returns shape { ok, publishedId?, error? }', async () => {
+        const getAccessToken = jest.fn().mockResolvedValue('token');
+        const fetchFn = jest.fn().mockResolvedValue({
+            ok: true,
+            json: () => Promise.resolve({ id: 'urn:li:share:1' })
+        });
+        const adapter = new ReportLinkedInAdapter({ getAccessToken, fetchFn });
+        const result = await adapter.publish('Hello world');
+        expect(result).toHaveProperty('ok');
+        expect(typeof result.ok).toBe('boolean');
+        if (result.ok) {
+            expect(result).toHaveProperty('publishedId');
+        } else {
+            expect(result).toHaveProperty('error');
+            expect(typeof result.error).toBe('string');
+        }
     });
 
-    test('publish with mocked HTTP 201 returns PlatformResult with success true, postId, url', async () => {
-        const mockFetch = jest.fn().mockResolvedValue({
-            ok: true,
-            status: 201,
-            json: () => Promise.resolve({ id: 'li-1', url: 'https://linkedin.com/feed/li-1' })
-        });
-        const adapter = new ReportLinkedInAdapter({ fetch: mockFetch });
-        const result = await adapter.publish('Hello LinkedIn', {});
-        expect(result).toMatchObject({ success: true });
-        expect(result.postId).toBeDefined();
-        expect(result.url).toBeDefined();
+    test('when getAccessToken returns null, publish returns ok false with error', async () => {
+        const getAccessToken = jest.fn().mockResolvedValue(null);
+        const adapter = new ReportLinkedInAdapter({ getAccessToken });
+        const result = await adapter.publish('Hello');
+        expect(result.ok).toBe(false);
+        expect(result.error).toBeDefined();
     });
 });

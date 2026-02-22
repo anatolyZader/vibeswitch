@@ -1,11 +1,11 @@
 ---
 name: tests-from-spec
-description: When the user points to a spec file in docs/specs/, generate tests for all input/output, edge, and error variants in the spec and follow TDD (no implementation until tests are committed).
+description: When the user points to a spec file in docs/specs/, generate tests for all input/output, edge, and error variants in the spec and follow TDD through to Green in one run (no pause for test commit unless the user asks).
 ---
 
 # Tests from Spec — Spec-First TDD
 
-Use this skill when the user points to a spec file (e.g. in `docs/specs/`) or says "from spec" / "tests from spec". Generate tests that cover every variant in the spec, then follow the TDD workflow without writing implementation until the user has committed the tests.
+Use this skill when the user points to a spec file (e.g. in `docs/specs/`) or says "from spec" / "tests from spec". Generate tests that cover every variant in the spec, then run TDD through to Green in the same run: Red (write tests, verify coverage, confirm fail) → then implement until all tests pass. Do not pause for the user to commit tests unless they explicitly ask to stop after Red.
 
 ## Prerequisites
 
@@ -24,7 +24,7 @@ Use this skill when the user points to a spec file (e.g. in `docs/specs/`) or sa
 
 Generate tests for **every test level** declared in the spec (default: unit; add integration and e2e only if the spec lists them).
 
-- **Unit:** Write tests for all input/output pairs, edge cases, and error cases; place in unit hint paths (or follow project layout below); use mocks for boundaries (ports, I/O). Tests must fail (e.g. function not defined or wrong return).
+- **Unit:** Write tests for all input/output pairs, edge cases, and error cases; place in unit hint paths (or follow project layout below); use mocks for boundaries (ports, I/O). Tests must fail (e.g. function not defined or wrong return). Do **not** add production stubs or partial implementation in Red; only add the minimum so tests can run (e.g. module file that exports the function/class under test) if the spec targets an existing module. Prefer tests failing on missing module or wrong return.
 - **Integration:** If the spec defines an "Integration" scope and paths, write integration tests that use **real** implementations for the boundaries listed (e.g. real adapter + temp file, or real adapters with injected fetch; no real network). Assert the same behaviors as the spec. Place in the spec's integration paths (e.g. `*.integration.test.js`). Tests must fail until the implementation exists.
 - **E2E:** Only if the spec defines E2E: write tests per the spec's E2E hint (path + scope). Same Red rule: fail for the right reason.
 - **Unit placement:** Place tests in the path from the spec Test file hint or follow project layout: `tests/**/*.test.js` or `business_modules/<module>/<sub>/__tests__/<name>.test.js` (see [docs/TDD-PLAN-AND-WORKFLOW.md](../../docs/TDD-PLAN-AND-WORKFLOW.md) §4–5).
@@ -40,21 +40,21 @@ Generate tests for **every test level** declared in the spec (default: unit; add
 ### 3. Confirm red
 
 - Run the full set of tests (unit + integration, and e2e if present), e.g. `npm test -- <path-to-test-dir-or-files>`.
-- Confirm **all** new tests fail for the right reason. Do not write implementation in this step.
+- Confirm **all** new tests fail for the right reason.
 
-### 4. After user commits tests — Green phase
+### 4. Green phase (same run)
 
-- When the user says they have committed the tests, implement the code that makes **all** written tests pass (unit and integration, and e2e if present).
-- Do **not** modify the tests unless the user explicitly asks to fix a broken test.
-- Run tests and iterate until all specified tests pass.
+- **Without pausing for the user to commit tests**, implement the code that makes **all** written tests pass (unit and integration, and e2e if present). Create only the production code required by the tests (e.g. create module scaffold when tests expect a module; add adapters when tests require them).
+- **Do not add new tests during or after Green.** The test set is fixed when Red is confirmed (step 3). Green only implements production code to pass those existing tests. Do **not** modify existing tests unless the user explicitly asked to fix a broken test.
+- Run tests and iterate until all specified tests pass. Run the module validator if the spec targets a business module (`npm run validate:module -- --module=<name>`).
+- **Exception:** If the user explicitly asks to stop after Red or to wait for test commit before implementing, then stop after step 3 and tell them to commit; implement only when they say they have committed.
 
 ## Summary
 
 | Phase   | Action |
 |---------|--------|
-| Red     | Read spec → write tests for all levels (unit + integration/e2e if specified) → evaluate coverage (LLM), add missing tests → run tests → confirm fail. No implementation. |
-| Commit  | User commits test file(s). |
-| Green   | Implement to pass all tests (all levels); do not change tests; iterate until green. |
+| Red     | Read spec → write tests for all levels (unit + integration/e2e if specified) → evaluate coverage (LLM), add missing tests → run tests → confirm fail. No production implementation or stubs; only minimum so tests run (e.g. exports) if needed. **Tests are then fixed; no new tests in Green.** |
+| Green   | Implement to pass **existing** tests only; **do not add new tests**; do not change tests unless user asks to fix a broken test; iterate until green; run module validator if applicable. (Pause for commit only if the user explicitly asks to stop after Red.) |
 
 | Level       | Red: write …                                         | Green: …               |
 | ----------- | ---------------------------------------------------- | ---------------------- |

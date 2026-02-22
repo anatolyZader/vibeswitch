@@ -1,9 +1,8 @@
 /**
- * Reads report content from the filesystem. Implements IReportContentSourcePort.
- * Used when reportInput.reportPath is provided; keeps fs I/O out of app layer.
+ * Reads report content from the file system. Implements IReportContentSourcePort.
  */
-const { promises: fs } = require('fs');
-const IReportContentSourcePort = require('../../domain/ports/IReportContentSourcePort');
+const { IReportContentSourcePort } = require('../../domain/ports/IReportContentSourcePort');
+const fs = require('fs').promises;
 
 class ReportFsContentSourceAdapter extends IReportContentSourcePort {
     async read(path) {
@@ -12,4 +11,4 @@ class ReportFsContentSourceAdapter extends IReportContentSourcePort {
     }
 }
 
-module.exports = ReportFsContentSourceAdapter;
+module.exports = { ReportFsContentSourceAdapter };

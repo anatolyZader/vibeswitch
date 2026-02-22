@@ -41,4 +41,24 @@ describe('reportGenerator', () => {
         expect(fs.existsSync(filePath)).toBe(true);
         expect(fs.readFileSync(filePath, 'utf8')).toContain('2025-02-01');
     });
+
+    test('generateDailyReport with empty items still writes file with header only', () => {
+        const dir = path.join(os.tmpdir(), 'daily-report-empty-' + Date.now());
+        const filePath = generateDailyReport([], dir, '2025-03-01');
+        expect(fs.existsSync(filePath)).toBe(true);
+        const content = fs.readFileSync(filePath, 'utf8');
+        expect(content).toContain('Daily Research Report: 2025-03-01');
+        expect(content).toContain('---');
+        expect(content).not.toContain('## Arxiv');
+    });
+
+    test('generateDailyReport with invalid dateStr uses today for path and content', () => {
+        const dir = path.join(os.tmpdir(), 'daily-report-invalid-date-' + Date.now());
+        const today = new Date().toISOString().slice(0, 10);
+        const filePath = generateDailyReport([], dir, 'not-a-date', {});
+        expect(fs.existsSync(filePath)).toBe(true);
+        expect(filePath).toContain(today + '.md');
+        const content = fs.readFileSync(filePath, 'utf8');
+        expect(content).toContain('Daily Research Report: ' + today);
+    });
 });

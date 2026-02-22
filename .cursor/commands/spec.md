@@ -17,13 +17,13 @@ The user has invoked the **/spec** command. The rest of their message (or the im
 
 **Your task:**
 
-1. **Infer** from the description: the intended contract (name, signature/API, file location), main input/output behavior, edge cases, error cases, and invariants.
+1. **Infer** from the description: the intended contract (name, signature/API, file location), main input/output behavior, edge cases, corner cases, error cases, and invariants.
 2. **Create a new spec file** in `docs/specs/` using the structure in `docs/specs/SPEC-TEMPLATE.md`. File naming: `spec-<feature-slug>.md` (e.g. `spec-validateEmail.md`, `spec-normalizePath.md`). Use a kebab-case or camelCase slug derived from the description.
 3. **Fill in every section** of the spec with concrete content (no placeholders left as "(e.g. …)" unless the description is too vague):
    - **Contract** — Name, signature/API, and suggested file location.
-   - **Business module (optional)** — When the feature belongs under `business_modules/` (either the user says “business module” or the intended Contract Location is under `business_modules/<name>/`), fill this section: **Module name** (e.g. `report`, `notifications`) and optionally **Domain elements** (entities, ports, services mentioned in the spec). This lets `/tdd` create the module scaffold if it does not exist.
+   - **Business module (optional)** — When the feature belongs under `business_modules/` (either the user says “business module” or the intended Contract Location is under `business_modules/<name>/`), fill this section with **Module name** and a **rich DDD domain model**. Infer from the description and include **only where applicable**: **Entities** (objects with identity), **Aggregates** / aggregate roots (consistency boundaries), **Value objects** (immutable concepts, e.g. IDs, result shapes), **Domain events** (things that happen in the domain), **Ports** (interfaces for I/O: persistence, external services). List concrete names and brief roles (e.g. `IReportPublishPort` — publish content to a platform). The user will open the spec and edit the model if needed. This lets `/tdd` create an aligned scaffold.
    - **Input / Output** — Explicit input → output pairs (table or bullets).
-   - **Edge cases** — Empty, null/undefined, boundaries, Unicode, duplicates, etc., as relevant.
+   - **Edge cases and corner cases** — Edge: empty, null/undefined, boundaries, Unicode, duplicates. Corner: rare or combined conditions that might expose gaps.
    - **Error cases** — Invalid types, preconditions, what throws or returns an error.
    - **Invariants** — e.g. pure function, no side effects, idempotent.
    - **Success criteria** — What “done” and “correct” mean; what must be tested.

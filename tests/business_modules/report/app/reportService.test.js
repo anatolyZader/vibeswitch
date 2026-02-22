@@ -1,194 +1,209 @@
 /**
- * ReportService.publishReport - spec-first TDD tests from docs/specs/spec-report.md.
- * Covers input/output table, edge cases, error cases. No implementation in red phase.
+ * ReportService unit tests — spec-report.md (TDD Red phase).
+ * Covers: Input/Output table, edge cases, error cases. Ports mocked.
  */
-const ReportService = require('../../../../business_modules/report/app/reportService');
+const { createReportService } = require('../../../../business_modules/report/app/reportService');
+
+const KNOWN_PLATFORMS = ['x', 'linkedin', 'medium'];
+
+function mockContentSourcePort(readResult) {
+    return {
+        read: typeof readResult === 'function'
+            ? readResult
+            : jest.fn().mockResolvedValue(readResult ?? '')
+    };
+}
+
+function mockPublishAdapter(result) {
+    return {
+        publish: jest.fn().mockResolvedValue(result ?? { ok: true, publishedId: 'id-1' })
+    };
+}
+
+function createServiceWithMocks(opts = {}) {
+    const contentSourcePort = opts.contentSourcePort ?? mockContentSourcePort('');
+    const xAdapter = opts.xAdapter ?? mockPublishAdapter({ ok: true, publishedId: 'x-1' });
+    const linkedInAdapter = opts.linkedInAdapter ?? mockPublishAdapter({ ok: true, publishedId: 'li-1' });
+    const mediumAdapter = opts.mediumAdapter ?? mockPublishAdapter({ ok: true, publishedId: 'm-1' });
+    return createReportService({
+        contentSourcePort,
+        publishAdapters: { x: xAdapter, linkedin: linkedInAdapter, medium: mediumAdapter }
+    });
+}
 
 describe('ReportService.publishReport', () => {
-    // --- Input/Output (spec table) ---
-
-    test('content + platforms [medium] calls Medium adapter and returns medium result when adapter succeeds', async () => {
-        const mediumAdapter = { publish: jest.fn().mockResolvedValue({ success: true, postId: 'p1', url: 'https://medium.com/p1' }) };
-        const service = new ReportService({ publishAdapters: { medium: mediumAdapter } });
-        const result = await service.publishReport(
-            { content: '## Summary\n\nKey findings...' },
-            { platforms: ['medium'] }
-        );
-        expect(mediumAdapter.publish).toHaveBeenCalledWith('## Summary\n\nKey findings...', expect.anything());
-        expect(result).toEqual({ medium: { success: true, postId: 'p1', url: 'https://medium.com/p1' } });
-    });
-
-    test('content + platforms [x] calls X adapter and returns x result when adapter succeeds', async () => {
-        const xAdapter = { publish: jest.fn().mockResolvedValue({ success: true, postId: 'x1', url: 'https://x.com/x1' }) };
-        const service = new ReportService({ publishAdapters: { x: xAdapter } });
-        const result = await service.publishReport(
-            { content: 'Short post' },
-            { platforms: ['x'] }
-        );
-        expect(xAdapter.publish).toHaveBeenCalledWith('Short post', expect.anything());
-        expect(result).toEqual({ x: { success: true, postId: 'x1', url: 'https://x.com/x1' } });
-    });
-
-    test('content + platforms [medium, linkedin, x] calls all three adapters and returns object with medium, linkedin, x', async () => {
-        const mediumAdapter = { publish: jest.fn().mockResolvedValue({ success: true, postId: 'm1', url: 'https://medium.com/m1' }) };
-        const linkedInAdapter = { publish: jest.fn().mockResolvedValue({ success: true, postId: 'l1', url: 'https://linkedin.com/l1' }) };
-        const xAdapter = { publish: jest.fn().mockResolvedValue({ success: true, postId: 'x1', url: 'https://x.com/x1' }) };
-        const service = new ReportService({
-            publishAdapters: { medium: mediumAdapter, linkedin: linkedInAdapter, x: xAdapter }
+    describe('Input/Output — content only', () => {
+        test('{ content: "Hello world" } returns ok true and results for x, linkedin, medium', async () => {
+            const service = createServiceWithMocks();
+            const result = await service.publishReport({ content: 'Hello world' });
+            expect(result).toHaveProperty('ok', true);
+            expect(result).toHaveProperty('results');
+            expect(Array.isArray(result.results)).toBe(true);
+            expect(result.results).toHaveLength(3);
+            const platforms = result.results.map((r) => r.platform).sort();
+            expect(platforms).toEqual(['linkedin', 'medium', 'x']);
+            result.results.forEach((r) => {
+                expect(r).toHaveProperty('platform');
+                expect(r).toHaveProperty('ok', true);
+            });
         });
-        const result = await service.publishReport(
-            { content: '...' },
-            { platforms: ['medium', 'linkedin', 'x'] }
-        );
-        expect(result).toHaveProperty('medium');
-        expect(result).toHaveProperty('linkedin');
-        expect(result).toHaveProperty('x');
-        expect(result.medium.success).toBe(true);
-        expect(result.linkedin.success).toBe(true);
-        expect(result.x.success).toBe(true);
-    });
 
-    test('reportPath option reads file content then same behavior as content', async () => {
-        const readReportPathPort = { read: jest.fn().mockResolvedValue('file content here') };
-        const mediumAdapter = { publish: jest.fn().mockResolvedValue({ success: true, postId: 'p1', url: 'https://medium.com/p1' }) };
-        const service = new ReportService({
-            publishAdapters: { medium: mediumAdapter },
-            readReportPathPort
+        test('{ content: "Hello", platforms: ["x"] } invokes only X adapter', async () => {
+            const xAdapter = mockPublishAdapter({ ok: true, publishedId: 'x-only' });
+            const service = createServiceWithMocks({ xAdapter });
+            const result = await service.publishReport({ content: 'Hello', platforms: ['x'] });
+            expect(result.ok).toBe(true);
+            expect(result.results).toHaveLength(1);
+            expect(result.results[0].platform).toBe('x');
+            expect(result.results[0].ok).toBe(true);
+            expect(xAdapter.publish).toHaveBeenCalledWith('Hello', expect.any(Object));
         });
-        const result = await service.publishReport(
-            { reportPath: '/path/to/2025-02-20.md' },
-            { platforms: ['medium'] }
-        );
-        expect(readReportPathPort.read).toHaveBeenCalledWith('/path/to/2025-02-20.md');
-        expect(mediumAdapter.publish).toHaveBeenCalledWith('file content here', expect.anything());
-        expect(result.medium.success).toBe(true);
     });
 
-    test('empty content returns per-platform failure with error (no throw)', async () => {
-        const mediumAdapter = { publish: jest.fn() };
-        const service = new ReportService({ publishAdapters: { medium: mediumAdapter } });
-        const result = await service.publishReport({ content: '' }, { platforms: ['medium'] });
-        expect(result).toHaveProperty('medium');
-        expect(result.medium.success).toBe(false);
-        expect(result.medium.error).toBeDefined();
-        expect(typeof result.medium.error).toBe('string');
-    });
-
-    test('very long content for X truncates or succeeds (X adapter or service truncates)', async () => {
-        const longText = 'a'.repeat(400);
-        const xAdapter = { publish: jest.fn().mockResolvedValue({ success: true, postId: 'x1', url: 'https://x.com/x1' }) };
-        const service = new ReportService({ publishAdapters: { x: xAdapter } });
-        const result = await service.publishReport(
-            { content: longText },
-            { platforms: ['x'] }
-        );
-        expect(result.x.success).toBe(true);
-        const calledContent = xAdapter.publish.mock.calls[0][0];
-        expect(calledContent.length).toBeLessThanOrEqual(280 + 10);
-    });
-
-    test('missing credentials for a platform returns success false and error for that platform (no throw)', async () => {
-        const mediumAdapter = { publish: jest.fn().mockResolvedValue({ success: false, error: 'Missing credentials' }) };
-        const service = new ReportService({ publishAdapters: { medium: mediumAdapter } });
-        const result = await service.publishReport(
-            { content: 'Hello' },
-            { platforms: ['medium'] }
-        );
-        expect(result.medium.success).toBe(false);
-        expect(result.medium.error).toMatch(/missing credentials/i);
-    });
-
-    test('adapter throw is caught and returned as success false with error (publishReport does not throw)', async () => {
-        const mediumAdapter = { publish: jest.fn().mockRejectedValue(new Error('Network error')) };
-        const service = new ReportService({ publishAdapters: { medium: mediumAdapter } });
-        const result = await service.publishReport(
-            { content: 'Hello' },
-            { platforms: ['medium'] }
-        );
-        expect(result.medium.success).toBe(false);
-        expect(result.medium.error).toBeDefined();
-        expect(typeof result.medium.error).toBe('string');
-    });
-
-    // --- Edge cases ---
-
-    test('content undefined when using content input returns failure or throws clear message', async () => {
-        const service = new ReportService({ publishAdapters: {} });
-        try {
-            const result = await service.publishReport({}, { platforms: ['medium'] });
-            expect(result.medium).toBeDefined();
-            expect(result.medium.success).toBe(false);
-            expect(result.medium.error).toBeDefined();
-        } catch (e) {
-            expect(e.message).toBeDefined();
-        }
-    });
-
-    test('reportPath provided but file does not exist returns error (no platform calls)', async () => {
-        const readReportPathPort = { read: jest.fn().mockRejectedValue(new Error('ENOENT')) };
-        const mediumAdapter = { publish: jest.fn() };
-        const service = new ReportService({
-            publishAdapters: { medium: mediumAdapter },
-            readReportPathPort
+    describe('Input/Output — contentPath', () => {
+        test('{ contentPath: "/path/to/report.md" } resolves content via contentSourcePort then publishes to all three', async () => {
+            const contentSourcePort = mockContentSourcePort('# Report');
+            const xAdapter = mockPublishAdapter({ ok: true });
+            const service = createServiceWithMocks({ contentSourcePort, xAdapter });
+            const result = await service.publishReport({ contentPath: '/path/to/report.md' });
+            expect(contentSourcePort.read).toHaveBeenCalledWith('/path/to/report.md');
+            expect(result.ok).toBe(true);
+            expect(result.results).toHaveLength(3);
+            expect(xAdapter.publish).toHaveBeenCalledWith('# Report', expect.any(Object));
         });
-        const result = await service.publishReport(
-            { reportPath: '/nonexistent.md' },
-            { platforms: ['medium'] }
-        );
-        expect(mediumAdapter.publish).not.toHaveBeenCalled();
-        expect(result.error != null || result.reportPath != null).toBe(true);
+
+        test('{ contentPath } when content source throws returns ok false, results [], error set', async () => {
+            const contentSourcePort = mockContentSourcePort(() => Promise.reject(new Error('File not found')));
+            const xAdapter = mockPublishAdapter({ ok: true });
+            const service = createServiceWithMocks({ contentSourcePort, xAdapter });
+            const result = await service.publishReport({ contentPath: '/missing.md' });
+            expect(result.ok).toBe(false);
+            expect(result.results).toEqual([]);
+            expect(result.error).toBeDefined();
+            expect(typeof result.error).toBe('string');
+            expect(xAdapter.publish).not.toHaveBeenCalled();
+        });
     });
 
-    // --- Error cases ---
-
-    test('content not a string when using content input returns or throws clear message', async () => {
-        const service = new ReportService({ publishAdapters: {} });
-        try {
-            const result = await service.publishReport({ content: 123 }, { platforms: ['medium'] });
-            expect(result.medium).toBeDefined();
-            expect(result.medium.success).toBe(false);
-            expect(result.medium.error).toMatch(/content|string|invalid/i);
-        } catch (e) {
-            expect(e.message).toMatch(/content|string|invalid/i);
-        }
+    describe('Input/Output — partial failure', () => {
+        test('one adapter (e.g. LinkedIn) fails: ok false, per-platform results reflect success/failure', async () => {
+            const linkedInAdapter = mockPublishAdapter({ ok: false, error: 'Rate limited' });
+            const service = createServiceWithMocks({ linkedInAdapter });
+            const result = await service.publishReport({ content: 'Hello' });
+            expect(result.ok).toBe(false);
+            expect(result.results).toHaveLength(3);
+            const xResult = result.results.find((r) => r.platform === 'x');
+            const liResult = result.results.find((r) => r.platform === 'linkedin');
+            const mResult = result.results.find((r) => r.platform === 'medium');
+            expect(xResult.ok).toBe(true);
+            expect(liResult.ok).toBe(false);
+            expect(liResult.error).toBe('Rate limited');
+            expect(mResult.ok).toBe(true);
+        });
     });
 
-    test('reportPath not a string returns or throws clear message', async () => {
-        const service = new ReportService({ publishAdapters: {}, readReportPathPort: {} });
-        try {
-            const result = await service.publishReport({ reportPath: 999 }, { platforms: ['medium'] });
-            expect(result.medium).toBeDefined();
-            expect(result.medium.success).toBe(false);
-        } catch (e) {
-            expect(e.message).toMatch(/reportPath|path|invalid/i);
-        }
+    describe('Validation — missing content and contentPath', () => {
+        test('{} returns ok false, results [], error message (no throw)', async () => {
+            const service = createServiceWithMocks();
+            const result = await service.publishReport({});
+            expect(result.ok).toBe(false);
+            expect(result.results).toEqual([]);
+            expect(result.error).toBeDefined();
+            expect(typeof result.error).toBe('string');
+            expect(result.error.toLowerCase()).toMatch(/content|contentpath|missing/);
+        });
+
+        test('{ content: null, contentPath: undefined } returns validation error', async () => {
+            const service = createServiceWithMocks();
+            const result = await service.publishReport({ content: null, contentPath: undefined });
+            expect(result.ok).toBe(false);
+            expect(result.results).toEqual([]);
+            expect(result.error).toBeDefined();
+        });
     });
 
-    test('unknown platform in platforms array returns success false for that key with error Unknown platform', async () => {
-        const service = new ReportService({ publishAdapters: {} });
-        const result = await service.publishReport(
-            { content: 'Hi' },
-            { platforms: ['medium', 'unknownPlatform'] }
-        );
-        expect(result.medium).toBeDefined();
-        expect(result.unknownPlatform).toBeDefined();
-        expect(result.unknownPlatform.success).toBe(false);
-        expect(result.unknownPlatform.error).toMatch(/unknown platform/i);
+    describe('Edge — empty content', () => {
+        test('{ content: "", platforms: ["x"] } is accepted; result per platform', async () => {
+            const xAdapter = mockPublishAdapter({ ok: true });
+            const service = createServiceWithMocks({ xAdapter });
+            const result = await service.publishReport({ content: '', platforms: ['x'] });
+            expect(result.results).toHaveLength(1);
+            expect(xAdapter.publish).toHaveBeenCalledWith('', expect.any(Object));
+        });
     });
 
-    test('result shape: plain object with only requested platform keys; each value has success and optional postId, url, error', async () => {
-        const mediumAdapter = { publish: jest.fn().mockResolvedValue({ success: true, postId: 'p1', url: 'https://m.com/p1' }) };
-        const service = new ReportService({ publishAdapters: { medium: mediumAdapter } });
-        const result = await service.publishReport({ content: 'x' }, { platforms: ['medium'] });
-        expect(result).toEqual({ medium: { success: true, postId: 'p1', url: 'https://m.com/p1' } });
-        expect(Object.keys(result)).toEqual(['medium']);
+    describe('Edge — empty platforms', () => {
+        test('platforms: [] returns ok true, results [] (no-op)', async () => {
+            const service = createServiceWithMocks();
+            const result = await service.publishReport({ content: 'Hi', platforms: [] });
+            expect(result.ok).toBe(true);
+            expect(result.results).toEqual([]);
+        });
     });
 
-    test('Unicode and special characters in content are passed to adapter', async () => {
-        const content = 'Summary \u{1F4CA} emoji and café naïve';
-        const mediumAdapter = { publish: jest.fn().mockResolvedValue({ success: true, postId: 'p1', url: 'https://m.com/p1' }) };
-        const service = new ReportService({ publishAdapters: { medium: mediumAdapter } });
-        await service.publishReport({ content }, { platforms: ['medium'] });
-        expect(mediumAdapter.publish).toHaveBeenCalledWith(content, expect.anything());
+    describe('Edge — duplicate platforms', () => {
+        test('platforms: ["x", "x", "linkedin"] dedupes and publishes once per platform', async () => {
+            const xAdapter = mockPublishAdapter({ ok: true });
+            const linkedInAdapter = mockPublishAdapter({ ok: true });
+            const service = createServiceWithMocks({ xAdapter, linkedInAdapter });
+            const result = await service.publishReport({ content: 'Hi', platforms: ['x', 'x', 'linkedin'] });
+            expect(result.ok).toBe(true);
+            expect(result.results).toHaveLength(2);
+            expect(xAdapter.publish).toHaveBeenCalledTimes(1);
+            expect(linkedInAdapter.publish).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('Edge — both content and contentPath set', () => {
+        test('prefer content and ignore contentPath', async () => {
+            const contentSourcePort = mockContentSourcePort('# From file');
+            const xAdapter = mockPublishAdapter({ ok: true });
+            const service = createServiceWithMocks({ contentSourcePort, xAdapter });
+            const result = await service.publishReport({
+                content: 'In-memory text',
+                contentPath: '/path/to/file.md'
+            });
+            expect(result.ok).toBe(true);
+            expect(contentSourcePort.read).not.toHaveBeenCalled();
+            expect(xAdapter.publish).toHaveBeenCalledWith('In-memory text', expect.any(Object));
+        });
+    });
+
+    describe('Error — invalid types', () => {
+        test('content not a string when provided returns validation error', async () => {
+            const service = createServiceWithMocks();
+            const result = await service.publishReport({ content: 123 });
+            expect(result.ok).toBe(false);
+            expect(result.results).toEqual([]);
+            expect(result.error).toBeDefined();
+        });
+    });
+
+    describe('Error — unknown platform', () => {
+        test('platforms including unknown value (e.g. "twitter") skips unknown, invokes only known adapters', async () => {
+            const xAdapter = mockPublishAdapter({ ok: true });
+            const service = createServiceWithMocks({ xAdapter });
+            const result = await service.publishReport({ content: 'Hi', platforms: ['x', 'twitter', 'linkedin'] });
+            expect(result.results.length).toBeLessThanOrEqual(3);
+            const platforms = result.results.map((r) => r.platform);
+            expect(platforms).toContain('x');
+            expect(platforms).toContain('linkedin');
+            expect(platforms).not.toContain('twitter');
+        });
+    });
+
+    describe('Invariants', () => {
+        test('result has deterministic shape: ok, results array', async () => {
+            const service = createServiceWithMocks();
+            const result = await service.publishReport({ content: 'Hi' });
+            expect(result).toHaveProperty('ok');
+            expect(typeof result.ok).toBe('boolean');
+            expect(Array.isArray(result.results)).toBe(true);
+            result.results.forEach((r) => {
+                expect(r).toHaveProperty('platform');
+                expect(r).toHaveProperty('ok');
+                expect(KNOWN_PLATFORMS).toContain(r.platform);
+            });
+        });
     });
 });

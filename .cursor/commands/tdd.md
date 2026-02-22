@@ -25,6 +25,8 @@ Read the spec file and `docs/TDD-PLAN-AND-WORKFLOW.md`. Identify Contract (name,
 
 Follow the tests-from-spec skill. Write tests that cover every input/output pair, edge case, and error case in the spec, and **for every test level** (unit, integration, e2e) **listed in the spec**. Place tests per the spec test file hint or `tests/business_modules/<module>/...`. Do **not** write implementation or mocks; tests must fail (e.g. function not defined or wrong return).
 
+**TDD invariant:** The set of tests is **fixed at the end of Red**. Do **not** add new tests during Green or Refactor. If you need to cover new behavior, that is a new TDD cycle: add tests first (Red), then implement (Green).
+
 ### 3b. Evaluate coverage (LLM)
 
 Compare the written tests to the spec (I/O table, edge cases, error cases, success criteria, test levels). Report gaps; add any missing tests, then re-evaluate until coverage is acceptable. This stays inside Red; no commit yet.
@@ -35,7 +37,7 @@ Run the full set of tests (unit + integration, and e2e if any), e.g. `npm test -
 
 ### 5. After user commits tests — Green phase
 
-When the user says they have committed the tests, implement the code that makes **all** specified tests pass (all levels). Do not modify the tests unless the user explicitly asks to fix a broken test. Run tests and iterate until all specified tests pass.
+When the user says they have committed the tests, implement the code that makes **all** specified tests pass (all levels). **Do not add new tests.** Do not modify existing tests unless the user explicitly asks to fix a broken test. Run tests and iterate until all specified tests pass.
 
 ---
 

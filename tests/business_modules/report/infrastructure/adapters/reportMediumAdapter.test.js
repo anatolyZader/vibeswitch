@@ -1,22 +1,32 @@
-const ReportMediumAdapter = require('../../../../../business_modules/report/infrastructure/adapters/reportMediumAdapter');
-const IReportPublishPort = require('../../../../../business_modules/report/domain/ports/IReportPublishPort');
+/**
+ * ReportMediumAdapter unit tests — publish to Medium. Mocked HTTP/secrets (TDD Red phase).
+ */
+const { ReportMediumAdapter } = require('../../../../../business_modules/report/infrastructure/adapters/reportMediumAdapter');
 
 describe('ReportMediumAdapter', () => {
-    test('implements IReportPublishPort (has publish method)', () => {
-        const adapter = new ReportMediumAdapter();
-        expect(adapter).toBeInstanceOf(IReportPublishPort);
-        expect(typeof adapter.publish).toBe('function');
+    test('publish(content) returns shape { ok, publishedId?, error? }', async () => {
+        const getIntegrationToken = jest.fn().mockResolvedValue('token');
+        const fetchFn = jest.fn().mockResolvedValue({
+            ok: true,
+            json: () => Promise.resolve({ data: { id: 'medium-post-1' } })
+        });
+        const adapter = new ReportMediumAdapter({ getIntegrationToken, fetchFn });
+        const result = await adapter.publish('Hello world');
+        expect(result).toHaveProperty('ok');
+        expect(typeof result.ok).toBe('boolean');
+        if (result.ok) {
+            expect(result).toHaveProperty('publishedId');
+        } else {
+            expect(result).toHaveProperty('error');
+            expect(typeof result.error).toBe('string');
+        }
     });
 
-    test('publish with mocked HTTP 200 returns PlatformResult with success true, postId, url', async () => {
-        const mockFetch = jest.fn().mockResolvedValue({
-            ok: true,
-            json: () => Promise.resolve({ id: 'medium-post-1', url: 'https://medium.com/p/medium-post-1' })
-        });
-        const adapter = new ReportMediumAdapter({ fetch: mockFetch });
-        const result = await adapter.publish('## Hello', {});
-        expect(result).toMatchObject({ success: true });
-        expect(result.postId).toBeDefined();
-        expect(result.url).toBeDefined();
+    test('when getIntegrationToken returns null, publish returns ok false with error', async () => {
+        const getIntegrationToken = jest.fn().mockResolvedValue(null);
+        const adapter = new ReportMediumAdapter({ getIntegrationToken });
+        const result = await adapter.publish('Hello');
+        expect(result.ok).toBe(false);
+        expect(result.error).toBeDefined();
     });
 });

@@ -1,40 +1,45 @@
 /**
- * Medium publish adapter - implements IReportPublishPort for Medium.
- * Uses injected fetch for HTTP (no real network in tests).
+ * Publishes content to Medium. Implements IReportPublishPort.
  */
+const { IReportPublishPort } = require('../../domain/ports/IReportPublishPort');
 
-const IReportPublishPort = require('../../domain/ports/IReportPublishPort');
+const MEDIUM_API_POSTS_URL = 'https://api.medium.com/v1/users/me/posts';
 
 class ReportMediumAdapter extends IReportPublishPort {
-    constructor(deps = {}) {
+    constructor(opts = {}) {
         super();
-        this.fetch = deps.fetch || (typeof globalThis.fetch === 'function' ? globalThis.fetch : null);
+        this.getIntegrationToken = opts.getIntegrationToken || (async () => null);
+        this.fetchFn = opts.fetchFn || globalThis.fetch;
     }
 
-    async publish(content, opts) {
-        const fetchFn = this.fetch;
-        if (!fetchFn) {
-            return { success: false, error: 'Medium adapter: fetch not configured' };
+    async publish(content, _options) {
+        const token = await this.getIntegrationToken();
+        if (!token || typeof token !== 'string') {
+            return { ok: false, error: 'Missing or invalid Medium integration token' };
         }
         try {
-            const res = await fetchFn('https://api.medium.com/v1/posts', {
+            const res = await this.fetchFn(MEDIUM_API_POSTS_URL, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content })
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    title: 'Report',
+                    contentFormat: 'markdown',
+                    content
+                })
             });
-            const body = await res.json().catch(() => ({}));
+            const data = await res.json().catch(() => ({}));
             if (!res.ok) {
-                return { success: false, error: body.message || body.error || res.statusText || String(res.status) };
+                return { ok: false, error: (data.errors && data.errors[0] && data.errors[0].message) || data.message || res.statusText || String(res.status) };
             }
-            return {
-                success: true,
-                postId: body.id != null ? String(body.id) : undefined,
-                url: body.url != null ? String(body.url) : undefined
-            };
+            const id = data.data && data.data.id;
+            return { ok: true, ...(id && { publishedId: id }) };
         } catch (err) {
-            return { success: false, error: err.message || String(err) };
+            return { ok: false, error: (err && err.message) || String(err) };
         }
     }
 }
 
-module.exports = ReportMediumAdapter;
+module.exports = { ReportMediumAdapter };

@@ -44,6 +44,50 @@ describe('createResearchDataService lifecycle', () => {
         service.stop();
     });
 
+    test('tick does not call send when agent URL is missing or empty', async () => {
+        const getAgentUrl = jest.fn().mockReturnValue('');
+        const service = createResearchDataService({
+            state: { getMode: () => 'dev' },
+            getAgentUrl,
+            getDbPath: null
+        });
+        service.start();
+        await new Promise((r) => setImmediate(r));
+        await new Promise((r) => setImmediate(r));
+        expect(mockSend).not.toHaveBeenCalled();
+        service.stop();
+    });
+
+    test('start is idempotent: second start does not double tick', async () => {
+        const getAgentUrl = jest.fn().mockReturnValue('https://agent.run.app');
+        const service = createResearchDataService({
+            state: { getMode: () => 'dev' },
+            getAgentUrl,
+            getDbPath: null,
+            pollIntervalMs: 100000
+        });
+        service.start();
+        service.start();
+        await new Promise((r) => setImmediate(r));
+        await new Promise((r) => setImmediate(r));
+        expect(mockSend).toHaveBeenCalledTimes(1);
+        service.stop();
+    });
+
+    test('stop is idempotent: second stop does not throw', async () => {
+        const getAgentUrl = jest.fn().mockReturnValue('https://agent.run.app');
+        const service = createResearchDataService({
+            state: { getMode: () => 'dev' },
+            getAgentUrl,
+            getDbPath: null
+        });
+        service.start();
+        await new Promise((r) => setImmediate(r));
+        service.stop();
+        service.stop();
+        expect(mockSend).toHaveBeenCalled();
+    });
+
     test('tick without getDbPath sends current payload and empty history', async () => {
         const getAgentUrl = jest.fn().mockReturnValue('https://agent.run.app');
         const service = createResearchDataService({
@@ -106,5 +150,38 @@ describe('createResearchDataService lifecycle', () => {
         service.stop();
         await new Promise((r) => setImmediate(r));
         expect(mockClose).toHaveBeenCalled();
+    });
+
+    test('uses injected persistencePort and agentPort when provided (ports pattern)', async () => {
+        const mockPersistPort = jest.fn().mockResolvedValue(undefined);
+        const mockGetPayloadForAgentPort = jest.fn().mockResolvedValue({
+            current: { timestamp: 200, source: 'port-test' },
+            history: [{ timestamp: 199 }]
+        });
+        const mockSendPort = jest.fn().mockResolvedValue({ ok: true });
+        const persistencePort = {
+            persist: mockPersistPort,
+            getPayloadForAgent: mockGetPayloadForAgentPort
+        };
+        const agentPort = { send: mockSendPort };
+
+        const service = createResearchDataService({
+            state: { getMode: () => 'dev' },
+            getAgentUrl: () => 'https://agent.run.app',
+            persistencePort,
+            agentPort,
+            pollIntervalMs: 100000
+        });
+        service.start();
+        await new Promise((r) => setImmediate(r));
+        await new Promise((r) => setImmediate(r));
+
+        expect(mockPersistPort).toHaveBeenCalled();
+        expect(mockGetPayloadForAgentPort).toHaveBeenCalled();
+        expect(mockSendPort).toHaveBeenCalledWith({
+            current: { timestamp: 200, source: 'port-test' },
+            history: [{ timestamp: 199 }]
+        });
+        service.stop();
     });
 });

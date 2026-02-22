@@ -1,25 +1,32 @@
 /**
- * ReportXAdapter - implements IReportPublishPort for X.com. Unit tests with mocked HTTP.
+ * ReportXAdapter unit tests — publish to X (Twitter). Mocked HTTP/secrets (TDD Red phase).
  */
-const ReportXAdapter = require('../../../../../business_modules/report/infrastructure/adapters/reportXAdapter');
-const IReportPublishPort = require('../../../../../business_modules/report/domain/ports/IReportPublishPort');
+const { ReportXAdapter } = require('../../../../../business_modules/report/infrastructure/adapters/reportXAdapter');
 
 describe('ReportXAdapter', () => {
-    test('implements IReportPublishPort (has publish method)', () => {
-        const adapter = new ReportXAdapter();
-        expect(adapter).toBeInstanceOf(IReportPublishPort);
-        expect(typeof adapter.publish).toBe('function');
+    test('publish(content) returns shape { ok, publishedId?, error? }', async () => {
+        const getBearerToken = jest.fn().mockResolvedValue('token');
+        const fetchFn = jest.fn().mockResolvedValue({
+            ok: true,
+            json: () => Promise.resolve({ data: { id: '123' } })
+        });
+        const adapter = new ReportXAdapter({ getBearerToken, fetchFn });
+        const result = await adapter.publish('Hello world');
+        expect(result).toHaveProperty('ok');
+        expect(typeof result.ok).toBe('boolean');
+        if (result.ok) {
+            expect(result).toHaveProperty('publishedId');
+        } else {
+            expect(result).toHaveProperty('error');
+            expect(typeof result.error).toBe('string');
+        }
     });
 
-    test('publish with content over 280 chars truncates and returns success true', async () => {
-        const longContent = 'a'.repeat(400);
-        const mockFetch = jest.fn().mockResolvedValue({
-            ok: true,
-            json: () => Promise.resolve({ data: { id: 'x-1' }, url: 'https://x.com/x-1' })
-        });
-        const adapter = new ReportXAdapter({ fetch: mockFetch });
-        const result = await adapter.publish(longContent, {});
-        expect(result).toMatchObject({ success: true });
-        expect(result.postId).toBeDefined();
+    test('when getBearerToken returns null, publish returns ok false with error', async () => {
+        const getBearerToken = jest.fn().mockResolvedValue(null);
+        const adapter = new ReportXAdapter({ getBearerToken });
+        const result = await adapter.publish('Hello');
+        expect(result.ok).toBe(false);
+        expect(result.error).toBeDefined();
     });
 });

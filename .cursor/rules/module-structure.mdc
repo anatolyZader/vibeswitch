@@ -1,5 +1,5 @@
 ---
-description: Enforce 4-layer module structure and file layout for business_modules
+description: Enforce module structure (app, domain, infrastructure; input optional) and file layout for business_modules
 globs: business_modules/**/*
 alwaysApply: true
 ---
@@ -10,14 +10,14 @@ When creating or extending a **business module**, follow this structure and nami
 
 ## 1. Directory layout per module
 
-Every business module lives under `business_modules/<moduleName>/` with exactly four layers:
+Every business module lives under `business_modules/<moduleName>/` with app, domain, and infrastructure; input is optional.
 
 ```
 business_modules/<moduleName>/
 ├── index.js                    # Optional: barrel or entry for the module
-├── input/                      # INPUT LAYER — entry points only
-│   └── <module>EventListener.js   # or <module>Controller.js, command/event handlers
-├── app/                        # APPLICATION LAYER — orchestration, no raw business rules
+├── input/                      # INPUT LAYER — optional; only when module has a transport entry (HTTP, events, pub/sub, etc.)
+│   └── <module>Input.js          # or <module>EventListener.js, <module>Router.js (by type). Omit input/ when only in-process callers.
+├── app/                        # APPLICATION LAYER — controller (or service) is the entry when only in-process callers
 │   ├── <module>Controller.js   # Optional: accept request/message, extract data, call Service
 │   ├── <module>Engine.js       # Optional: main orchestrator for the module
 │   ├── <module>Service.js      # Main application service
@@ -35,8 +35,8 @@ business_modules/<moduleName>/
         └── <module><Thing>Adapter.js
 ```
 
-- **Input**: Receive the initial message only (HTTP, events, commands). Routers declare routes; Fastify plugin decorates with methods. Handlers resolve app Controller or Service from DI and delegate; no extraction or business logic in input.
-- **App**: Controller (optional) accepts request/message, extracts data, calls Service. Services and engines orchestrate domain and call ports; no direct DB/FS/VS Code.
+- **Input (optional):** Only when the module receives from a transport (HTTP, events, pub/sub, CLI, etc.). Receive only; resolve app Controller or Service from DI and delegate. **When the module is only called in-process by other modules, omit input/** — the app controller (or service) accepts the call, extracts data, and calls the service.
+- **App**: Controller (optional) accepts request/message, extracts data, calls Service. When there is no input layer, the app controller or service is the module entry. Services and engines orchestrate domain and call ports; no direct DB/FS/VS Code.
 - **Domain**: Entities, aggregates, ports (interfaces); no imports from app or infrastructure.
 - **Infrastructure**: Adapters (VSCode, persistence, external APIs); implement domain ports.
 
@@ -44,7 +44,7 @@ business_modules/<moduleName>/
 
 | Layer        | Location              | Naming pattern (examples) |
 |-------------|------------------------|----------------------------|
-| Input       | `input/`               | `<module>EventListener.js`, `<module>Controller.js` |
+| Input       | `input/`               | `<module>Input.js`, `<module>EventListener.js`, `<module>Router.js`, `<module>PubsubListener.js` — by file type |
 | App         | `app/` or `app/<subdomain>/` | `<module>Service.js`, `<module>Controller.js` (optional), `<module>Engine.js` |
 | Domain      | `domain/entities/`, `domain/value_objects/`, `domain/events/`, `domain/ports/` | Entities/value objects/events: PascalCase. Ports: `I<Module><Port>.js` (e.g. `IAwarenessVSCodePort.js`) |
 | Infrastructure | `infrastructure/adapters/` | `<module><Thing>Adapter.js` (e.g. `awarenessVSCodeAdapter.js`) |
@@ -64,10 +64,10 @@ Use `__tests__/` subdirs only when you group multiple test files for one area (e
 
 ## 4. Rules when adding new code
 
-- **New module**: Create the four folders (`input/`, `app/`, `domain/`, `infrastructure/adapters/`) and add at least one file per layer you use.
+- **New module**: Create `app/`, `domain/`, and `infrastructure/adapters/`; add `input/` only when the module has a transport entry (HTTP, events, pub/sub, etc.). When only in-process callers, the app controller (or service) is the entry.
 - **New feature in existing module**: Add files in the correct layer; use existing subdirs (e.g. `app/usage/`, `app/scoring/`) when they fit.
 - **Cross-cutting code**: Put it in `cross-cut-modules/`, not inside a single business module. Keep it stateless and pure where possible.
-- **Composition**: Wire new modules in `compositionRoot.js`; resolve services via the DI container from the input layer; do not import one business module from another — use ports/events or composition root.
+- **Composition**: Wire new modules in `compositionRoot.js`; resolve app controller or service from DI (from input layer when present, or directly when module has no input); do not import one business module from another — use ports/events or composition root.
 
 ## 5. References
 

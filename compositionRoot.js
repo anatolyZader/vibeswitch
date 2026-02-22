@@ -356,18 +356,36 @@ function compose(context, state, container) {
         state.dailyResearchRunner = null;
     }
 
-    // Report module: publish research results to Medium, LinkedIn, X.
+    // Report module: publish research report to X, LinkedIn, Medium (wired when report.enabled and adapters exist)
     try {
-        const ReportService = require('./business_modules/report/app/reportService');
-        const { createReportController } = require('./business_modules/report/input/reportController');
-        const ReportFsContentSourceAdapter = require('./business_modules/report/infrastructure/adapters/reportFsContentSourceAdapter');
-        const readReportPathPort = new ReportFsContentSourceAdapter();
-        state.reportService = new ReportService({ publishAdapters: {}, readReportPathPort });
-        state.reportController = createReportController({ reportService: state.reportService });
+        const { createReportService } = require('./business_modules/report/app/reportService');
+        const reportCfg = vscode.workspace.getConfiguration('vibeswitch').get('report.enabled', false);
+        if (reportCfg) {
+            try {
+                const { ReportFsContentSourceAdapter } = require('./business_modules/report/infrastructure/adapters/reportFsContentSourceAdapter');
+                const { ReportXAdapter } = require('./business_modules/report/infrastructure/adapters/reportXAdapter');
+                const { ReportLinkedInAdapter } = require('./business_modules/report/infrastructure/adapters/reportLinkedInAdapter');
+                const { ReportMediumAdapter } = require('./business_modules/report/infrastructure/adapters/reportMediumAdapter');
+                const getReportXToken = async () => { try { return await context.secretStorage.get('vibeswitch.report.xBearerToken') || null; } catch (_) { return null; } };
+                const getReportLinkedInToken = async () => { try { return await context.secretStorage.get('vibeswitch.report.linkedInToken') || null; } catch (_) { return null; } };
+                const getReportMediumToken = async () => { try { return await context.secretStorage.get('vibeswitch.report.mediumToken') || null; } catch (_) { return null; } };
+                const contentSource = new ReportFsContentSourceAdapter();
+                const publishAdapters = {
+                    x: new ReportXAdapter({ getBearerToken: getReportXToken }),
+                    linkedin: new ReportLinkedInAdapter({ getAccessToken: getReportLinkedInToken }),
+                    medium: new ReportMediumAdapter({ getIntegrationToken: getReportMediumToken })
+                };
+                state.reportService = createReportService({ contentSourcePort: contentSource, publishAdapters });
+            } catch (adapterErr) {
+                adapters.loggerAdapter?.error?.('compositionRoot: Report adapters not available', adapterErr);
+                state.reportService = null;
+            }
+        } else {
+            state.reportService = null;
+        }
     } catch (err) {
         adapters.loggerAdapter?.error?.('compositionRoot: Failed to compose report module', err);
         state.reportService = null;
-        state.reportController = null;
     }
 
     // Store adapters in DI container

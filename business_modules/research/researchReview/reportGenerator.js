@@ -68,16 +68,19 @@ function writeReportFile(reportsDir, dateStr, content, opts = {}) {
     return filePath;
 }
 
+const VALID_DATE_STR = /^\d{4}-\d{2}-\d{2}$/;
+
 /**
  * Generate and write daily report.
  * @param {Array<{ title: string, link: string, summary: string, source: string, date: string }>} items
  * @param {string} reportsDir
- * @param {string} [dateStr] - YYYY-MM-DD; defaults to today
+ * @param {string} [dateStr] - YYYY-MM-DD; defaults to today; invalid format falls back to today
  * @param {{ fsSync?: Object }}} [opts]
  * @returns {string} Path to written file
  */
 function generateDailyReport(items, reportsDir, dateStr, opts = {}) {
-    const d = dateStr || new Date().toISOString().slice(0, 10);
+    const today = new Date().toISOString().slice(0, 10);
+    const d = (dateStr && VALID_DATE_STR.test(dateStr)) ? dateStr : today;
     const content = generateReportMarkdown(items, d);
     return writeReportFile(reportsDir, d, content, opts);
 }

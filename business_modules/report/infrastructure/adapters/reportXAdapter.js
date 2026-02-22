@@ -1,51 +1,41 @@
 /**
- * X (Twitter) publish adapter - implements IReportPublishPort for X.com.
- * Truncates content to 280 chars; uses injected fetch for HTTP.
+ * Publishes content to X (Twitter). Implements IReportPublishPort.
  */
+const { IReportPublishPort } = require('../../domain/ports/IReportPublishPort');
 
-const IReportPublishPort = require('../../domain/ports/IReportPublishPort');
-
-const X_MAX_LEN = 280;
-
-function truncateForX(text) {
-    if (typeof text !== 'string') return text;
-    if (text.length <= X_MAX_LEN) return text;
-    return text.slice(0, X_MAX_LEN - 1) + '…';
-}
+const X_API_TWEETS_URL = 'https://api.twitter.com/2/tweets';
 
 class ReportXAdapter extends IReportPublishPort {
-    constructor(deps = {}) {
+    constructor(opts = {}) {
         super();
-        this.fetch = deps.fetch || (typeof globalThis.fetch === 'function' ? globalThis.fetch : null);
+        this.getBearerToken = opts.getBearerToken || (async () => null);
+        this.fetchFn = opts.fetchFn || globalThis.fetch;
     }
 
-    async publish(content, opts) {
-        const fetchFn = this.fetch;
-        if (!fetchFn) {
-            return { success: false, error: 'X adapter: fetch not configured' };
+    async publish(content, _options) {
+        const token = await this.getBearerToken();
+        if (!token || typeof token !== 'string') {
+            return { ok: false, error: 'Missing or invalid X bearer token' };
         }
-        const truncated = truncateForX(content);
         try {
-            const res = await fetchFn('https://api.twitter.com/2/tweets', {
+            const res = await this.fetchFn(X_API_TWEETS_URL, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: truncated })
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ text: content })
             });
-            const body = await res.json().catch(() => ({}));
+            const data = await res.json().catch(() => ({}));
             if (!res.ok) {
-                return { success: false, error: body.error || body.detail || res.statusText || String(res.status) };
+                return { ok: false, error: (data.detail || data.error || res.statusText) || String(res.status) };
             }
-            const postId = body.data && body.data.id != null ? String(body.data.id) : (body.id != null ? String(body.id) : undefined);
-            const url = body.url != null ? String(body.url) : (postId ? `https://x.com/i/status/${postId}` : undefined);
-            return {
-                success: true,
-                postId: postId || undefined,
-                url: url || undefined
-            };
+            const id = data.data && data.data.id;
+            return { ok: true, ...(id && { publishedId: id }) };
         } catch (err) {
-            return { success: false, error: err.message || String(err) };
+            return { ok: false, error: (err && err.message) || String(err) };
         }
     }
 }
 
-module.exports = ReportXAdapter;
+module.exports = { ReportXAdapter };

@@ -1,15 +1,19 @@
 /**
- * IReportContentSourcePort - Interface for reading report content from a path (e.g. file).
- * Keeps ReportService orchestration-only; no direct fs I/O in app layer.
+ * Port: read report content from a source (e.g. file path).
+ * Implemented by reportFsContentSourceAdapter.
+ * @abstract
  */
 class IReportContentSourcePort {
     /**
-     * Read content from the given path (e.g. file path).
-     * @param {string} path - Path to the report (e.g. absolute file path).
-     * @returns {Promise<string>} Report content (e.g. markdown). Rejects if not found or read fails.
+     * @param {string} path
+     * @returns {Promise<string>}
      */
     async read(path) {
-        throw new Error('read not implemented');
+        if (new.target === IReportContentSourcePort) {
+            throw new Error('IReportContentSourcePort is abstract');
+        }
+        throw new Error('read() must be implemented');
     }
 }
-module.exports = IReportContentSourcePort;
+
+module.exports = { IReportContentSourcePort };

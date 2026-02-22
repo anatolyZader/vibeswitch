@@ -41,7 +41,7 @@ Use this workflow for **every** new feature or behavior. Do not skip phases.
 ### Phase D: Implement to pass (Green)
 
 1. **Ask the Agent to implement** the code that makes **all** written tests pass (unit and integration, and e2e if present).
-2. **Instruct:** “Do not modify the tests. Keep iterating until all tests pass.”
+2. **Instruct:** “Do not add new tests. Do not modify the tests. Keep iterating until all tests pass. (Test set is fixed at end of Red.)”
 3. Agent runs tests, sees failures, fixes implementation, repeats until green.
 4. Implementation may be minimal (e.g. return a constant first) then generalized—that’s fine.
 

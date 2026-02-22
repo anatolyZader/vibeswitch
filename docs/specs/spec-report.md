@@ -1,104 +1,106 @@
-# Spec: Report business module (publish research results to Medium, LinkedIn, X.com)
+# Spec: Report business module
 
-Business module that consumes research results (e.g. daily report markdown or structured insights) produced by the research module and publishes them to Medium, LinkedIn, and X.com. A single publishing port (`IReportPublishPort`) is implemented by different publish adapters (one per platform); the app layer orchestrates publishing and aggregates per-platform outcomes.
+Report business module for the Vibeswitch extension: receive report data from the research module and publish it to X.com, LinkedIn, and Medium.
 
-**Principle:** A great spec defines not only functional requirements but **how those requirements will be tested**. Include edge cases, input-output pairs, and success criteria so the agent can generate unambiguous tests.
+**Principle:** A great spec defines not only functional requirements but **how those requirements will be tested**. Include edge cases, input-output pairs, and success criteria. That gives the agent everything it needs to produce meaningful tests—and you get exactly what you want covered.
 
 ---
 
 ## Contract
 
-- **Name:** Report module — `ReportService` (app), two domain ports (publish + content source), publish adapters + content-source adapter (infrastructure).
+- **Name:** Report module — application service and ports for publishing report content to social platforms.
 - **Signature / API:**
-  - **App:** `ReportService.publishReport(reportInput, options) => Promise<PublishResult>`  
-    - `reportInput`: `{ content: string }` (markdown) or `{ reportPath: string }` (path to report file).  
-    - `options`: `{ platforms?: ('medium'|'linkedin'|'x')[], credentials?: PlatformCredentials }` (default: all platforms if credentials present).  
-    - Returns: `{ medium?: PlatformResult, linkedin?: PlatformResult, x?: PlatformResult }` where `PlatformResult = { success: boolean, postId?: string, url?: string, error?: string }`. **Error style:** never throw from `publishReport` for user input or adapter failures; return `{ success: false, error }` (per platform or single precondition error).
-  - **Domain port (publish):** `IReportPublishPort.publish(content: string, opts?) => Promise<PlatformResult>`. Implemented by one adapter per platform (Medium, LinkedIn, X). The service receives `publishAdapters: { medium, linkedin, x }` and calls the appropriate adapter per requested platform.
-  - **Domain port (content source):** `IReportContentSourcePort.read(path: string) => Promise<string>`. Used when `reportInput.reportPath` is provided; keeps app layer from doing fs I/O. Implemented by e.g. `reportFsContentSourceAdapter`.
+  - **ReportService:** `publishReport(input: ReportInput): Promise<PublishReportResult>`
+  - **ReportInput:** `{ content?: string, contentPath?: string, platforms?: Platform[] }` — either `content` (in-memory) or `contentPath` (path to file to read) must be set; `platforms` defaults to `['x', 'linkedin', 'medium']`.
+  - **PublishReportResult:** `{ ok: boolean, results: PlatformResult[], error?: string }` — one `PlatformResult` per requested platform: `{ platform, ok: boolean, publishedId?: string, error?: string }`.
+  - **Ports:** `IReportContentSourcePort.read(path: string): Promise<string>`; `IReportPublishPort.publish(content: string, options?: PublishOptions): Promise<PublishOutcome>`.
 - **Location:**
   - App: `business_modules/report/app/reportService.js`
-  - Domain ports: `business_modules/report/domain/ports/IReportPublishPort.js`, `IReportContentSourcePort.js`
-  - Input: `business_modules/report/input/`
-  - Infrastructure: `business_modules/report/infrastructure/adapters/` — publish: `reportMediumAdapter.js`, `reportLinkedInAdapter.js`, `reportXAdapter.js`; content source: `reportFsContentSourceAdapter.js`
+  - Input: `business_modules/report/input/reportController.js` (optional; command/event handler that calls service)
+  - Domain ports: `business_modules/report/domain/ports/IReportContentSourcePort.js`, `business_modules/report/domain/ports/IReportPublishPort.js`
+  - Adapters: `business_modules/report/infrastructure/adapters/reportXAdapter.js`, `reportLinkedInAdapter.js`, `reportMediumAdapter.js`, `reportFsContentSourceAdapter.js` (optional)
+
+---
+
+## Naming (optional)
+
+- **Function / module / API:** camelCase for functions and file names; PascalCase for domain types.
+- **Parameters and options:** camelCase: `reportInput`, `platforms`, `contentPath`, `PublishReportResult`, `PlatformResult`.
+- **Business module:** File names camelCase (`reportService.js`, `reportController.js`). Domain: PascalCase (`ReportInput`, `PlatformResult`, `PublishReportResult`, `ReportPublished`).
+  - **Ports:** `IReportContentSourcePort`, `IReportPublishPort`. Files: `domain/ports/IReportContentSourcePort.js`, `domain/ports/IReportPublishPort.js`.
+  - **Adapters:** `reportXAdapter.js`, `reportLinkedInAdapter.js`, `reportMediumAdapter.js`, `reportFsContentSourceAdapter.js` in `infrastructure/adapters/`.
 
 ---
 
 ## Business module (optional)
 
 - **Module name:** `report`
-- **Domain elements:**  
-  - Port: `IReportPublishPort` (`publish(content: string, opts?) => Promise<PlatformResult>`).  
-  - Port: `IReportContentSourcePort` (`read(path: string) => Promise<string>`). Used when input is `reportPath`; implemented by `reportFsContentSourceAdapter` (fs).  
-  - Infrastructure: publish adapters implement `IReportPublishPort`; content source adapter implements `IReportContentSourcePort`.  
-  - App: `ReportService` (orchestration only: resolve content via port when `reportPath`, call publish port per platform, return `PublishResult`; no direct fs/HTTP).
+- **Domain model (DDD):**
+  - **Entities:** (None required for MVP; report is stateless publish flow.)
+  - **Aggregates / aggregate roots:** (None for MVP.)
+  - **Value objects:** `ReportInput` (content or contentPath + optional platforms), `PlatformResult` (platform, ok, publishedId?, error?), `PublishReportResult` (ok, results[], error?), `PublishOutcome` (ok, publishedId?, error?). Platform: `'x' | 'linkedin' | 'medium'`.
+  - **Domain events:** `ReportPublished` (optional) — content published to a platform; can be emitted by app service for downstream listeners.
+  - **Ports:**
+    - **IReportContentSourcePort** — read report content from a source (e.g. file path). Method: `read(path: string): Promise<string>`. Implemented by `reportFsContentSourceAdapter.js` (read file from path).
+    - **IReportPublishPort** — publish text content to one platform. Method: `publish(content: string, options?: { platform?: Platform }): Promise<PublishOutcome>`. Implemented by `reportXAdapter.js`, `reportLinkedInAdapter.js`, `reportMediumAdapter.js` (each adapter is bound to one platform).
 
 ---
 
 ## Input / Output (and behavior)
 
 | Input | Expected output / behavior |
-|-------|----------------------------|
-| `{ content: "## Summary\n\nKey findings..." }`, `{ platforms: ['medium'] }` | `ReportService` calls the Medium publish adapter (via `IReportPublishPort.publish`) with that content; returns `{ medium: { success: true, postId: '…', url: '…' } }` when adapter succeeds. |
-| `{ content: "Short post" }`, `{ platforms: ['x'] }` | Calls the X publish adapter via the port; returns `{ x: { success: true, postId: '…', url: '…' } }` when adapter succeeds. |
-| `{ content: "..." }`, `{ platforms: ['medium','linkedin','x'] }` | Calls the publish adapter for each platform (same port interface); returns object with `medium`, `linkedin`, `x` keys; each key present with `success: true` or `success: false` and optional `error`. |
-| `{ reportPath: "/path/to/2025-02-20.md" }`, options | Service reads file content (via a port or injectable fs), then same behavior as `{ content }` for that content. |
-| `{ content: "" }` | Either skip publishing and return empty result, or return results with `success: false` and `error` for each attempted platform (spec: prefer returning per-platform failure with clear error, not throw). |
-| `{ content: veryLongText }` for X (e.g. > 280 chars) | X adapter (or service) truncates or splits per platform rules; returns `{ x: { success: true, ... } }` if truncated publish succeeds, or `{ success: false, error: "..." }` if platform rejects. |
-| Missing credentials for a platform | For that platform, return `{ [platform]: { success: false, error: 'Missing credentials' } }`; do not throw. |
-| Adapter throws (network/auth error) | Catch and return `{ [platform]: { success: false, error: <message> } }`; do not throw from `publishReport`. |
+|-------|-----------------------------|
+| `{ content: "Hello world" }` | `{ ok: true, results: [ { platform: 'x', ok: true, ... }, { platform: 'linkedin', ok: true, ... }, { platform: 'medium', ok: true, ... } ] }` (all three adapters invoked; exact publishedId depends on adapter) |
+| `{ content: "Hello", platforms: ['x'] }` | `{ ok: true, results: [ { platform: 'x', ok: true, ... } ] }` — only X adapter invoked |
+| `{ contentPath: "/path/to/report.md" }` and content source returns `"# Report"` | Same as first row: content resolved via IReportContentSourcePort, then published to all three |
+| `{ contentPath: "/path/to/report.md" }` and content source throws | `{ ok: false, results: [], error: "..." }` — no publish calls |
+| `{ content: "Hello" }` and one adapter (e.g. LinkedIn) fails | `{ ok: false, results: [ { platform: 'x', ok: true }, { platform: 'linkedin', ok: false, error: "..." }, { platform: 'medium', ok: true } ], error?: "..." }` — partial success; results reflect per-platform outcome |
+| `{}` (no content, no contentPath) | `{ ok: false, results: [], error: "Missing content or contentPath" }` (or equivalent validation error) |
+| `{ content: "", platforms: ["x"] }` | Service may accept (adapter may reject) or reject with validation error; spec: allow empty string and let adapter decide — result per platform |
 
 ---
 
-## Edge cases
+## Edge cases and corner cases
 
-- **Empty content:** `content: ""` or file at `reportPath` is empty → no publish or explicit per-platform failure with reason.
-- **Null / undefined:** `content` undefined when using `content` input → treat as error (return failure or throw with clear message); `reportPath` undefined when using `reportPath` → same.
-- **Very long content:** Medium/LinkedIn may allow long posts; X has character limit (e.g. 280) → service or X adapter truncates or returns error; spec: truncate with indicator (e.g. "…") and publish.
-- **Unicode / special characters:** Content may contain emoji, non-ASCII; adapters must handle encoding; tests use samples with Unicode.
-- **Duplicate publish:** Idempotency not required for this spec; calling `publishReport` twice with same content may create two posts; document in invariants.
-- **Missing report file:** When `reportPath` is provided and file does not exist → return error in result or throw; spec: prefer `{ error: 'Report file not found', reportPath }` in a generic way (e.g. single error result) and no platform calls.
+- **Edge cases:** Empty string `content`; `contentPath` pointing to missing file; `contentPath` pointing to empty file; `platforms` empty array (no-op: `{ ok: true, results: [] }`); `platforms` with duplicate entries (dedupe and publish once per platform); very long content (platform character limits — adapters may truncate or fail; document in adapter contract); Unicode and special characters in content.
+- **Corner cases:** Both `content` and `contentPath` set (prefer `content` and ignore `contentPath`, or reject with validation error — spec: prefer `content`); one platform fails mid-way (other platforms still attempted; result aggregates all); content source throws after partial publish (already-published platforms remain in results; error recorded).
 
 ---
 
 ## Error cases
 
-- **Invalid input type:** `content` not a string when using content input → return or throw with clear message; same for `reportPath` not a string.
-- **Invalid `platforms`:** Unknown platform in array → ignore or return `success: false` for that key with error "Unknown platform".
-- **Failing preconditions:** Missing credentials for a requested platform → `success: false`, `error: 'Missing credentials'` for that platform.
-- **Adapter failure:** Network error, 4xx/5xx, rate limit → adapter returns `{ success: false, error: string }`; service propagates in `PublishResult`.
-- **File read failure:** When using `reportPath`, fs read fails → fail fast with clear error (no platform publishes).
+- **Validation:** Missing both `content` and `contentPath` → return `{ ok: false, results: [], error: "..." }` (no throw).
+- **Content source:** `contentPath` given but IReportContentSourcePort.read throws (e.g. file not found) → return `{ ok: false, results: [], error: "..." }` (or propagate; spec: catch and return result with error message).
+- **Invalid types:** `content` not a string when provided → treat as validation error and return failed result.
+- **Invalid platform name:** Unknown value in `platforms` (e.g. `'twitter'`) → skip that entry or return validation error; spec: skip unknown platforms and only invoke known adapters.
 
 ---
 
 ## Invariants
 
-- **Error style:** Never throw from `publishReport` for user input or adapter failures. Return `{ [platform]: { success: false, error: string } }` (or a single error result for preconditions like missing file). Validation errors (e.g. invalid `content` type) also return per-platform or single failure, not throw.
-- **No throw from `publishReport` for adapter failures:** All adapter errors are caught and converted to `PlatformResult` with `success: false` and `error`.
-- **Result shape:** Return value is always a plain object; keys are only requested platform names; each value is `{ success, postId?, url?, error? }`.
-- **Idempotency:** Not required; calling `publishReport` twice with same content may produce two posts per platform.
-- **Side effects:** Publishing is a side effect; adapters perform I/O; app layer remains orchestrator-only and does not touch fs or HTTP directly (uses ports). Content from `reportPath` is read via `IReportContentSourcePort` only.
+- **Idempotency:** Calling `publishReport` twice with the same input may result in two separate posts on each platform (no implicit dedupe unless adapter/platform supports it).
+- **Side effects:** Publishing is a side effect; each adapter performs I/O (network). Service does not mutate ReportInput.
+- **Determinism:** For the same input and same adapter responses, output shape is deterministic; order of `results` is defined (e.g. same order as `platforms` or fixed order).
 
 ---
 
 ## Success criteria (how this will be tested)
 
-- **Pass:**  
-  - For each input pair in the table, the actual `PublishResult` matches the expected shape and `success`/`error` as specified.  
-  - Empty or invalid content yields no successful publish (or explicit failure per platform).  
-  - Missing credentials yield `success: false` with an error message for that platform.  
-  - Adapter throw is turned into `success: false` with `error` and does not throw from `publishReport`.
-- **Coverage:**  
-  - At least one test per row in Input/Output.  
-  - Edge cases: empty content, null/undefined content, long content (X truncation), missing file.  
-  - Error cases: invalid type, unknown platform, missing credentials, adapter throwing.
-- **Test fails when:** `publishReport` throws on adapter failure; or result shape is missing a requested platform key; or `success: true` when credentials are missing.
+- **Pass:** All input/output pairs in the table above pass; validation errors return failed result object (no unhandled throw); partial failure returns `ok: false` with per-platform results; empty `platforms` returns success with empty results.
+- **Coverage:** Every row in Input/Output; edge cases (empty content, missing file, empty platforms, duplicates); error cases (validation, content source throw, single adapter failure); port methods called with expected arguments when mocked.
+- **Test fails when:** Service throws on invalid input instead of returning failed result; or a platform adapter is invoked when not in `platforms`; or content source is not used when only `contentPath` is provided.
+
+---
+
+## Test levels (optional)
+
+- **Unit (default):** ReportService with mocked IReportContentSourcePort and IReportPublishPort (one mock per platform). Cover: all Input/Output rows, edge cases, error cases; verify correct adapter called per platform and content/contentPath resolution.
+- **Integration (optional):** Service + real reportFsContentSourceAdapter with temp file; assert read then publish flow and that adapters receive correct content. Adapters can use injected HTTP/fetch (no real network).
+- **E2E:** Not required for this spec.
 
 ---
 
 ## Test file hint (optional)
 
-- `tests/business_modules/report/app/reportService.test.js` — main behavior and input/output.  
-- `tests/business_modules/report/infrastructure/adapters/reportMediumAdapter.test.js` (and reportLinkedInAdapter, reportXAdapter) — each publish adapter implements `IReportPublishPort`; unit tests with **injected/mocked HTTP** (no real network).  
-- `tests/business_modules/report/infrastructure/adapters/reportFsContentSourceAdapter.test.js` — content source adapter implements `IReportContentSourcePort`; unit tests with mocked or temp fs.  
-- `tests/business_modules/report/domain/` — any value objects (e.g. `PublishResult`) if tested in isolation.
+- **Unit:** `tests/business_modules/report/app/reportService.test.js`
+- **Unit (adapters):** `tests/business_modules/report/infrastructure/adapters/reportXAdapter.test.js`, `reportLinkedInAdapter.test.js`, `reportMediumAdapter.test.js` (each tests adapter in isolation with mocked HTTP/secrets).

@@ -1,40 +1,43 @@
 /**
- * LinkedIn publish adapter - implements IReportPublishPort for LinkedIn.
- * Uses injected fetch for HTTP (no real network in tests).
+ * Publishes content to LinkedIn. Implements IReportPublishPort.
  */
+const { IReportPublishPort } = require('../../domain/ports/IReportPublishPort');
 
-const IReportPublishPort = require('../../domain/ports/IReportPublishPort');
+const LINKEDIN_API_SHARES_URL = 'https://api.linkedin.com/v2/shares';
 
 class ReportLinkedInAdapter extends IReportPublishPort {
-    constructor(deps = {}) {
+    constructor(opts = {}) {
         super();
-        this.fetch = deps.fetch || (typeof globalThis.fetch === 'function' ? globalThis.fetch : null);
+        this.getAccessToken = opts.getAccessToken || (async () => null);
+        this.fetchFn = opts.fetchFn || globalThis.fetch;
     }
 
-    async publish(content, opts) {
-        const fetchFn = this.fetch;
-        if (!fetchFn) {
-            return { success: false, error: 'LinkedIn adapter: fetch not configured' };
+    async publish(content, _options) {
+        const token = await this.getAccessToken();
+        if (!token || typeof token !== 'string') {
+            return { ok: false, error: 'Missing or invalid LinkedIn access token' };
         }
         try {
-            const res = await fetchFn('https://api.linkedin.com/v2/ugcPosts', {
+            const res = await this.fetchFn(LINKEDIN_API_SHARES_URL, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content })
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    text: { text: content }
+                })
             });
-            const body = await res.json().catch(() => ({}));
+            const data = await res.json().catch(() => ({}));
             if (!res.ok) {
-                return { success: false, error: body.message || body.error || res.statusText || String(res.status) };
+                return { ok: false, error: (data.message || data.error || res.statusText) || String(res.status) };
             }
-            return {
-                success: true,
-                postId: body.id != null ? String(body.id) : undefined,
-                url: body.url != null ? String(body.url) : undefined
-            };
+            const id = data.id;
+            return { ok: true, ...(id && { publishedId: id }) };
         } catch (err) {
-            return { success: false, error: err.message || String(err) };
+            return { ok: false, error: (err && err.message) || String(err) };
         }
     }
 }
 
-module.exports = ReportLinkedInAdapter;
+module.exports = { ReportLinkedInAdapter };

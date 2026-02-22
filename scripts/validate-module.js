@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Validates a business module against the mandatory 4-layer structure and import rules.
+ * Validates a business module against the module structure (app, domain, infrastructure required; input optional) and import rules.
  * Exit 0 = pass, non-zero = fail (messages to stderr).
  *
  * Usage: node scripts/validate-module.js --module=<name>
@@ -26,7 +26,7 @@ function parseArgs() {
 
 function requiredDirsExist(moduleName) {
     const moduleRoot = path.join(businessModulesRoot, moduleName);
-    const required = ['input', 'app', 'domain', 'infrastructure'];
+    const required = ['app', 'domain', 'infrastructure']; // input/ is optional when module is only called in-process
     const missing = [];
     const empty = [];
     for (const dir of required) {
@@ -40,14 +40,19 @@ function requiredDirsExist(moduleName) {
             }
         }
     }
+    // If input/ exists, it must have at least one .js file
+    const inputDir = path.join(moduleRoot, 'input');
+    if (fs.existsSync(inputDir) && fs.statSync(inputDir).isDirectory()) {
+        if (listJsFiles(inputDir).length === 0) empty.push('input');
+    }
     if (missing.length) {
         console.error(`[validate-module] Required directories missing for ${moduleName}: ${missing.join(', ')}`);
         console.error(`  Expected under: business_modules/${moduleName}/`);
         return false;
     }
     if (empty.length) {
-        console.error(`[validate-module] Required directories must contain at least one .js file: ${empty.join(', ')}`);
-        console.error(`  Each layer (input, app, domain, infrastructure) must have at least one layer entry file.`);
+        console.error(`[validate-module] Directories must contain at least one .js file: ${empty.join(', ')}`);
+        console.error(`  (input/ is optional; when present it must have at least one file.)`);
         return false;
     }
     return true;

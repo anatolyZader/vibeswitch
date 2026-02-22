@@ -19,6 +19,15 @@ describe('ResearchStore', () => {
         expect(SCHEMA).toContain('payload_json');
     });
 
+    test('getPayloadForAgent with no data returns current null and history empty', async () => {
+        const dbPath = tempDbPath();
+        const store = await createResearchStore(dbPath);
+        const { current, history } = await store.getPayloadForAgent({ lastDays: 7, lastN: 50 });
+        expect(current).toBeNull();
+        expect(history).toEqual([]);
+        store.close();
+    });
+
     test('persist inserts payload without sonarMeasures', async () => {
         const dbPath = tempDbPath();
         const store = await createResearchStore(dbPath);
